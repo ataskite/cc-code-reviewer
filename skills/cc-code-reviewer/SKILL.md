@@ -249,7 +249,7 @@ bash ${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh
 {飞书上传时追加}
 📤 审查完成后将自动上传到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
 
-💡 温馨提示：审查期间您可以继续使用 Claude Code 进行其他操作。
+💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
 ```
 
 **预估时间参考**：

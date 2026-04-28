@@ -294,7 +294,7 @@ bash scripts/phase4-detect-lark-plugin.sh
 {FEISHU_UPLOAD_OPTION 不是「仅显示报告」/「插件未安装」时，追加以下行}
 📤 审查完成后将自动上传到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
 
-💡 温馨提示：审查期间您可以继续使用 Claude Code 进行其他操作。
+💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
 ```
 
 **预估时间参考**（根据 `REVIEW_MODE` + 项目规模估算）：
@@ -485,7 +485,7 @@ bash scripts/phase6-prepare-incremental.sh "$PROJECT_DIR" {N}
       ⏱️ 预估耗时：8-15 分钟
       📌 子代理将独立执行完整审查流程，完成后自动返回结果。
       📤 审查完成后将自动上传到飞书（同时上传两者），无需手动操作。
-      💡 温馨提示：审查期间您可以继续使用 Claude Code 进行其他操作。
+      💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
 
            → 调用子agent执行代码审查（注入参数 + agent提示词）
            → 子agent执行审查 → 上传飞书云文档 → 创建多维表格 → 返回精简汇总
@@ -529,7 +529,7 @@ bash scripts/phase6-prepare-incremental.sh "$PROJECT_DIR" {N}
       📋 任务配置：deep 模式 · 存量审查 · user-service,order-service
       ⏱️ 预估耗时：30-45 分钟
       📌 子代理将独立执行完整审查流程，完成后自动返回结果。
-      💡 温馨提示：审查期间您可以继续使用 Claude Code 进行其他操作。
+      💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
 
            → 调用子agent执行代码审查（注入参数 + agent提示词）
            → 子agent执行审查 → 返回完整审查报告
