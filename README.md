@@ -19,10 +19,10 @@
 
 ```bash
 # 1. 添加插件市场
-/plugin marketplace add ataskite/cc-code-reviewer@claude-code-reviewer
+/plugin marketplace add ataskite/cc-code-reviewer
 
 # 2. 安装插件
-/plugin install cc-code-reviewer@cc-code-reviewer
+/plugin install cc-code-reviewer
 
 # 3. 重载插件
 /reload-plugins
