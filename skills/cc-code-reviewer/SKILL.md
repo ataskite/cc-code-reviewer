@@ -144,10 +144,26 @@ bash ${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh
     description: "审查最近 10 次提交"
 - multiSelect: false
 
-**存量审查 + 多模块时，必须调用 AskUserQuestion 工具，参数如下**：
+**存量审查 + 多模块时，先展示模块树，再调用 AskUserQuestion 工具**：
+
+**展示模块树**（在调用 AskUserQuestion 之前，用文本输出）：
+```
+📊 项目模块概览：
+
+{项目名称}/
+├── {模块1名称}/     {N} 类 · {M} 行
+├── {模块2名称}/     {N} 类 · {M} 行
+└── {模块3名称}/     {N} 类 · {M} 行
+
+合计：{总类数} 类 · {总行数} 行
+```
+
+数据来源：解析阶段三预扫描输出的 `MODULE:` 行，提取每个模块的名称、Java 文件数、代码行数。
+
+**然后调用 AskUserQuestion 工具，参数如下**：
 - question: "请选择要审查的模块"
 - header: "审查范围"
-- options: 从预扫描结果动态生成（全量代码 + 所有模块；模块超过 10 个时展示前 9 个 + "其他模块"）
+- options: 从预扫描结果动态生成，每个模块的 description 中标注类数和行数（如 `12 类 · 1,580 行`）；模块超过 10 个时展示前 9 个 + "其他模块"
 - multiSelect: true
 
 **存量审查 + 多模块用户响应后**：
