@@ -79,7 +79,7 @@ bash ${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh
 使用 Task 工具启动 `cc-code-reviewer` 子代理：
 - description: "执行 Java 代码审查"
 - prompt: 注入审查参数表 + 项目概况 + 增量数据
-- subagent_type: "cc-code-reviewer"
+- subagent_type: "cc-code-reviewer:cc-code-reviewer"
 
 详细参数注入格式见下方「子 agent 调用规范」章节。
 
@@ -359,7 +359,7 @@ bash ${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh
 
 使用 Task 工具启动内置的 `cc-code-reviewer` 子代理：
 - description: "执行 Java 代码审查"
-- subagent_type: "cc-code-reviewer"
+- subagent_type: "cc-code-reviewer:cc-code-reviewer"
 - prompt: 下方参数注入格式
 
 不要传 `run_in_background`；该字段不属于 Claude Code Task 调用契约。子 agent 会独立执行审查，主 agent 等待其返回结构化结果后展示给用户。
