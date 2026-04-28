@@ -19,15 +19,13 @@
 
 ```bash
 # 1. 添加插件市场
-/plugin marketplace add ataskite/cc-code-reviewer
+claude plugin marketplace add ataskite/cc-code-reviewer
 
 # 2. 安装插件
-/plugin install cc-code-reviewer
+claude plugin install cc-code-reviewer
 
-# 3. 重载插件
+# 3. 启动 Claude Code 会话后重载插件
 /reload-plugins
-
-# 4. 重载后即可通过自然语言触发 skill
 ```
 
 安装成功后，直接告诉 Claude Code 要审查 Java 项目即可触发本 skill。仓库不提供 slash command 入口，避免维护两套触发面。
@@ -35,8 +33,8 @@
 ### 更新插件
 
 ```bash
-# 1. 更新到最新版本
-/plugin update cc-code-reviewer
+# 更新到最新版本（在终端执行，非 Claude Code 会话内）
+claude plugin update cc-code-reviewer
 
 # 2. 重载插件
 /reload-plugins
