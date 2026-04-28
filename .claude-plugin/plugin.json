@@ -1,7 +1,7 @@
 {
   "name": "cc-code-reviewer",
   "description": "Java 代码审查插件 — 15维度智能审查，支持增量/存量双模式",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": {
     "name": "ataskite"
   },
