@@ -1,0 +1,15 @@
+# 临时文件和目录
+.DS_Store
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# 测试输出
+test-output/
+*.test
+
+# Claude Code 配置目录
+.claude/

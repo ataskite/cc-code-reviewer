@@ -1,0 +1,26 @@
+#!/bin/bash
+# 阶段六：代码审查 - 增量审查预处理
+# 用途：获取提交记录、变更文件列表和变更统计
+
+set -e
+
+PROJECT_DIR="${1:?请输入项目路径}"
+COMMIT_COUNT="${2:?请输入提交次数}"
+
+# 防止 HEAD~N 越界：获取实际提交数
+TOTAL_COMMITS=$(git -C "$PROJECT_DIR" rev-list --count HEAD 2>/dev/null || echo "0")
+if [ "$TOTAL_COMMITS" -lt "$COMMIT_COUNT" ]; then
+  echo "⚠️ 项目仅有 $TOTAL_COMMITS 次提交，将使用实际数量"
+  COMMIT_COUNT="$TOTAL_COMMITS"
+fi
+
+echo "# === 提交记录 ==="
+git -C "$PROJECT_DIR" log --oneline -"$COMMIT_COUNT"
+
+echo ""
+echo "# === 变更文件列表 ==="
+git -C "$PROJECT_DIR" diff --name-only HEAD~"$COMMIT_COUNT"..HEAD
+
+echo ""
+echo "# === 变更统计 ==="
+git -C "$PROJECT_DIR" diff --stat HEAD~"$COMMIT_COUNT"..HEAD
