@@ -131,7 +131,7 @@ bash scripts/phase3-project-scan.sh "$PROJECT_DIR"
 
 ### 阶段四：openclaw-lark插件检测（自动执行，无需确认）
 
-**目标**：检测OpenClaw是否安装openclaw-lark插件，决定是否在交互阶段显示飞书上传选项。
+**目标**：检测Claude Code是否安装openclaw-lark插件，决定是否在交互阶段显示飞书上传选项。
 
 **执行脚本**：
 ```bash
@@ -294,7 +294,7 @@ bash scripts/phase4-detect-lark-plugin.sh
 {FEISHU_UPLOAD_OPTION 不是「仅显示报告」/「插件未安装」时，追加以下行}
 📤 审查完成后将自动上传到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
 
-💡 温馨提示：审查期间您可以继续使用 OpenClaw 进行其他操作。
+💡 温馨提示：审查期间您可以继续使用 Claude Code 进行其他操作。
 ```
 
 **预估时间参考**（根据 `REVIEW_MODE` + 项目规模估算）：
@@ -360,7 +360,7 @@ bash scripts/phase4-detect-lark-plugin.sh
 
 | 变量名 | 来源 | 示例值 |
 |--------|------|--------|
-| `PROJECT_DIR` | 阶段一输出 | `/tmp/openclaw/cc-code-reviewer/1744567890` 或本地路径 |
+| `PROJECT_DIR` | 阶段一输出 | `/tmp/cc-code-reviewer-cache/1744567890` 或本地路径 |
 | `PROJECT_NAME` | `basename "$PROJECT_DIR"` 自动提取 | `spring-ai-agent-utils` |
 | `PROJECT_TYPE` | 阶段三输出 | `maven-single` / `maven-multi` / `gradle-single` / `gradle-multi` / `unknown` |
 | `REVIEW_TYPE` | 阶段五步骤1用户选择 | `增量审查` / `存量审查` |
@@ -485,7 +485,7 @@ bash scripts/phase6-prepare-incremental.sh "$PROJECT_DIR" {N}
       ⏱️ 预估耗时：8-15 分钟
       📌 子代理将独立执行完整审查流程，完成后自动返回结果。
       📤 审查完成后将自动上传到飞书（同时上传两者），无需手动操作。
-      💡 温馨提示：审查期间您可以继续使用 OpenClaw 进行其他操作。
+      💡 温馨提示：审查期间您可以继续使用 Claude Code 进行其他操作。
 
            → 调用子agent执行代码审查（注入参数 + agent提示词）
            → 子agent执行审查 → 上传飞书云文档 → 创建多维表格 → 返回精简汇总
@@ -504,7 +504,7 @@ bash scripts/phase6-prepare-incremental.sh "$PROJECT_DIR" {N}
 用户：帮我审查这个项目 https://github.com/spring-ai-examples/spring-boot-multi-module.git
 
 我：[阶段一] 检测到 Git 仓库，正在克隆...
-           ✅ 克隆成功: /tmp/openclaw/cc-code-reviewer/1744567890
+           ✅ 克隆成功: /tmp/cc-code-reviewer-cache/1744567890
    [阶段二] 检测 Git 分支 → 检测到 main, develop, feature/auth 三个分支
            → 用户选择：develop
            ✅ 已切换到分支: develop
@@ -529,7 +529,7 @@ bash scripts/phase6-prepare-incremental.sh "$PROJECT_DIR" {N}
       📋 任务配置：deep 模式 · 存量审查 · user-service,order-service
       ⏱️ 预估耗时：30-45 分钟
       📌 子代理将独立执行完整审查流程，完成后自动返回结果。
-      💡 温馨提示：审查期间您可以继续使用 OpenClaw 进行其他操作。
+      💡 温馨提示：审查期间您可以继续使用 Claude Code 进行其他操作。
 
            → 调用子agent执行代码审查（注入参数 + agent提示词）
            → 子agent执行审查 → 返回完整审查报告
