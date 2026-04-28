@@ -65,12 +65,17 @@ lark-cli auth login --recommend
 
 插件支持两种使用模式：**交互式模式**（默认）和**快速启动模式**（适合自动化）。
 
-### 方式一：自然语言触发
+### 方式一：斜杠命令触发
 
-直接告诉 Claude Code 要审查的项目，插件会逐步引导你选择配置：
+使用插件斜杠命令直接启动技能：
 
 ```
-帮我审查这个项目 /path/to/project
+# 本地项目
+/cc-code-reviewer:cc-code-reviewer /path/to/project
+
+# Git 仓库
+/cc-code-reviewer:cc-code-reviewer https://github.com/org/repo.git
+/cc-code-reviewer:cc-code-reviewer git@github.com:org/repo.git
 ```
 
 交互流程：
