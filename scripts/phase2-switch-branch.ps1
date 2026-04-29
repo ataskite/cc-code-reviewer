@@ -16,6 +16,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Invoke-GitChecked {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string[]]$Arguments
+    )
+
+    $output = & git @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "git $($Arguments -join ' ') 失败（exit $LASTEXITCODE）: $($output -join [Environment]::NewLine)"
+    }
+    return $output
+}
+
 # 如果目标分支就是当前分支，无需切换
 if ($TargetBranch -eq $CurrentBranch) {
     Write-Output "✅ 已在目标分支: $CurrentBranch"
@@ -53,7 +66,7 @@ try {
 if ($localExists) {
     # 本地分支存在，直接切换
     try {
-        git -C $ProjectDir checkout $shortBranch 2>&1 | Out-Null
+        Invoke-GitChecked -Arguments @("-C", $ProjectDir, "checkout", $shortBranch) | Out-Null
         Write-Output "✅ 已切换到本地分支: $shortBranch"
     } catch {
         Write-Output "⚠️ 分支切换失败，将使用当前分支 $CurrentBranch 继续审查"
@@ -63,8 +76,8 @@ if ($localExists) {
     # 远程分支存在，先 fetch 再切换
     Write-Output "检测到远程分支，正在拉取最新代码..."
     try {
-        git -C $ProjectDir fetch origin $shortBranch 2>&1 | Out-Null
-        git -C $ProjectDir checkout $shortBranch 2>&1 | Out-Null
+        Invoke-GitChecked -Arguments @("-C", $ProjectDir, "fetch", "origin", $shortBranch) | Out-Null
+        Invoke-GitChecked -Arguments @("-C", $ProjectDir, "checkout", $shortBranch) | Out-Null
         Write-Output "✅ 已切换到远程分支: $shortBranch"
     } catch {
         Write-Output "⚠️ 分支切换失败，将使用当前分支 $CurrentBranch 继续审查"

@@ -11,7 +11,7 @@
 - **2 种审查类型**：增量审查（最近 N 次提交）、存量审查（全量/指定模块）
 - **2 种使用模式**：交互式（逐步引导）、快速启动（自动化/CI/CD）
 - **飞书集成**：审查报告上传云文档、问题清单录入多维表格（可选，依赖 lark-cli）
-- **纯 Bash 实现**：无 Python 依赖，兼容 macOS/Linux 标准环境
+- **跨平台脚本**：macOS/Linux 使用 Bash，Windows 使用 PowerShell，无 Python 依赖
 
 ## 安装
 
@@ -28,7 +28,7 @@ claude plugin install cc-code-reviewer
 /reload-plugins
 ```
 
-安装成功后，直接告诉 Claude Code 要审查 Java 项目即可触发本 skill。仓库不提供 slash command 入口，避免维护两套触发面。
+安装成功后，可用 Claude Code 的快速引用格式 `/cc-code-reviewer:cc-code-reviewer` 明确触发本 skill；也可以直接告诉 Claude Code 要审查 Java 项目，由自然语言匹配触发。
 
 ### 更新插件
 
@@ -43,7 +43,8 @@ claude plugin update cc-code-reviewer
 ### 前置条件
 
 - Claude Code 已安装
-- Bash 3.0+ 环境（macOS / Linux）
+- macOS/Linux：Bash 3.0+ 环境
+- Windows：Windows PowerShell 5.1+ 或 PowerShell 7+
 - 系统已安装 `git` 命令
 
 ### 可选：lark-cli 安装
@@ -65,9 +66,9 @@ lark-cli auth login --recommend
 
 插件支持两种使用模式：**交互式模式**（默认）和**快速启动模式**（适合自动化）。
 
-### 方式一：斜杠命令触发
+### 方式一：快速引用触发（推荐）
 
-使用插件斜杠命令直接启动技能：
+使用 Claude Code 的 `/插件名:技能名` 快速引用格式，可以明确触发本技能：
 
 ```
 # 本地项目
@@ -77,6 +78,8 @@ lark-cli auth login --recommend
 /cc-code-reviewer:cc-code-reviewer https://github.com/org/repo.git
 /cc-code-reviewer:cc-code-reviewer git@github.com:org/repo.git
 ```
+
+也可以直接用自然语言触发，例如：`帮我审查 /path/to/project`。
 
 交互流程：
 1. **预扫描**（自动）：项目识别 → 分支探测 → 项目扫描 → lark-cli 检测
@@ -148,7 +151,7 @@ lark-cli auth login --recommend
 | 1 | 正确性 | Bug、NPE、边界条件、异常处理、并发正确性 |
 | 2 | 代码质量 | 单一职责、DRY、复杂度、命名、代码异味 |
 | 3 | Spring Boot 规范 | 分层职责、依赖注入、事务、配置安全 |
-| 4 | 数据库/MyBatis | N+1、SQL注入、参数绑定、批量操作、数据一致性 |
+| 4 | 数据库/数据访问 | 通用数据库、MyBatis、JPA/Hibernate、批量操作、数据一致性 |
 | 5 | 安全 | 注入风险、对象级越权、租户隔离、敏感信息、文件/反序列化、JWT/会话、依赖供应链 |
 | 6 | 性能 | 并发安全、线程池、算法复杂度、限流降级 |
 | 7 | 资源管理 | 连接关闭、线程泄露、OOM风险 |
@@ -170,7 +173,7 @@ lark-cli auth login --recommend
 
 ## 脚本说明
 
-所有脚本位于 `scripts/` 目录，可独立运行测试：
+所有脚本位于 `scripts/` 目录，可独立运行测试。macOS/Linux 使用 `.sh`，Windows 使用 `.ps1`。
 
 ```bash
 # 项目识别
@@ -186,7 +189,21 @@ bash scripts/phase3-project-scan.sh "/path/to/project"
 bash scripts/phase4-detect-lark-plugin.sh
 ```
 
-其中 `phase1-detect-project.sh` 会额外输出 `PROJECT_SOURCE=local|git-cache`，供后续分支切换阶段判断是否允许自动切换。本地项目目录若存在未提交改动，会保留当前分支继续审查；Git 缓存目录仍允许自动切换分支。
+```powershell
+# 项目识别
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase1-detect-project.ps1 "C:\path\to\project"
+
+# 分支探测
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase2-detect-branches.ps1 "C:\path\to\project"
+
+# 项目预扫描
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase3-project-scan.ps1 "C:\path\to\project"
+
+# lark-cli 检测
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase4-detect-lark-plugin.ps1
+```
+
+其中 `phase1-detect-project.sh` / `phase1-detect-project.ps1` 会额外输出 `PROJECT_SOURCE=local|git-cache`，供后续分支切换阶段判断是否允许自动切换。本地项目目录若存在未提交改动，会保留当前分支继续审查；Git 缓存目录仍允许自动切换分支。
 
 ## 工作流程
 
@@ -213,9 +230,9 @@ bash scripts/phase4-detect-lark-plugin.sh
 ## 开发与维护
 
 ### 修改脚本逻辑
-1. 编辑 `scripts/` 下对应的 `.sh` 文件
-2. 独立测试验证
-3. 无需修改 SKILL.md（脚本通过路径引用）
+1. 同步编辑 `scripts/` 下对应的 `.sh` 与 `.ps1` 文件
+2. 分别在 macOS/Linux 与 Windows 环境独立测试验证
+3. 无需修改 `skills/cc-code-reviewer/SKILL.md`（脚本通过路径引用），除非新增或调整脚本调用契约
 
 ### 修改审查流程
 1. 编辑 `skills/cc-code-reviewer/SKILL.md` 中对应阶段的描述

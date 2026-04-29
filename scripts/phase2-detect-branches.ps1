@@ -50,7 +50,9 @@ if ($isGitRepo) {
             $ref = $_
             $shortName = $ref -replace '^origin/', ''
             $date = git -C $ProjectDir log -1 --format='%cd' --date='format:%Y-%m-%d %H:%M:%S' $ref 2>$null
-            $subject = (git -C $ProjectDir log -1 --format='%s' $ref 2>$null).Substring(0, [Math]::Min(30, (git -C $ProjectDir log -1 --format='%s' $ref 2>$null).Length))
+            $subjectRaw = git -C $ProjectDir log -1 --format='%s' $ref 2>$null
+            if (-not $subjectRaw) { $subjectRaw = "" }
+            $subject = $subjectRaw.Substring(0, [Math]::Min(30, $subjectRaw.Length))
             Write-Output "BRANCH_REMOTE: $ref | $date | $subject"
         }
     }

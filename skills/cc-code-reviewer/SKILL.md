@@ -16,32 +16,35 @@ description: Java 代码审查 — 支持增量/存量审查、15维度评估、
 
 从用户输入中提取项目路径（第一个非 `--` 开头的参数，或整个输入路径），然后按以下顺序执行 4 个脚本。
 
-**平台检测**：通过 `$env:OS` 判断操作系统，Windows（`$env:OS = "Windows_NT"`）使用 `.ps1` 脚本，其他系统使用 `.sh` 脚本。
+**平台检测**：先判断当前 Claude Code 运行环境。Windows 使用 PowerShell 脚本（`.ps1`），macOS / Linux 使用 Bash 脚本（`.sh`）。不要混用两种 shell 语法。
 
-```bash
-# 平台检测（最先执行）
-if ($env:OS -eq "Windows_NT") {
-  $SCRIPT_EXT = "ps1"
-  $SCRIPT_RUN = "powershell -ExecutionPolicy Bypass -File"
-} else {
-  $SCRIPT_EXT = "sh"
-  $SCRIPT_RUN = "bash"
-}
-
-# 脚本1：项目识别
-$SCRIPT_RUN ${CLAUDE_PLUGIN_ROOT}/scripts/phase1-detect-project.$SCRIPT_EXT "<用户输入的路径>"
+Windows（PowerShell）：
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase1-detect-project.ps1" "<用户输入的路径>"
 # 输出：PROJECT_DIR=<路径> PROJECT_SOURCE=local|git-cache
 
-# 脚本2：分支探测
-$SCRIPT_RUN ${CLAUDE_PLUGIN_ROOT}/scripts/phase2-detect-branches.$SCRIPT_EXT "$PROJECT_DIR"
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase2-detect-branches.ps1" "$PROJECT_DIR"
 # 输出：IS_GIT_REPO=true/false CURRENT_BRANCH=<分支> BRANCH: ... BRANCH_REMOTE: ...
 
-# 脚本3：项目扫描
-$SCRIPT_RUN ${CLAUDE_PLUGIN_ROOT}/scripts/phase3-project-scan.$SCRIPT_EXT "$PROJECT_DIR"
-# 输出：PROJECT_TYPE=maven-single|maven-multi|... MODULE:模块名|相对路径|Java文件数|代码行数
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase3-project-scan.ps1" "$PROJECT_DIR"
+# 输出：PROJECT_TYPE=maven-single|maven-multi|... MODULE:模块名|相对路径|Java文件数|代码行数 TECH_STACK:技术栈|dependency:命中依赖|dimensions:建议维度|rules:专项规则
 
-# 脚本4：lark-cli 检测
-$SCRIPT_RUN ${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.$SCRIPT_EXT
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase4-detect-lark-plugin.ps1"
+# 输出：LARK_PLUGIN_INSTALLED=true|false，失败时附带 LARK_PLUGIN_REASON
+```
+
+macOS / Linux（Bash）：
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase1-detect-project.sh" "<用户输入的路径>"
+# 输出：PROJECT_DIR=<路径> PROJECT_SOURCE=local|git-cache
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-detect-branches.sh" "$PROJECT_DIR"
+# 输出：IS_GIT_REPO=true/false CURRENT_BRANCH=<分支> BRANCH: ... BRANCH_REMOTE: ...
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase3-project-scan.sh" "$PROJECT_DIR"
+# 输出：PROJECT_TYPE=maven-single|maven-multi|... MODULE:模块名|相对路径|Java文件数|代码行数 TECH_STACK:技术栈|dependency:命中依赖|dimensions:建议维度|rules:专项规则
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 # 输出：LARK_PLUGIN_INSTALLED=true|false，失败时附带 LARK_PLUGIN_REASON
 ```
 
@@ -69,6 +72,8 @@ $SCRIPT_RUN ${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.$SCRIPT_EXT
 {多模块时追加以下行}
 - 模块数量：{K} 个
 - 模块列表：{模块1名称}({n1}类), {模块2名称}({n2}类), ...
+
+🧩 技术栈：{解析 `TECH_STACK:` 行，显示检测到的技术栈名称；未识别时显示"未识别专项技术栈，仅启用通用 Java 审查规则"}
 
 🔌 lark-cli：{LARK_PLUGIN_INSTALLED=true 时显示 "✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书上传" / false 时显示 "⚠️ 飞书上传不可用：{LARK_PLUGIN_REASON}，报告将保存到本地文件"}
 ```
@@ -117,7 +122,9 @@ $SCRIPT_RUN ${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.$SCRIPT_EXT
 **用户响应后**：
 - 设置 TARGET_BRANCH
 - 如果用户选择"其他分支"，不得把字面值作为分支名；必须读取用户提供的自定义分支名。若 AskUserQuestion 当前交互不支持自定义文本，追加一次 AskUserQuestion 收集分支名，header 使用 "输入分支"，options 使用可用分支中的剩余热门分支并允许 Other/free-form。
-- 如不是当前分支，执行：`$SCRIPT_RUN ${CLAUDE_PLUGIN_ROOT}/scripts/phase2-switch-branch.$SCRIPT_EXT "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
+- 如不是当前分支，按当前平台执行对应脚本：
+  - Windows：`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase2-switch-branch.ps1" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
+  - macOS / Linux：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-switch-branch.sh" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
 - 切换失败时继续使用当前分支
 
 ### 步骤 2：选择审查类型
@@ -328,7 +335,9 @@ $SCRIPT_RUN ${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.$SCRIPT_EXT
 1. 未提供 `--branch`：TARGET_BRANCH=CURRENT_BRANCH
 2. 提供 `--branch` 且等于 CURRENT_BRANCH：无需切换
 3. 提供 `--branch` 且不同于 CURRENT_BRANCH：必须执行
-   `$SCRIPT_RUN ${CLAUDE_PLUGIN_ROOT}/scripts/phase2-switch-branch.$SCRIPT_EXT "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
+   按当前平台执行对应分支切换脚本：
+   - Windows：`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase2-switch-branch.ps1" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
+   - macOS / Linux：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-switch-branch.sh" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
 4. 快速启动模式下，如果显式分支切换失败，必须终止本次审查并说明原因，不得静默回退到当前分支继续审查
 5. 切换成功后，重新记录 CURRENT_BRANCH/TARGET_BRANCH，用切换后的分支生成增量数据和调用子 agent
 
@@ -434,6 +443,7 @@ $SCRIPT_RUN ${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.$SCRIPT_EXT
 | `REVIEW_MODE` | 交互步骤4 / 快速启动 `--mode` | `fast` / `standard` 等 |
 | `FEISHU_UPLOAD_OPTION` | 交互步骤5 / 快速启动 `--upload` | `仅显示报告` 等 |
 | `PROJECT_SCAN_RESULT` | phase3 完整输出 | 项目概况、模块结构 |
+| `DETECTED_TECH_STACK` | 从 `PROJECT_SCAN_RESULT` 的 `TECH_STACK:` 行解析，来源为 Maven/Gradle 依赖指纹 | `Spring Boot, MyBatis, Redis/Cache` |
 | `REVIEW_FILE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `76` |
 | `REVIEW_LINE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `16637` |
 | `GIT_LOG_OUTPUT` | phase5 脚本输出（仅增量） | `git log --oneline -N` |
@@ -442,7 +452,9 @@ $SCRIPT_RUN ${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.$SCRIPT_EXT
 
 ### 增量审查预处理（仅增量审查时执行）
 
-在调用子 agent 之前，执行 `$SCRIPT_RUN ${CLAUDE_PLUGIN_ROOT}/scripts/phase5-prepare-incremental.$SCRIPT_EXT "$PROJECT_DIR" {N}`
+在调用子 agent 之前，按当前平台执行增量预处理脚本：
+- Windows：`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase5-prepare-incremental.ps1" "$PROJECT_DIR" {N}`
+- macOS / Linux：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase5-prepare-incremental.sh" "$PROJECT_DIR" {N}`
 
 脚本输出用 `# ===` 分隔为三部分：
 1. `# === 提交记录 ===` → GIT_LOG_OUTPUT

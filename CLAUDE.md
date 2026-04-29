@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a **Claude Code plugin skill** for enterprise-grade Java code review. It provides 15-dimension comprehensive analysis with 4 review modes (fast/standard/deep/security), supporting both incremental and stock review types.
 
-**Important**: This repository intentionally uses a **skill-only entry point** plus a dedicated sub-agent. It does not ship a slash command.
+**Important**: This repository intentionally uses a **skill-only entry point** plus a dedicated sub-agent. Claude Code can invoke the skill explicitly via the quick-reference form `/cc-code-reviewer:cc-code-reviewer` (`/plugin-name:skill-name`).
 
 ## Architecture
 
@@ -29,7 +29,7 @@ Return results to Main Skill → Display to user
 
 ### Key Responsibilities
 
-**Main Skill (SKILL.md)**:
+**Main Skill (`skills/cc-code-reviewer/SKILL.md`)**:
 - Pre-scan: project detection → branch detection → project scan → lark-cli detection
 - Interactive mode: Collect user config via AskUserQuestion (6 steps)
 - Fast mode: Validate parameters and launch sub-agent directly

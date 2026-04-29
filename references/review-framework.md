@@ -19,6 +19,37 @@
 
 ---
 
+## 技术栈识别与维度启用规则
+
+预扫描阶段应优先根据 Maven `pom.xml` 或 Gradle `build.gradle` / `build.gradle.kts` 依赖识别项目技术栈，并输出 `TECH_STACK:{技术栈}|dependency:{命中依赖}|dimensions:{建议维度}|rules:{专项规则}`。子 agent 必须使用该结果决定专项审查规则，避免对未使用的技术做无关审查。
+
+**启用原则**：
+- 依赖识别结果只决定"哪些专项规则适用"，不能突破当前审查模式的覆盖矩阵
+- 如果检测到 MyBatis / MyBatis Plus，仅启用 MyBatis 相关数据访问审查，不套用 JPA 专项规则
+- 如果检测到 JPA / Hibernate，仅启用 JPA/Hibernate 相关数据访问审查，不套用 MyBatis XML / Wrapper 规则
+- 如果同一项目同时检测到多种数据访问技术，应分别启用对应专项规则，并在问题中标注具体技术栈
+- 未检测到某项技术栈时，不审查该技术的专项问题；仅保留通用 Java、通用数据库、安全和架构层面的判断
+
+| 技术栈 | 依赖指纹示例 | 建议启用维度 | 专项规则 |
+|-------|-------------------|-------------|----------|
+| Spring MVC | `spring-boot-starter-web`, `spring-webmvc` | 1, 3, 5, 8, 15 | Controller/API、输入校验、错误响应、REST 规范 |
+| WebFlux / Reactor | `spring-boot-starter-webflux`, `reactor-core` | 1, 3, 5, 6, 7, 8, 15 | 响应式链路、阻塞调用、超时、资源释放 |
+| MyBatis | `mybatis-spring-boot-starter`, `mybatis-*` | 4, 5, 6 | Mapper/XML、参数绑定、动态 SQL、分页、结果映射 |
+| MyBatis Plus | `mybatis-plus-*` | 4, 5, 6 | Wrapper、分页插件、批量操作、逻辑删除 |
+| JPA / Hibernate | `spring-boot-starter-data-jpa`, `hibernate-core`, `jakarta.persistence-api` | 4, 5, 6 | Repository、实体映射、懒加载、N+1、事务边界、批量写入 |
+| Redis / Cache | `spring-boot-starter-data-redis`, `spring-cache`, `redisson`, `jedis`, `lettuce-core` | 6, 7, 12, 14 | 缓存风险、一致性、Redis Key、连接池、分布式锁 |
+| Kafka / RabbitMQ / RocketMQ | `spring-kafka`, `spring-boot-starter-amqp`, `rocketmq-*` | 12, 13 | 消息可靠性、消费幂等、顺序性、重试、死信 |
+| OpenFeign / Dubbo | `spring-cloud-starter-openfeign`, `feign-core`, `dubbo-*` | 6, 8, 12 | 服务间调用、超时、重试、降级、鉴权透传、日志脱敏 |
+| Spring Security / Shiro / JWT | `spring-boot-starter-security`, `shiro-*`, `jjwt`, `java-jwt` | 3, 5, 8, 15 | 认证授权、对象级越权、会话、CSRF、JWT 安全 |
+| Validation | `spring-boot-starter-validation`, `hibernate-validator` | 1, 3, 5, 15 | Bean Validation、输入边界、API 参数校验 |
+| Actuator | `spring-boot-starter-actuator` | 3, 5, 8 | 管理端暴露、健康检查、指标、敏感端点 |
+| Seata | `seata-*` | 4, 12 | 分布式事务、回滚边界、幂等、补偿机制 |
+| Resilience4j / Sentinel | `resilience4j-*`, `sentinel-*` | 6, 8, 12 | 熔断、限流、降级、异常兜底 |
+
+Gradle 项目使用同一套依赖指纹，支持常见 Groovy/Kotlin DSL 依赖声明，例如 `implementation 'group:artifact:version'`、`implementation("group:artifact:version")`、`api(...)`、`compileOnly(...)`、`runtimeOnly(...)`、`testImplementation(...)`。
+
+---
+
 ## 1. 正确性审查
 
 - **Bug 识别**：是否存在明显的逻辑错误
@@ -54,7 +85,7 @@
 
 ---
 
-## 4. 数据库与 MyBatis 审查
+## 4. 数据库与数据访问审查
 
 ### 4.1 通用数据库审查
 
@@ -83,6 +114,17 @@
 - **数据对账**
 - **补偿机制**
 - **双写一致性**
+
+### 4.4 JPA / Hibernate 专项审查
+
+**仅在检测到 JPA / Hibernate 依赖时启用本章节。**
+
+- **Repository 查询**：方法名派生查询、自定义 JPQL / Native SQL 是否正确且可维护
+- **实体映射**：`@OneToMany` / `@ManyToOne` / `@OneToOne` 关系、级联、孤儿删除是否符合业务语义
+- **懒加载与 N+1**：是否存在循环访问懒加载集合、序列化触发懒加载、未使用 fetch join / EntityGraph 的 N+1 风险
+- **事务边界**：查询和写入是否处于合理事务边界，是否存在懒加载越界或长事务
+- **批量写入**：批量保存/更新是否造成逐条 flush、内存堆积或事务过大
+- **乐观锁**：关键实体是否需要 `@Version`，并发更新冲突是否被正确处理
 
 **注意**：
 - 对"是否命中索引""是否全表扫描"这类运行时相关问题，如无执行计划、索引定义或库表结构证据，应表述为"高风险待确认项"
@@ -322,7 +364,7 @@
 | 1 | 正确性 | ✅ | ✅ | ✅ | ✅ |
 | 2 | 代码质量 | — | ✅ | ✅ | — |
 | 3 | Spring Boot 规范 | ✅ 仅事务+配置安全 | ✅ | ✅ | ✅ 仅配置安全子项 |
-| 4 | 数据库/MyBatis | — | ✅ | ✅ | ✅ 仅 SQL 注入子项 |
+| 4 | 数据库/数据访问 | — | ✅ | ✅ | ✅ 仅 SQL 注入子项 |
 | 5 | 安全 | ✅ 仅P0级 | ✅ | ✅ | ✅ 全深度 |
 | 6 | 性能 | — | ✅ | ✅ | — |
 | 7 | 资源管理 | ✅ | ✅ | ✅ | — |

@@ -12,6 +12,45 @@ $ErrorActionPreference = "Stop"
 # 本地缓存目录：使用系统临时目录
 $CODE_DIR = $env:TEMP
 
+function Invoke-GitChecked {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string[]]$Arguments,
+
+        [int]$TimeoutSeconds = 0
+    )
+
+    if ($TimeoutSeconds -gt 0) {
+        $job = Start-Job -ScriptBlock {
+            param([string[]]$GitArgs)
+            $output = & git @GitArgs 2>&1
+            [pscustomobject]@{
+                ExitCode = $LASTEXITCODE
+                Output = $output
+            }
+        } -ArgumentList (,$Arguments)
+
+        if (-not (Wait-Job $job -Timeout $TimeoutSeconds)) {
+            Stop-Job $job -ErrorAction SilentlyContinue
+            Remove-Job $job -Force -ErrorAction SilentlyContinue
+            throw "git $($Arguments -join ' ') 超时（${TimeoutSeconds}s）"
+        }
+
+        $result = Receive-Job $job
+        Remove-Job $job -Force -ErrorAction SilentlyContinue
+        if ($result.ExitCode -ne 0) {
+            throw "git $($Arguments -join ' ') 失败（exit $($result.ExitCode)）: $($result.Output -join [Environment]::NewLine)"
+        }
+        return $result.Output
+    }
+
+    $output = & git @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "git $($Arguments -join ' ') 失败（exit $LASTEXITCODE）: $($output -join [Environment]::NewLine)"
+    }
+    return $output
+}
+
 # 识别规则：以http://、https://、git://或git@开头的URL → Git仓库
 if ($InputPath -match '^https?://' -or $InputPath -match '^git://' -or $InputPath -match '^git@') {
     # 从 URL 中提取仓库名作为缓存目录名
@@ -25,7 +64,7 @@ if ($InputPath -match '^https?://' -or $InputPath -match '^git://' -or $InputPat
         Write-Output "检测到Git仓库（缓存命中），正在拉取最新代码..."
         $currentBranch = git -C $cacheDir branch --show-current 2>$null
         try {
-            git -C $cacheDir pull 2>&1 | Out-Null
+            Invoke-GitChecked -Arguments @("-C", $cacheDir, "pull") -TimeoutSeconds 60 | Out-Null
             Write-Output "✅ 已更新到最新: $cacheDir (分支: $currentBranch)"
             $PROJECT_DIR = $cacheDir
             $PROJECT_SOURCE = "git-cache"
@@ -33,7 +72,7 @@ if ($InputPath -match '^https?://' -or $InputPath -match '^git://' -or $InputPat
             Write-Output "⚠️ 拉取失败，删除缓存并重新克隆..."
             Remove-Item -Recurse -Force $cacheDir
             try {
-                git clone $InputPath $cacheDir 2>&1 | Out-Null
+                Invoke-GitChecked -Arguments @("clone", $InputPath, $cacheDir) -TimeoutSeconds 120 | Out-Null
                 Write-Output "✅ 重新克隆成功: $cacheDir"
                 $PROJECT_DIR = $cacheDir
                 $PROJECT_SOURCE = "git-cache"
@@ -49,7 +88,7 @@ if ($InputPath -match '^https?://' -or $InputPath -match '^git://' -or $InputPat
         }
         Write-Output "检测到Git仓库，正在克隆到缓存目录..."
         try {
-            git clone $InputPath $cacheDir 2>&1 | Out-Null
+            Invoke-GitChecked -Arguments @("clone", $InputPath, $cacheDir) -TimeoutSeconds 120 | Out-Null
             Write-Output "✅ 克隆成功: $cacheDir"
             $PROJECT_DIR = $cacheDir
             $PROJECT_SOURCE = "git-cache"

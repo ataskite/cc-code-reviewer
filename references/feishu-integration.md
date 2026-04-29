@@ -69,7 +69,7 @@ lark-cli docs +create \
 |---|--------|-----------------|----------|------|
 | 1 | 问题编号 | text | - | 格式：P0-1、P1-1、P2-1、P3-1、待确认-1 |
 | 2 | 严重级别 | select | P0 严重、P1 重要、P2 一般、P3 建议、待确认 | 问题严重程度 |
-| 3 | 所属维度 | select | 正确性、代码质量、Spring Boot 规范、数据库/MyBatis、安全、性能、资源管理、日志/可观测性、测试质量、技术债、架构、分布式系统、消息队列、缓存、API 设计 | 问题所属的审查维度 |
+| 3 | 所属维度 | select | 正确性、代码质量、Spring Boot 规范、数据库/数据访问、安全、性能、资源管理、日志/可观测性、测试质量、技术债、架构、分布式系统、消息队列、缓存、API 设计 | 问题所属的审查维度 |
 | 4 | 技术栈 | select（multiple） | Spring Boot、MyBatis、MyBatis Plus、JPA/Hibernate、Redis、Kafka、RabbitMQ、MySQL、Dubbo、Feign、Shiro、Spring Security、JWT、Jackson、Netty、Nginx、Docker、其他 | 关联的技术组件（多选） |
 | 5 | 问题描述 | text | - | 问题的简要描述 |
 | 6 | 位置 | text | - | 文件路径:行号 或 类名/方法名 |
@@ -151,7 +151,7 @@ lark-cli base +field-create --base-token $BT --table-id $TI \
 
 # 3. 所属维度（单选）
 lark-cli base +field-create --base-token $BT --table-id $TI \
-  --json '{"name":"所属维度","type":"select","options":[{"name":"正确性"},{"name":"代码质量"},{"name":"Spring Boot 规范"},{"name":"数据库/MyBatis"},{"name":"安全"},{"name":"性能"},{"name":"资源管理"},{"name":"日志/可观测性"},{"name":"测试质量"},{"name":"技术债"},{"name":"架构"},{"name":"分布式系统"},{"name":"消息队列"},{"name":"缓存"},{"name":"API 设计"}]}'
+  --json '{"name":"所属维度","type":"select","options":[{"name":"正确性"},{"name":"代码质量"},{"name":"Spring Boot 规范"},{"name":"数据库/数据访问"},{"name":"安全"},{"name":"性能"},{"name":"资源管理"},{"name":"日志/可观测性"},{"name":"测试质量"},{"name":"技术债"},{"name":"架构"},{"name":"分布式系统"},{"name":"消息队列"},{"name":"缓存"},{"name":"API 设计"}]}'
 
 # 4. 技术栈（多选）
 lark-cli base +field-create --base-token $BT --table-id $TI \
@@ -304,7 +304,7 @@ lark-cli base +table-list --base-token {BASE_TOKEN}
 BT="{BASE_TOKEN}" TI="{TABLE_ID}"
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"问题编号","type":"text"}'
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"严重级别","type":"select","options":[{"name":"P0 严重"},{"name":"P1 重要"},{"name":"P2 一般"},{"name":"P3 建议"},{"name":"待确认"}]}'
-lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"所属维度","type":"select","options":[{"name":"正确性"},{"name":"代码质量"},{"name":"Spring Boot 规范"},{"name":"数据库/MyBatis"},{"name":"安全"},{"name":"性能"},{"name":"资源管理"},{"name":"日志/可观测性"},{"name":"测试质量"},{"name":"技术债"},{"name":"架构"},{"name":"分布式系统"},{"name":"消息队列"},{"name":"缓存"},{"name":"API 设计"}]}'
+lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"所属维度","type":"select","options":[{"name":"正确性"},{"name":"代码质量"},{"name":"Spring Boot 规范"},{"name":"数据库/数据访问"},{"name":"安全"},{"name":"性能"},{"name":"资源管理"},{"name":"日志/可观测性"},{"name":"测试质量"},{"name":"技术债"},{"name":"架构"},{"name":"分布式系统"},{"name":"消息队列"},{"name":"缓存"},{"name":"API 设计"}]}'
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"技术栈","type":"select","multiple":true,"options":[{"name":"Spring Boot"},{"name":"MyBatis"},{"name":"MyBatis Plus"},{"name":"JPA/Hibernate"},{"name":"Redis"},{"name":"Kafka"},{"name":"RabbitMQ"},{"name":"MySQL"},{"name":"Dubbo"},{"name":"Feign"},{"name":"Shiro"},{"name":"Spring Security"},{"name":"JWT"},{"name":"Jackson"},{"name":"Netty"},{"name":"Nginx"},{"name":"Docker"},{"name":"其他"}]}'
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"问题描述","type":"text"}'
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"位置","type":"text"}'
