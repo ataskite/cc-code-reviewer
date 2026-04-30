@@ -45,6 +45,17 @@
 | Actuator | `spring-boot-starter-actuator` | 3, 5, 8 | 管理端暴露、健康检查、指标、敏感端点 |
 | Seata | `seata-*` | 4, 12 | 分布式事务、回滚边界、幂等、补偿机制 |
 | Resilience4j / Sentinel | `resilience4j-*`, `sentinel-*` | 6, 8, 12 | 熔断、限流、降级、异常兜底 |
+| Spring Cloud Gateway | `spring-cloud-starter-gateway`, `spring-cloud-gateway-*` | 3, 5, 8, 12, 15 | 网关路由、过滤器、鉴权透传、CORS、限流、错误响应 |
+| Nacos / Apollo Config | `spring-cloud-starter-alibaba-nacos-config`, `nacos-client`, `apollo-client` | 3, 5, 8, 12 | 配置中心命名空间、动态配置、密钥外置、配置刷新、降级 |
+| OAuth2 / OIDC | `spring-boot-starter-oauth2-resource-server`, `spring-security-oauth2-*` | 3, 5, 8, 15 | Token 校验、issuer/audience、scope 权限、资源服务器、错误信息 |
+| Elasticsearch | `spring-data-elasticsearch`, `elasticsearch-java`, `elasticsearch-rest-client` | 4, 5, 6, 8 | 查询拼接、深分页、索引映射、超时、敏感字段 |
+| MongoDB | `spring-boot-starter-data-mongodb`, `mongodb-driver-*`, `spring-data-mongodb` | 4, 5, 6 | 文档查询、索引、分页、NoSQL 注入、连接池 |
+| Scheduler | `quartz`, `xxl-job-core`, `elastic-job-*` | 1, 6, 7, 8, 12 | 定时任务并发、错过触发、幂等、分布式锁、重试、告警 |
+| Flyway / Liquibase | `flyway-core`, `liquibase-core` | 4, 10, 11 | 数据库迁移顺序、回滚策略、破坏性 DDL、环境一致性 |
+| MapStruct | `mapstruct` | 1, 2, 10 | DTO/Entity 映射遗漏、默认值、枚举映射、敏感字段透传 |
+| Jackson / Fastjson / Gson | `jackson-databind`, `fastjson`, `fastjson2`, `gson` | 1, 5, 15 | 反序列化安全、未知字段、日期格式、精度、响应字段暴露 |
+| Docker | `Dockerfile`, `docker-compose.yml` | 3, 5, 7, 8, 12 | 基础镜像、运行用户、密钥注入、资源限制、健康检查、优雅停机 |
+| Kubernetes | `k8s/*.yaml`, `kubernetes/*.yaml`, 含 `apiVersion/kind` 的 YAML | 3, 5, 7, 8, 12 | 探针、resources、Secret/ConfigMap、滚动发布、服务暴露 |
 
 Gradle 项目使用同一套依赖指纹，支持常见 Groovy/Kotlin DSL 依赖声明，例如 `implementation 'group:artifact:version'`、`implementation("group:artifact:version")`、`api(...)`、`compileOnly(...)`、`runtimeOnly(...)`、`testImplementation(...)`。
 

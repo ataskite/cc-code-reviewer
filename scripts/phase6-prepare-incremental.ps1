@@ -27,8 +27,20 @@ git -C $ProjectDir log --oneline "-$CommitCount"
 
 Write-Output ""
 Write-Output "# === 变更文件列表 ==="
-git -C $ProjectDir diff --name-only "HEAD~$CommitCount..HEAD"
+if ($CommitCount -eq 0) {
+    Write-Output "（无提交记录）"
+} elseif ($CommitCount -ge $totalCommits) {
+    git -C $ProjectDir diff --name-only 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD
+} else {
+    git -C $ProjectDir diff --name-only "HEAD~$CommitCount..HEAD"
+}
 
 Write-Output ""
 Write-Output "# === 变更统计 ==="
-git -C $ProjectDir diff --stat "HEAD~$CommitCount..HEAD"
+if ($CommitCount -eq 0) {
+    Write-Output "（无变更）"
+} elseif ($CommitCount -ge $totalCommits) {
+    git -C $ProjectDir diff --stat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD
+} else {
+    git -C $ProjectDir diff --stat "HEAD~$CommitCount..HEAD"
+}

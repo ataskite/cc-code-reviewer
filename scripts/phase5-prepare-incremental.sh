@@ -25,6 +25,8 @@ echo ""
 echo "# === 变更文件列表 ==="
 if [ "$COMMIT_COUNT" -eq 0 ]; then
   echo "（无提交记录）"
+elif [ "$COMMIT_COUNT" -ge "$TOTAL_COMMITS" ]; then
+  git -C "$PROJECT_DIR" diff --name-only 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD
 elif [ "$TOTAL_COMMITS" -eq 1 ]; then
   git -C "$PROJECT_DIR" show --format="" --name-only HEAD
 else
@@ -35,6 +37,8 @@ echo ""
 echo "# === 变更统计 ==="
 if [ "$COMMIT_COUNT" -eq 0 ]; then
   echo "（无变更）"
+elif [ "$COMMIT_COUNT" -ge "$TOTAL_COMMITS" ]; then
+  git -C "$PROJECT_DIR" diff --stat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD
 elif [ "$TOTAL_COMMITS" -eq 1 ]; then
   git -C "$PROJECT_DIR" show --stat --format="" HEAD
 else

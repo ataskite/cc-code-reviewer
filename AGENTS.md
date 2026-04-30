@@ -73,7 +73,25 @@ scripts/
 
 ## Common Development Tasks
 
-### Testing Scripts Individently
+### Running The Full Test Suite
+
+Run this before handing off changes:
+
+```bash
+bash tests/run_all.sh
+```
+
+The suite runs every `tests/test_*.sh` file and then `git diff --check`. It covers:
+- `phase1-detect-project.sh`: local path detection and missing-path failures
+- `phase2-detect-branches.sh` / `phase2-switch-branch.sh`: branch discovery, clean local checkout, dirty local workspace protection
+- `phase3-project-scan.sh`: Maven multi-module scans, module paths with spaces, unknown-project line counts
+- `phase4-detect-lark-plugin.sh`: lark-cli detection output contract
+- `phase5-prepare-incremental.sh`: incremental diff ranges that include the root commit
+- Documentation contracts for fast-mode parameter validation, report persistence, Feishu Base fields, and test instructions
+
+PowerShell scripts mirror the Bash scripts, but the automated local suite runs Bash. When editing `.ps1` files, verify them separately on Windows or a machine with PowerShell.
+
+### Testing Scripts Individually
 
 ```bash
 # Test pre-scan scripts independently
@@ -81,6 +99,7 @@ bash scripts/phase1-detect-project.sh "/path/to/project"
 bash scripts/phase2-detect-branches.sh "/path/to/project"
 bash scripts/phase3-project-scan.sh "/path/to/project"
 bash scripts/phase4-detect-lark-plugin.sh
+bash scripts/phase5-prepare-incremental.sh "/path/to/project" 5
 ```
 
 ### Modifying Review Logic

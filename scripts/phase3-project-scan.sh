@@ -73,6 +73,41 @@ emit_tech_stack() {
   return 1
 }
 
+detect_docker_file() {
+  find "$PROJECT_DIR" -maxdepth 4 -type f \
+    \( -name 'Dockerfile' -o -name 'Dockerfile.*' -o -name 'docker-compose.yml' -o -name 'docker-compose.yaml' \) \
+    -not -path '*/target/*' -not -path '*/build/*' -not -path '*/.git/*' \
+    -print 2>/dev/null | head -1
+}
+
+detect_kubernetes_file() {
+  local file
+  while IFS= read -r file; do
+    if grep -Eq '^(apiVersion|kind):' "$file" 2>/dev/null; then
+      echo "${file#$PROJECT_DIR/}"
+      return 0
+    fi
+  done < <(find "$PROJECT_DIR" -maxdepth 5 -type f \
+    \( -path '*/k8s/*' -o -path '*/kubernetes/*' -o -name '*.yaml' -o -name '*.yml' \) \
+    -not -path '*/target/*' -not -path '*/build/*' -not -path '*/.git/*' \
+    -print 2>/dev/null)
+  return 1
+}
+
+emit_file_tech_stack() {
+  local name="$1"
+  local detector="$2"
+  local dimensions="$3"
+  local rules="$4"
+  local evidence
+  evidence=$("$detector")
+  if [ -n "$evidence" ]; then
+    echo "TECH_STACK:${name}|dependency:file:${evidence}|dimensions:${dimensions}|rules:${rules}"
+    return 0
+  fi
+  return 1
+}
+
 scan_dependency_tech_stack() {
   local detector="$1"
   local fallback_reason="$2"
@@ -99,6 +134,17 @@ scan_dependency_tech_stack() {
   emit_tech_stack "Actuator" "$detector" 'spring-boot-starter-actuator' "3,5,8" "启用管理端暴露、健康检查、指标和敏感端点审查" && emitted=1
   emit_tech_stack "Seata" "$detector" 'seata-[A-Za-z0-9_.-]+' "4,12" "启用分布式事务、回滚边界、幂等和补偿机制审查" && emitted=1
   emit_tech_stack "Resilience4j/Sentinel" "$detector" 'resilience4j-[A-Za-z0-9_.-]+|sentinel-[A-Za-z0-9_.-]+' "6,8,12" "启用熔断、限流、降级和异常兜底审查" && emitted=1
+  emit_tech_stack "Spring Cloud Gateway" "$detector" 'spring-cloud-starter-gateway|spring-cloud-gateway[-A-Za-z0-9_.]*' "3,5,8,12,15" "启用网关路由、过滤器、鉴权透传、CORS、限流和错误响应审查" && emitted=1
+  emit_tech_stack "Nacos/Apollo Config" "$detector" 'spring-cloud-starter-alibaba-nacos-config|nacos-client|nacos-config-spring-boot-starter|apollo-client|apollo-core' "3,5,8,12" "启用配置中心命名空间、动态配置、密钥外置、配置刷新和降级审查" && emitted=1
+  emit_tech_stack "OAuth2/OIDC" "$detector" 'spring-boot-starter-oauth2-resource-server|spring-boot-starter-oauth2-client|spring-security-oauth2-[A-Za-z0-9_.-]+|oauth2-oidc-sdk' "3,5,8,15" "启用 token 校验、issuer/audience、scope 权限、资源服务器和错误信息审查" && emitted=1
+  emit_tech_stack "Elasticsearch" "$detector" 'spring-boot-starter-data-elasticsearch|spring-data-elasticsearch|elasticsearch-rest-high-level-client|elasticsearch-java|elasticsearch-rest-client' "4,5,6,8" "启用搜索查询拼接、分页深翻页、索引映射、超时和敏感字段审查" && emitted=1
+  emit_tech_stack "MongoDB" "$detector" 'spring-boot-starter-data-mongodb|mongodb-driver-sync|mongodb-driver-reactivestreams|spring-data-mongodb' "4,5,6" "启用文档查询、索引、分页、NoSQL 注入和连接池审查" && emitted=1
+  emit_tech_stack "Scheduler" "$detector" 'quartz|xxl-job-core|elastic-job-[A-Za-z0-9_.-]+' "1,6,7,8,12" "启用定时任务并发、错过触发、幂等、锁、重试和告警审查" && emitted=1
+  emit_tech_stack "Flyway/Liquibase" "$detector" 'flyway-core|liquibase-core' "4,10,11" "启用数据库迁移顺序、回滚策略、破坏性 DDL 和环境一致性审查" && emitted=1
+  emit_tech_stack "MapStruct" "$detector" 'mapstruct' "1,2,10" "启用 DTO/Entity 映射遗漏、默认值、枚举映射和敏感字段透传审查" && emitted=1
+  emit_tech_stack "JSON Serialization" "$detector" 'jackson-databind|fastjson2?|gson' "1,5,15" "启用反序列化安全、未知字段、日期格式、精度和响应字段暴露审查" && emitted=1
+  emit_file_tech_stack "Docker" "detect_docker_file" "3,5,7,8,12" "启用镜像基础版本、运行用户、密钥注入、资源限制、健康检查和优雅停机审查" && emitted=1
+  emit_file_tech_stack "Kubernetes" "detect_kubernetes_file" "3,5,7,8,12" "启用探针、资源 requests/limits、Secret/ConfigMap、滚动发布和服务暴露审查" && emitted=1
 
   if [ "$emitted" -eq 0 ]; then
     echo "TECH_STACK:未识别|dependency:none|dimensions:1,2,5,7,10|rules:${fallback_reason}"
@@ -213,7 +259,9 @@ else
   echo ""
   STATS=$(java_stats "$PROJECT_DIR" '*/target/*')
   JAVA_COUNT="${STATS%%|*}"
+  JAVA_LINES="${STATS##*|}"
   echo "Java文件总数: $JAVA_COUNT"
+  echo "代码总行数: $JAVA_LINES"
   echo ""
   echo "=== 技术栈识别 ==="
   echo "TECH_STACK:未识别|dependency:none|dimensions:1,2,5,7,10|rules:未检测到 Maven/Gradle 构建文件，仅启用通用 Java 审查规则"

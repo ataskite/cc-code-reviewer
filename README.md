@@ -205,6 +205,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase4-detect-lark
 
 其中 `phase1-detect-project.sh` / `phase1-detect-project.ps1` 会额外输出 `PROJECT_SOURCE=local|git-cache`，供后续分支切换阶段判断是否允许自动切换。本地项目目录若存在未提交改动，会保留当前分支继续审查；Git 缓存目录仍允许自动切换分支。
 
+## 测试
+
+提交前优先运行完整 Bash 测试套件：
+
+```bash
+bash tests/run_all.sh
+```
+
+当前测试覆盖：
+- `phase1-detect-project.sh`：本地路径识别、缺失路径失败输出
+- `phase2-detect-branches.sh` / `phase2-switch-branch.sh`：Git 分支探测、本地干净工作区切换、本地脏工作区保护
+- `phase3-project-scan.sh`：Maven 多模块扫描、包含空格的模块路径、unknown 项目行数统计
+- `phase4-detect-lark-plugin.sh`：lark-cli 可用/不可用输出契约
+- `phase5-prepare-incremental.sh`：最近 N 次提交覆盖到首提交时的 diff 边界
+- 文档契约：主 skill 参数完整性、报告文件持久化、飞书 Base 字段去重、测试入口说明
+
+`tests/run_all.sh` 会按文件名顺序执行 `tests/test_*.sh`，最后运行 `git diff --check` 检查空白问题。PowerShell 脚本与 Bash 脚本保持同源逻辑；在 Windows 上修改 `.ps1` 后，应额外用 `powershell -NoProfile -ExecutionPolicy Bypass -File ...` 手动验证对应脚本。
+
 ## 工作流程
 
 ```

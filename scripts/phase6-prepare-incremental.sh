@@ -19,8 +19,20 @@ git -C "$PROJECT_DIR" log --oneline -"$COMMIT_COUNT"
 
 echo ""
 echo "# === 变更文件列表 ==="
-git -C "$PROJECT_DIR" diff --name-only HEAD~"$COMMIT_COUNT"..HEAD
+if [ "$COMMIT_COUNT" -eq 0 ]; then
+  echo "（无提交记录）"
+elif [ "$COMMIT_COUNT" -ge "$TOTAL_COMMITS" ]; then
+  git -C "$PROJECT_DIR" diff --name-only 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD
+else
+  git -C "$PROJECT_DIR" diff --name-only HEAD~"$COMMIT_COUNT"..HEAD
+fi
 
 echo ""
 echo "# === 变更统计 ==="
-git -C "$PROJECT_DIR" diff --stat HEAD~"$COMMIT_COUNT"..HEAD
+if [ "$COMMIT_COUNT" -eq 0 ]; then
+  echo "（无变更）"
+elif [ "$COMMIT_COUNT" -ge "$TOTAL_COMMITS" ]; then
+  git -C "$PROJECT_DIR" diff --stat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD
+else
+  git -C "$PROJECT_DIR" diff --stat HEAD~"$COMMIT_COUNT"..HEAD
+fi

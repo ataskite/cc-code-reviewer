@@ -313,6 +313,26 @@ spring:
 
 ---
 
+### 第三步之后：持久化报告文件
+
+**前置条件**：第三步生成完整审查报告后，且在任何飞书上传或最终汇总输出之前。
+
+使用 Bash 工具获取当前时间戳并生成文件名：
+```bash
+date +"%Y%m%d-%H%M%S"
+```
+
+文件命名格式：`code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`
+文件保存路径：`{PROJECT_DIR}/code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`
+变量名：`REPORT_FILENAME=code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`
+
+使用 `Write` 工具将完整审查报告保存到上述路径。**所有上传和本地输出都必须复用同一个 Markdown 文件**：
+- 上传云文档时，`lark-cli docs +create --markdown @{REPORT_FILENAME}` 读取该文件
+- 未上传飞书时，最终汇总展示该文件路径并输出同一份报告内容
+- 飞书上传失败降级时，也复用该文件，不重复生成另一份报告
+
+---
+
 ### 第四步：上传报告到飞书云文档
 
 **前置条件**：`FEISHU_UPLOAD_OPTION` 为 `上传到云文档` 或 `同时上传两者`。
@@ -323,7 +343,8 @@ spring:
 1. 读取该文件获取完整操作步骤
 2. 使用 `Skill` 工具调用 `lark-doc` skill 创建云文档
 3. 文档标题：`🛡️ Java 代码审查报告 - {PROJECT_NAME} - {REVIEW_MODE}模式 - {日期}`
-4. 获取文档链接用于第六步汇总
+4. 使用第三步之后生成的 `REPORT_FILENAME` 作为 `--markdown @...` 输入
+5. 获取文档链接用于第六步汇总
 
 ---
 
@@ -370,25 +391,9 @@ spring:
 👉 详细报告请点击上方飞书链接查看。
 ```
 
-#### 策略 B：未上传飞书 → 保存本地文件 + 完整报告输出
+#### 策略 B：未上传飞书 → 展示本地文件 + 完整报告输出
 
-当 `FEISHU_UPLOAD_OPTION` 为 `仅显示报告`、`lark-cli未安装` 或 `飞书上传不可用` 时，将审查报告保存到本地项目目录，然后输出完整报告供用户查看。
-
-**步骤 1：生成本地报告文件路径**
-
-使用 Bash 工具获取当前时间戳并生成文件路径：
-```bash
-date +"%Y%m%d-%H%M%S"
-```
-
-文件命名格式：`code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`
-文件保存路径：`{PROJECT_DIR}/code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`
-
-**步骤 2：保存报告到本地**
-
-使用 `Write` 工具将完整的审查报告保存到本地文件。报告内容包含所有章节：审查配置快照、执行摘要、各级别问题详情、修复优先级、总结等。
-
-**步骤 3：输出完整报告**
+当 `FEISHU_UPLOAD_OPTION` 为 `仅显示报告`、`lark-cli未安装` 或 `飞书上传不可用` 时，使用第三步之后已保存的报告文件路径，然后输出完整报告供用户查看。
 
 保存成功后，在对话中输出完整报告并附上文件路径：
 

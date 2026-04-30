@@ -12,9 +12,53 @@ description: Java 代码审查 — 支持增量/存量审查、15维度评估、
 - **包含 `--mode`** → 快速启动模式（FAST_MODE=true），执行预扫描 → 参数校验 → 必要时切换分支 → 直接启动子agent
 - **不包含 `--mode`** → 交互式模式（FAST_MODE=false），执行预扫描 → 逐步 AskUserQuestion → 启动子agent
 
+### 第一步之后：提取项目路径与快速启动参数
+
+模式判定完成后，必须先从用户输入中提取 `PROJECT_INPUT` 和 `FAST_PARAMS`，再进入预扫描。此步骤只是解析输入，不得调用 AskUserQuestion。
+
+#### 项目路径提取规则
+
+必须按以下优先级提取项目路径，禁止简单取"第一个非 `--` token"：
+
+1. **优先提取 Git URL**：匹配 `https://...`、`http://...`、`git://...`、`git@...` 的完整 token，作为 `PROJECT_INPUT`
+2. 其次提取本地路径 token：
+   - Unix/macOS 绝对路径：`/path/to/project`
+   - Windows 绝对路径：`C:\path\to\project` 或 `C:/path/to/project`
+   - 相对路径：`.`、`..`、`./project`、`../project`、`project/subdir`
+3. 路径可以出现在自然语言中，例如 `帮我审查 /path/to/project --mode fast ...`，不得把 `帮我审查`、`这个项目` 等自然语言词当作路径
+4. 路径包含空格时，应使用用户输入中带引号的完整路径；传给脚本时必须整体加引号
+5. 如果无法提取项目路径，立即输出：
+   ```text
+   ❌ 未识别到项目路径
+
+   请提供本地项目路径或 Git 仓库地址，例如：
+     /cc-code-reviewer:cc-code-reviewer /path/to/project
+     /cc-code-reviewer:cc-code-reviewer https://github.com/org/repo.git --mode fast --type incremental --scope 5
+   ```
+   然后终止，不进入预扫描。
+
+#### 快速启动参数提取规则
+
+当 FAST_MODE=true 时，必须一次性解析完整参数表 `FAST_PARAMS`：
+
+| 参数 | 支持写法 | 说明 |
+|------|----------|------|
+| `--mode` | `--mode fast` 或 `--mode=fast` | 审查模式 |
+| `--type` | `--type incremental` 或 `--type=incremental` | 审查类型 |
+| `--scope` | `--scope 5`、`--scope full`、`--scope=user-service` | 审查范围 |
+| `--branch` | `--branch develop` 或 `--branch=develop` | 可选分支 |
+| `--upload` | `--upload no` 或 `--upload=doc` | 可选上传策略 |
+
+解析要求：
+- 每个 `--key` 的值必须是紧随其后的非 `--` token；`--key=value` 按 `=` 后内容作为值
+- 如果某个参数出现多次，使用最后一次出现的值，并在校验失败/启动提示中展示最终采用值
+- 如果参数名不在 `mode/type/scope/branch/upload` 中，记录为非法参数，不得忽略
+- 如果 `--mode` 后缺值、值为空，或下一项也是 `--` 参数，记录为缺失值
+- 解析出的参数必须保留原始字符串，用于后续完整性校验和错误提示
+
 ### 第二步：预扫描（4 个脚本按顺序执行，此阶段禁止任何用户交互）
 
-从用户输入中提取项目路径（第一个非 `--` 开头的参数，或整个输入路径），然后按以下顺序执行 4 个脚本。
+使用第一步之后提取出的 `PROJECT_INPUT`，然后按以下顺序执行 4 个脚本。
 
 **平台检测**：先判断当前 Claude Code 运行环境。Windows 使用 PowerShell 脚本（`.ps1`），macOS / Linux 使用 Bash 脚本（`.sh`）。不要混用两种 shell 语法。
 
@@ -88,7 +132,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 
 #### 分支 B：快速启动模式（FAST_MODE=true）
 
-校验用户提供的所有参数；如提供 `--branch` 且不同于当前分支，必须先执行分支切换；全部通过后进入第五步。详细校验规则见下方「快速启动模式参数规范」章节。
+使用第一步之后解析出的 `FAST_PARAMS` 校验用户提供的所有参数；如提供 `--branch` 且不同于当前分支，必须先执行分支切换；全部通过后进入第五步。详细校验规则见下方「快速启动模式参数规范」章节。
 
 ### 第五步：调用子 agent 执行代码审查
 
@@ -328,6 +372,29 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 5. `--scope` 为具体模块名时校验模块是否存在于预扫描结果中
 6. `--upload` 不是 `no` 但 LARK_PLUGIN_INSTALLED=false 时，警告并降级为 `仅显示报告`
 
+**完整性校验要求**：
+- 快速启动模式必须保证参数完整性：所有必填项和条件必填项都明确后，才能执行分支切换、增量预处理或启动子 agent
+- 参数校验必须在预扫描摘要输出之后、任何正式审查动作之前执行
+- 校验失败时必须提示用户补齐或修正参数，并立即终止；禁止降级为交互式模式，禁止继续调用 AskUserQuestion
+- 校验失败时必须展示已经识别到的参数值，方便用户确认解析是否正确
+
+**缺少必填参数判定**：
+- 缺 `--mode`：只有在 FAST_MODE=true 的异常输入中可能出现，如 `--mode` 无值，按缺失处理
+- 缺 `--type`：FAST_MODE=true 时必定报错
+- 缺 `--scope`：
+  - `--type incremental` 时必定报错
+  - `--type stock` 且 `PROJECT_TYPE` 为 `maven-multi` / `gradle-multi` 时必定报错
+  - `--type stock` 且 `PROJECT_TYPE` 为 `*-single` 时允许缺省，自动设为 `full`
+- 缺参数值：如 `--mode --type incremental`、`--scope --upload doc`，视为对应参数缺失值
+
+**非法参数值判定**：
+- `--mode` 不在 `fast` / `standard` / `deep` / `security`
+- `--type` 不在 `incremental` / `stock`
+- `--scope` 在 `incremental` 下不是正整数
+- `--scope` 在 `stock` 下既不是 `full`，也不是预扫描 `MODULE:` 行中的有效模块路径列表
+- `--upload` 不在 `no` / `doc` / `bitable` / `both`
+- 出现未知参数名，例如 `--review-mode`、`--types`
+
 ### 快速启动分支处理
 
 参数校验通过后、启动子 agent 前：
@@ -347,15 +414,29 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 ❌ 快速启动参数校验失败
 
 缺少必填参数：
-  - --mode: 审查模式（fast/standard/deep/security）
-  - --scope: ...
+  - --type: 审查类型（incremental/stock）
+  - --scope: 增量审查必须提供提交次数，例如 --scope 5
+
+非法参数值：
+  - --mode turbo: 仅支持 fast/standard/deep/security
+  - --upload feishu: 仅支持 no/doc/bitable/both
+
+已识别参数：
+  - 项目路径：{PROJECT_INPUT}
+  - --mode: {值或未提供}
+  - --type: {值或未提供}
+  - --scope: {值或未提供}
+  - --branch: {值或未提供}
+  - --upload: {值或未提供，默认 no}
 
 正确格式示例：
   帮我审查 /path/to/project --mode fast --type incremental --scope 5
   帮我审查 /path/to/project --mode standard --type stock --scope full --upload doc
 
-请补充缺失参数后重新调用。
+请补充缺失参数或修正非法参数后重新调用。
 ```
+
+如果没有缺失项或没有非法项，对应小节写 `无`，但仍需展示"已识别参数"。
 
 ### 快速启动校验通过后的启动提示
 
