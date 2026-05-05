@@ -82,7 +82,7 @@ lark-cli auth login --recommend
 也可以直接用自然语言触发，例如：`帮我审查 /path/to/project`。
 
 交互流程：
-1. **预扫描**（自动）：项目识别 → 分支探测 → 项目扫描 → lark-cli 检测
+1. **预扫描**（自动）：项目识别 → 分支探测 → 项目/技术栈扫描 → lark-cli 与飞书技能检测
 2. **逐步确认**（使用 AskUserQuestion 工具）：
    - 选择分支（条件步骤，仅多分支时询问）
    - 选择审查类型（增量/存量）
@@ -91,6 +91,8 @@ lark-cli auth login --recommend
    - 选择飞书上传选项（条件步骤，仅飞书上传能力可用时询问）
    - 确认执行计划
 3. 确认后启动子 Agent 执行审查
+
+预扫描摘要会展示项目来源、Git 分支、Java 文件数/代码行数、模块列表、识别到的专项技术栈，以及飞书上传能力。技术栈识别来自 Maven/Gradle 依赖和 Docker/Kubernetes 等配置文件，用于决定子 Agent 是否启用 MyBatis、JPA、Redis、MQ、Security 等专项审查规则。
 
 > **交互规则**：使用 Claude Code 的 AskUserQuestion 工具进行结构化交互，每个步骤单独询问，提供清晰的选项供用户选择。
 
@@ -111,6 +113,8 @@ lark-cli auth login --recommend
 | `--scope` | 条件必填 | 正整数 或 `full` 或模块名 | 增量时为提交次数；存量多模块时为模块名；存量单模块可省略 |
 | `--branch` | 可选 | 分支名 | 审查分支，默认当前分支 |
 | `--upload` | 可选 | `no` / `doc` / `bitable` / `both` | 飞书上传，默认 `no` |
+
+快速启动支持 `--key value` 和 `--key=value` 两种写法。若同一参数重复出现，使用最后一次取值；未知参数、缺少参数值、非法取值会在预扫描摘要后直接报错，并展示已识别参数，且不会降级为交互式模式。
 
 #### 快速启动示例
 
@@ -205,6 +209,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase4-detect-lark
 
 其中 `phase1-detect-project.sh` / `phase1-detect-project.ps1` 会额外输出 `PROJECT_SOURCE=local|git-cache`，供后续分支切换阶段判断是否允许自动切换。本地项目目录若存在未提交改动，会保留当前分支继续审查；Git 缓存目录仍允许自动切换分支。
 
+增量审查在启动子 Agent 前会执行 `phase5-prepare-incremental.sh` / `phase5-prepare-incremental.ps1`，生成最近 N 次提交记录、变更文件列表和 diff 统计。该脚本会处理提交数量超过仓库历史、仓库仅有一次提交等边界情况。
+
+子 Agent 生成完整报告后，会先保存到项目目录下的 `code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。选择飞书上传时也复用这份 Markdown 文件；未上传或上传失败时，会在对话中展示该本地报告路径和完整报告内容。
+
 ## 测试
 
 提交前优先运行完整 Bash 测试套件：
@@ -233,6 +241,8 @@ bash tests/run_all.sh
   ↓                                ↓
 预扫描（4脚本顺序执行）            预扫描（4脚本顺序执行）
   ↓                                ↓
+输出预扫描摘要（含技术栈/lark）      输出预扫描摘要（含技术栈/lark）
+  ↓                                ↓
 交互式确认（6步，严格单步）         参数校验
   ↓                                ↓
 执行计划确认                        直接执行
@@ -240,7 +250,9 @@ bash tests/run_all.sh
              ↓
       代码审查阶段：子 Agent 执行审查
              ↓
-      飞书上传（可选）
+      保存本地 Markdown 报告
+             ↓
+      飞书上传（可选，复用本地报告）
              ↓
       展示审查结果
 ```

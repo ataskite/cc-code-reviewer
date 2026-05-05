@@ -117,10 +117,31 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 - 模块数量：{K} 个
 - 模块列表：{模块1名称}({n1}类), {模块2名称}({n2}类), ...
 
-🧩 技术栈：{解析 `TECH_STACK:` 行，显示检测到的技术栈名称；未识别时显示"未识别专项技术栈，仅启用通用 Java 审查规则"}
+🧩 技术栈扫描：
+- 识别数量：{解析 `TECH_STACK:` 行数量；未识别专项技术栈时显示 0}
+- 启用专项规则：{识别到专项技术栈时显示 "是"，否则显示 "否，仅启用通用 Java 审查规则"}
+
+{识别到 TECH_STACK 且 dependency != none 时展示以下表格，最多展示 12 个}
+| 技术栈 | 识别证据 | 建议维度 | 专项规则 |
+|--------|----------|----------|----------|
+| {技术栈名称} | {dependency，若为 file: 前缀则展示为 文件:{路径}} | {dimensions} | {rules} |
+
+{超过 12 个时追加}
+- 另有 {N} 个技术栈未在摘要表中展示，完整结果已注入子 agent。
+
+{未识别专项技术栈时展示}
+- 未识别专项技术栈，仅启用通用 Java 审查规则。
 
 🔌 lark-cli：{LARK_PLUGIN_INSTALLED=true 时显示 "✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书上传" / false 时显示 "⚠️ 飞书上传不可用：{LARK_PLUGIN_REASON}，报告将保存到本地文件"}
 ```
+
+**技术栈扫描展示规则**：
+- 数据来源：phase3 输出中的 `TECH_STACK:{技术栈}|dependency:{命中依赖或 file:路径}|dimensions:{建议维度}|rules:{专项规则}` 行
+- 必须逐行解析所有 `TECH_STACK:` 行，`PROJECT_SCAN_RESULT` 注入子 agent 时仍保留完整原文
+- `dependency:none` 表示未识别专项技术栈，不展示表格，只展示通用 Java 审查规则提示
+- `dependency:file:` 表示通过配置文件识别，摘要中的识别证据展示为 `文件:{路径}`
+- 识别证据超过 80 字可截断，但不得截断技术栈名称、建议维度和专项规则
+- 摘要表最多展示 12 个技术栈；超过 12 个时追加 `另有 {N} 个技术栈未在摘要表中展示，完整结果已注入子 agent。`
 
 ### 第四步：参数收集（根据模式选择分支）
 
