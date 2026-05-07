@@ -46,6 +46,25 @@ function Assert-BranchName {
   }
 }
 
+function Ensure-WorktreesIgnored {
+  $ExcludeFile = (git -C $ProjectDir rev-parse --git-path info/exclude).Trim()
+  if (-not [System.IO.Path]::IsPathRooted($ExcludeFile)) {
+    $ExcludeFile = Join-Path $ProjectDir $ExcludeFile
+  }
+  $ExcludeDir = Split-Path -Parent $ExcludeFile
+  New-Item -ItemType Directory -Force -Path $ExcludeDir *> $null
+
+  if (-not (Test-Path -LiteralPath $ExcludeFile -PathType Leaf)) {
+    New-Item -ItemType File -Path $ExcludeFile *> $null
+  }
+
+  $ExistingPatterns = Get-Content -LiteralPath $ExcludeFile
+  if ($ExistingPatterns -notcontains ".worktrees/") {
+    Add-Content -LiteralPath $ExcludeFile -Value ""
+    Add-Content -LiteralPath $ExcludeFile -Value ".worktrees/"
+  }
+}
+
 switch ($Mode) {
   "current" {
     Write-Output "FIX_WORKSPACE_MODE=current"
@@ -78,6 +97,7 @@ switch ($Mode) {
     $ProjectName = Split-Path -Leaf $ProjectDir
     $WorktreeRoot = Join-Path $ProjectDir ".worktrees"
     $WorktreePath = Join-Path $WorktreeRoot $RequestedBranch
+    Ensure-WorktreesIgnored
 
     if (Test-Path -LiteralPath $WorktreePath) {
       Write-Error "修复 worktree 已存在: $WorktreePath"
@@ -91,7 +111,12 @@ switch ($Mode) {
 
     New-Item -ItemType Directory -Force -Path $WorktreeRoot *> $null
 
-    git -C $ProjectDir worktree add $WorktreePath -b $RequestedBranch *> $null
+    git -C $ProjectDir show-ref --verify --quiet "refs/heads/$RequestedBranch"
+    if ($LASTEXITCODE -eq 0) {
+      git -C $ProjectDir worktree add $WorktreePath $RequestedBranch *> $null
+    } else {
+      git -C $ProjectDir worktree add $WorktreePath -b $RequestedBranch *> $null
+    }
     if ($LASTEXITCODE -ne 0) {
       exit $LASTEXITCODE
     }

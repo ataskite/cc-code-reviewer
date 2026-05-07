@@ -35,6 +35,7 @@ echo "$WORKTREE_OUTPUT" | grep -q "FIX_BRANCH=fix/worktree-findings"
 echo "$WORKTREE_OUTPUT" | grep -q "FIX_WORKTREE_PROJECT=$(basename "$TMP_DIR")"
 test -e "$TMP_DIR/.worktrees/fix/worktree-findings/.git"
 test "$(git -C "$TMP_DIR/.worktrees/fix/worktree-findings" branch --show-current)" = "fix/worktree-findings"
+test -z "$(git -C "$TMP_DIR" status --porcelain)"
 
 WORKTREE_EXISTS_OUTPUT="$LOG_DIR/phase8-worktree-exists.out"
 if bash "$ROOT_DIR/scripts/phase8-prepare-fix-workspace.sh" "$TMP_DIR" worktree "fix/worktree-findings" >"$WORKTREE_EXISTS_OUTPUT" 2>&1; then
@@ -44,6 +45,15 @@ fi
 grep -q "修复 worktree 已存在" "$WORKTREE_EXISTS_OUTPUT"
 
 git -C "$TMP_DIR" worktree remove -f "$TMP_DIR/.worktrees/fix/worktree-findings"
+
+git -C "$TMP_DIR" branch "fix/existing-worktree"
+EXISTING_WORKTREE_OUTPUT="$(bash "$ROOT_DIR/scripts/phase8-prepare-fix-workspace.sh" "$TMP_DIR" worktree "fix/existing-worktree")"
+echo "$EXISTING_WORKTREE_OUTPUT" | grep -q "FIX_WORKSPACE_MODE=worktree"
+echo "$EXISTING_WORKTREE_OUTPUT" | grep -q "FIX_WORKSPACE_PATH=$TMP_DIR/.worktrees/fix/existing-worktree"
+echo "$EXISTING_WORKTREE_OUTPUT" | grep -q "FIX_BRANCH=fix/existing-worktree"
+test "$(git -C "$TMP_DIR/.worktrees/fix/existing-worktree" branch --show-current)" = "fix/existing-worktree"
+test -z "$(git -C "$TMP_DIR" status --porcelain)"
+git -C "$TMP_DIR" worktree remove -f "$TMP_DIR/.worktrees/fix/existing-worktree"
 
 printf 'dirty\n' >> "$TMP_DIR/A.java"
 

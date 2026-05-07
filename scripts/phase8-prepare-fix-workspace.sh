@@ -38,6 +38,22 @@ validate_branch() {
   fi
 }
 
+ensure_worktrees_ignored() {
+  local exclude_file
+
+  exclude_file="$(git -C "$PROJECT_DIR" rev-parse --git-path info/exclude)"
+  case "$exclude_file" in
+    /*) ;;
+    *) exclude_file="$PROJECT_DIR/$exclude_file" ;;
+  esac
+  mkdir -p "$(dirname "$exclude_file")"
+  touch "$exclude_file"
+
+  if ! grep -qxF ".worktrees/" "$exclude_file"; then
+    printf '\n.worktrees/\n' >> "$exclude_file"
+  fi
+}
+
 case "$MODE" in
   current)
     echo "FIX_WORKSPACE_MODE=current"
@@ -66,6 +82,7 @@ case "$MODE" in
     PROJECT_NAME="$(basename "$PROJECT_DIR")"
     WORKTREE_ROOT="$PROJECT_DIR/.worktrees"
     WORKTREE_PATH="$WORKTREE_ROOT/$REQUESTED_BRANCH"
+    ensure_worktrees_ignored
 
     if [ -e "$WORKTREE_PATH" ]; then
       echo "修复 worktree 已存在: $WORKTREE_PATH" >&2
@@ -79,7 +96,11 @@ case "$MODE" in
 
     mkdir -p "$WORKTREE_ROOT"
 
-    git -C "$PROJECT_DIR" worktree add "$WORKTREE_PATH" -b "$REQUESTED_BRANCH" >/dev/null 2>&1
+    if git -C "$PROJECT_DIR" show-ref --verify --quiet "refs/heads/$REQUESTED_BRANCH"; then
+      git -C "$PROJECT_DIR" worktree add "$WORKTREE_PATH" "$REQUESTED_BRANCH" >/dev/null 2>&1
+    else
+      git -C "$PROJECT_DIR" worktree add "$WORKTREE_PATH" -b "$REQUESTED_BRANCH" >/dev/null 2>&1
+    fi
 
     echo "FIX_WORKSPACE_MODE=worktree"
     echo "FIX_WORKSPACE_PATH=$WORKTREE_PATH"
