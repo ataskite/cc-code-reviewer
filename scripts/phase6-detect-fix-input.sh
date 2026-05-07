@@ -8,6 +8,11 @@ if [ -z "$INPUT" ]; then
   exit 1
 fi
 
+if [[ "$INPUT" == *$'\n'* || "$INPUT" == *$'\r'* ]]; then
+  echo "修复输入不能包含换行符" >&2
+  exit 1
+fi
+
 case "$INPUT" in
   http://*docx/*|https://*docx/*|http://*docs/*|https://*docs/*)
     echo "FIX_INPUT_TYPE=feishu-doc"

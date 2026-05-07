@@ -10,6 +10,11 @@ if ([string]::IsNullOrWhiteSpace($InputSource)) {
   exit 1
 }
 
+if ($InputSource.Contains("`n") -or $InputSource.Contains("`r")) {
+  Write-Error "修复输入不能包含换行符"
+  exit 1
+}
+
 if ($InputSource -match '^https?://.*(docx|docs)/') {
   Write-Output "FIX_INPUT_TYPE=feishu-doc"
   Write-Output "FIX_INPUT_URL=$InputSource"
