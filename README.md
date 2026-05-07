@@ -133,6 +133,8 @@ lark-cli auth login --recommend
 | `--branch` | 可选 | 分支名 | 审查分支，默认当前分支 |
 | `--upload` | 可选 | `no` / `doc` / `bitable` / `both` | 飞书上传，默认 `no` |
 
+快速启动支持 `--key value` 和 `--key=value` 两种写法。若同一参数重复出现，使用最后一次取值；未知参数、缺少参数值、非法取值会在预扫描摘要后直接报错，并展示已识别参数，且不会降级为交互式模式。
+
 > **注意**：快速启动模式下，必填参数缺失会直接报错终止，不会降级为交互式模式。
 
 #### 快速启动示例
@@ -229,6 +231,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase3-project-sca
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase4-detect-lark-plugin.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase5-prepare-incremental.ps1 "C:\path\to\project" 5
 ```
+
+子 Agent 生成完整报告后，会先保存到项目目录下的 `code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。选择飞书上传时也复用这份 Markdown 文件；未上传或上传失败时，会在对话中展示该本地报告路径和完整报告内容。
 
 ## 测试
 
