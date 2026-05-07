@@ -7,7 +7,12 @@ $DefaultRoots = @(
 )
 
 if ($env:SUPERPOWERS_SKILL_ROOTS) {
-  $Roots = $env:SUPERPOWERS_SKILL_ROOTS -split ';|:'
+  # Prefer semicolon lists on Windows so drive letters such as C:\skills are preserved.
+  if ($env:SUPERPOWERS_SKILL_ROOTS.Contains(";")) {
+    $Roots = $env:SUPERPOWERS_SKILL_ROOTS -split ';'
+  } else {
+    $Roots = $env:SUPERPOWERS_SKILL_ROOTS -split ':'
+  }
 } else {
   $Roots = $DefaultRoots
 }
