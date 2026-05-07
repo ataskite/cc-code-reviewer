@@ -11,23 +11,20 @@ REQUIRED_SKILLS=(
 )
 
 missing=()
+IFS=':' read -r -a roots <<<"$ROOTS"
 
 skill_exists() {
   local skill="$1"
   local root
-  local old_ifs="$IFS"
 
-  IFS=':'
-  for root in $ROOTS; do
+  for root in "${roots[@]}"; do
     if [ -z "$root" ]; then
       continue
     fi
     if [ -f "$root/$skill/SKILL.md" ]; then
-      IFS="$old_ifs"
       return 0
     fi
   done
-  IFS="$old_ifs"
   return 1
 }
 

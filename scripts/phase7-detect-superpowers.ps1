@@ -7,7 +7,7 @@ $DefaultRoots = @(
 )
 
 if ($env:SUPERPOWERS_SKILL_ROOTS) {
-  $Roots = $env:SUPERPOWERS_SKILL_ROOTS -split ';'
+  $Roots = $env:SUPERPOWERS_SKILL_ROOTS -split ';|:'
 } else {
   $Roots = $DefaultRoots
 }
