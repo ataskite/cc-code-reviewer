@@ -115,7 +115,7 @@ lark-cli auth login --recommend
 3. **逐步确认**（通过选择按钮交互，共 6 步，其中 3 步为条件步骤）：
    - 步骤 1：选择分支 — *条件步骤，仅多分支 Git 仓库时询问*
    - 步骤 2：选择审查类型（增量/存量）
-   - 步骤 3：选择审查范围 — *条件步骤，增量时选提交次数，多模块存量时选模块，单模块存量自动跳过*
+   - 步骤 3：选择审查范围 — *条件步骤，增量时先展示最近 10 次提交预览再选提交次数，多模块存量时选模块，单模块存量自动跳过*
    - 步骤 4：选择审查模式（fast/standard/deep/security）
    - 步骤 5：飞书上传选项 — *条件步骤，仅 lark-cli 可用时询问*
    - 步骤 6：确认执行计划
@@ -128,6 +128,8 @@ lark-cli auth login --recommend
 ```
 帮我审查 /path/to/project --mode <模式> --type <类型> --scope <范围>
 ```
+
+快速启动支持 `--key value` 和 `--key=value` 两种参数写法。
 
 #### 参数说明
 
@@ -195,6 +197,8 @@ lark-cli auth login --recommend
 - **基础字段（15个）**：问题编号、严重级别、所属维度、技术栈、问题描述、位置、置信度、证据、影响、修复建议、修复状态、审查模式、审查日期、负责人、备注
 - **预留修复字段（3个）**：修复时间、修复分支、修复人（初始留空，供后续修复流程更新）
 
+未上传飞书时，报告保存为 `code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。
+
 ## 脚本说明
 
 所有脚本位于 `scripts/` 目录，可独立运行测试。macOS/Linux 使用 `.sh`，Windows 使用 `.ps1`。
@@ -215,11 +219,14 @@ bash scripts/phase3-project-scan.sh "/path/to/project"
 bash scripts/phase4-detect-lark-plugin.sh
 ```
 
-### 条件执行脚本（2 个，按需调用）
+### 条件执行脚本（3 个，按需调用）
 
 ```bash
 # 分支切换（交互式/快速启动模式下切换目标分支时执行）
 bash scripts/phase2-switch-branch.sh "/path/to/project" "target-branch" "current-branch" "local|git-cache"
+
+# 增量提交预览（交互式增量审查选择提交次数前展示最近 10 次提交）
+bash scripts/phase5-preview-recent-commits.sh "/path/to/project"
 
 # 增量审查准备（增量审查时生成提交记录、变更文件、diff 统计）
 bash scripts/phase5-prepare-incremental.sh "/path/to/project" 5
@@ -233,6 +240,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase2-detect-bran
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase2-switch-branch.ps1 "C:\path\to\project" "target-branch" "current-branch" "local"
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase3-project-scan.ps1 "C:\path\to\project"
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase4-detect-lark-plugin.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase5-preview-recent-commits.ps1 "C:\path\to\project"
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase5-prepare-incremental.ps1 "C:\path\to\project" 5
 ```
 
@@ -249,6 +257,7 @@ bash tests/run_all.sh
 - `phase2-detect-branches.sh` / `phase2-switch-branch.sh`：分支探测、本地干净工作区切换、本地脏工作区保护
 - `phase3-project-scan.sh`：Maven 多模块扫描、包含空格的模块路径、unknown 项目行数统计
 - `phase4-detect-lark-plugin.sh`：lark-cli 可用/不可用输出契约
+- `phase5-preview-recent-commits.sh`：最近 10 次提交的编号预览
 - `phase5-prepare-incremental.sh`：最近 N 次提交覆盖到首提交时的 diff 边界
 - 文档契约：主 skill 参数完整性、报告文件持久化、飞书 Base 字段去重、测试入口说明
 

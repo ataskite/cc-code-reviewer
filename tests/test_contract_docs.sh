@@ -34,10 +34,13 @@ grep -q "| 技术栈 | 识别证据 | 建议维度 | 专项规则 |" "$SKILL_FIL
 grep -q "dependency:file:" "$SKILL_FILE"
 grep -q "另有 {N} 个" "$SKILL_FILE"
 grep -q "完整结果已注入子 agent" "$SKILL_FILE"
+grep -q "phase5-preview-recent-commits" "$SKILL_FILE"
+grep -q "最近提交概览" "$SKILL_FILE"
 
 grep -q "项目/技术栈扫描" "$README_FILE"
 grep -q "快速启动支持.*--key=value" "$README_FILE"
 grep -q "code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$README_FILE"
+grep -q "phase5-preview-recent-commits" "$README_FILE"
 grep -q "phase5-prepare-incremental" "$README_FILE"
 
 grep -q "🧩 技术栈扫描" "$EXAMPLES_FILE"

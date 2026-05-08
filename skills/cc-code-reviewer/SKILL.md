@@ -213,18 +213,33 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 - 存量审查 + 多模块 → 必须执行
 - 存量审查 + 单模块 → 跳过，自动设 REVIEW_SCOPE=全量代码
 
-**增量审查时，必须调用 AskUserQuestion 工具，参数如下**：
+**增量审查时，必须先扫描并展示最近提交，再调用 AskUserQuestion 工具**：
+
+1. 按当前平台执行最近提交预览脚本（仅用于交互式用户决策，不替代后续增量预处理）：
+   - Windows：`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase5-preview-recent-commits.ps1" "$PROJECT_DIR"`
+   - macOS / Linux：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase5-preview-recent-commits.sh" "$PROJECT_DIR"`
+2. 展示脚本输出，格式如下；最多展示最近 10 次提交，不足 10 次时展示实际数量：
+   ```text
+   📜 最近提交概览：
+   # === 最近提交预览 ===
+   1. {short_hash} {commit message}
+   2. {short_hash} {commit message}
+   ...
+   ```
+3. 如果输出为 `（无提交记录）`，告知用户当前 Git 仓库没有可用于增量审查的提交，不进入提交次数选择。
+
+**然后必须调用 AskUserQuestion 工具，参数如下**：
 - question: "审查最近几次提交的变更？"
 - header: "提交次数"
 - options:
   - label: "最近 1 次"
-    description: "仅审查最近一次提交"
+    description: "仅审查列表中的第 1 条提交"
   - label: "最近 3 次"
-    description: "审查最近 3 次提交"
+    description: "审查列表中的第 1-3 条提交"
   - label: "最近 5 次（推荐）"
-    description: "审查最近 5 次提交"
+    description: "审查列表中的第 1-5 条提交"
   - label: "最近 10 次"
-    description: "审查最近 10 次提交"
+    description: "审查列表中的第 1-10 条提交"
 - multiSelect: false
 
 **存量审查 + 多模块时，先展示模块树，再调用 AskUserQuestion 工具**：
