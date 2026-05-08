@@ -9,12 +9,10 @@ description: Java 审查问题修复 - 基于审查报告执行 TDD 修复、验
 ### 第一步：模式判定（最先执行）
 
 检测用户输入中是否包含快速启动参数：
-- `--mode`
-- `--input`
-- `--project`
 - `--severity`
 - `--dimensions`
 - `--issues`
+- `--scope`
 - `--workspace`
 - `--strategy`
 - `--upload`
@@ -24,6 +22,7 @@ description: Java 审查问题修复 - 基于审查报告执行 TDD 修复、验
 
 判定规则：
 - 包含任意快速启动参数时，设置 `FAST_MODE=true`，执行预检测后一次性校验参数，校验通过才允许调用子 agent。
+- 仅出现 `<review-source>`、`--input` 或 `--project` 不触发快速启动；这些参数只用于定位审查报告和待修复项目，后续仍进入交互式 AskUserQuestion 流程。
 - 不包含上述参数时，设置 `FAST_MODE=false`，执行预检测后逐步调用 AskUserQuestion 收集修复计划。
 - 模式判定必须先于任何脚本调用和用户交互。
 
@@ -79,6 +78,7 @@ description: Java 审查问题修复 - 基于审查报告执行 TDD 修复、验
 | `--severity` | `--severity P0,P1` 或 `--severity=P0,P1` | 按严重级别筛选 |
 | `--dimensions` | `--dimensions 安全,性能` 或 `--dimensions=安全,性能` | 按维度筛选 |
 | `--issues` | `--issues P0-1,P1-2` 或 `--issues=P0-1,P1-2` | 按问题编号筛选 |
+| `--scope` | `--scope P0,P1` 或 `--scope=P0,P1` | 严重级别范围别名，等价于 `--severity` |
 | `--workspace` | `--workspace worktree` 或 `--workspace=worktree` | 工作区策略 |
 | `--strategy` | `--strategy standard` 或 `--strategy=standard` | 修复策略 |
 | `--upload` | `--upload no` 或 `--upload=doc` | 输出/上传策略 |
@@ -363,7 +363,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase8-prepare-fix-workspace.sh" "$PROJECT_D
 | `--project` | 待修复本地项目路径 |
 | `--workspace` | `current`、`branch`、`worktree`、`current-branch`、`new-branch` 之一 |
 | `--strategy` | `conservative`、`standard`、`deep` 之一 |
-| 范围参数 | `--severity`、`--dimensions`、`--issues` 中至少一个 |
+| 范围参数 | `--severity`、`--scope`、`--dimensions`、`--issues` 中至少一个 |
 
 可选项：
 - `--branch`：当 `--workspace=branch|worktree|new-branch` 时建议提供；缺省时生成 `codex/fix-review-issues`
@@ -372,7 +372,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase8-prepare-fix-workspace.sh" "$PROJECT_D
 - `--verify`：用户补充验证命令
 
 枚举校验：
-- `--severity` 只允许 `P0`、`P1`、`P2`、`P3`、`待确认`，可逗号分隔。
+- `--severity` 和 `--scope` 只允许 `P0`、`P1`、`P2`、`P3`、`待确认`，可逗号分隔；两者同时出现时，以 `--severity` 为准，并在启动摘要中展示覆盖关系。
 - `--workspace=current-branch` 归一化为 `current`；`--workspace=new-branch` 归一化为 `branch`。
 - `--upload=no` 归一化为 `OUTPUT_TARGET=local-markdown`；`doc` 归一化为 `feishu-doc`；`base` 归一化为 `feishu-base`；`both` 保持组合输出。
 - `--output` 与 `--upload` 同时出现时，以 `--output` 为准，并在启动摘要中展示覆盖关系。

@@ -113,6 +113,12 @@ grep -q "修复策略" "$FIX_SKILL_FILE"
 grep -q "确认执行计划" "$FIX_SKILL_FILE"
 grep -q "禁止降级为交互式模式" "$FIX_SKILL_FILE"
 grep -q "cc-code-reviewer:cc-code-fixer" "$FIX_SKILL_FILE"
+grep -q '`--scope`' "$FIX_SKILL_FILE"
+grep -q "不触发快速启动" "$FIX_SKILL_FILE"
+if grep -q '`--mode`' "$FIX_SKILL_FILE"; then
+  echo "cc-code-fixer must not document --mode as a fast-mode parameter" >&2
+  exit 1
+fi
 
 PLUGIN_VERSION="$(grep -E '"version":' "$PLUGIN_FILE" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
