@@ -35,6 +35,51 @@ claude plugin install cc-code-reviewer
 
 整体流程分为 **Scan 阶段、人工审核阶段、Fix 阶段**。Scan 阶段由 AI 产出候选问题报告；候选问题不会直接进入修复流程，必须先经过人工审核与筛选，确认误报、补充企业内部上下文、选择修复范围，并形成真正要修复的 **Fix TODO List**。Fix 阶段只消费这份已确认清单，通过受控工作区、Superpowers TDD 流程和验证步骤完成修复，并输出修复报告或回写飞书。
 
+### 阶段 2：修复阶段输入与用法
+
+> 当前状态：修复阶段的 `cc-code-fixer` 入口已有设计文档（`docs/superpowers/specs/2026-05-07-cc-code-fixer-design.md`），但本仓库当前尚未提供 `skills/cc-code-fixer/SKILL.md` 和 `agents/cc-code-fixer.md`，因此还不能作为插件命令直接使用。本节记录目标用法和输入契约，避免把 Scan 报告误当成可直接自动修复的指令。
+
+修复阶段的输入不是原始代码仓库，也不是未经筛选的完整审查报告，而是人工确认后的 **Fix TODO List**。推荐流程：
+
+1. 先运行 Scan 阶段，得到本地 Markdown 报告、飞书云文档或飞书多维表格。
+2. 审查者人工筛选问题，确认误报、补充上下文、选择要修复的问题，并形成 Fix TODO List。
+3. Fix 阶段只处理 Fix TODO List 中明确选中的问题，默认不修复 `待确认`、低置信度或未被选中的问题。
+4. 修复执行必须先确认修复范围和工作区策略，再按 TDD 与验证流程修改代码。
+
+Fix TODO List 建议至少包含以下字段：
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `问题编号` | 来自审查报告的问题 ID | `P0-1` |
+| `严重级别` | P0/P1/P2/P3/待确认 | `P1` |
+| `所属维度` | 审查维度 | `安全` |
+| `位置` | 文件与行号，或代表性位置 | `src/main/java/.../UserMapper.xml:42` |
+| `置信度` | 高/中/低 | `高` |
+| `证据` | 可复核的问题证据 | `${name}` 直接拼接 SQL |
+| `影响` | 不修复的风险 | 可能导致 SQL 注入 |
+| `修复建议` | 期望修复方向 | 改为 `#{name}` 并补充参数校验 |
+| `修复状态` | 待修复/已忽略/不适用/已修复 | `待修复` |
+| `备注` | 人工补充上下文或约束 | 保持接口兼容，不改返回结构 |
+
+目标入口设计如下（当前尚未实现）：
+
+```text
+/cc-code-reviewer:cc-code-fixer <review-source> --project /path/to/project
+```
+
+`<review-source>` 支持三类输入：本地 Markdown 审查报告、Scan 阶段生成的飞书云文档 URL、Scan 阶段生成的飞书多维表格 URL 或 token。快速模式目标参数如下：
+
+```text
+/cc-code-reviewer:cc-code-fixer code-review-report-demo-20260508-103000.md \
+  --project /path/to/project \
+  --severity P0,P1 \
+  --workspace worktree \
+  --strategy standard \
+  --upload no
+```
+
+修复阶段输出为 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`，并可选回写飞书字段：`修复状态`、`修复时间`、`修复分支`、`修复人`、`备注`。
+
 ## 安装
 
 ### 前置条件
