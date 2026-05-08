@@ -9,6 +9,7 @@ README_FILE="$ROOT_DIR/README.md"
 EXAMPLES_FILE="$ROOT_DIR/references/examples.md"
 FIX_WORKFLOW_FILE="$ROOT_DIR/references/fix-workflow.md"
 FIX_SKILL_FILE="$ROOT_DIR/skills/cc-code-fixer/SKILL.md"
+FIX_AGENT_FILE="$ROOT_DIR/agents/cc-code-fixer.md"
 FIX_REPORT_FILE="$ROOT_DIR/references/fix-report-format.md"
 FIX_FEISHU_FILE="$ROOT_DIR/references/fix-feishu-integration.md"
 FIX_EXAMPLES_FILE="$ROOT_DIR/references/fix-examples.md"
@@ -119,6 +120,17 @@ if grep -q '`--mode`' "$FIX_SKILL_FILE"; then
   echo "cc-code-fixer must not document --mode as a fast-mode parameter" >&2
   exit 1
 fi
+
+test -f "$FIX_AGENT_FILE"
+grep -q "name: cc-code-fixer" "$FIX_AGENT_FILE"
+grep -q "修复任务参数" "$FIX_AGENT_FILE"
+grep -q "不得再次询问用户" "$FIX_AGENT_FILE"
+grep -q "test-driven-development" "$FIX_AGENT_FILE"
+grep -q "先写失败测试" "$FIX_AGENT_FILE"
+grep -q "verification-before-completion" "$FIX_AGENT_FILE"
+grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$FIX_AGENT_FILE"
+grep -q "修复状态" "$FIX_AGENT_FILE"
+grep -q "不得修复注入范围之外的问题" "$FIX_AGENT_FILE"
 
 PLUGIN_VERSION="$(grep -E '"version":' "$PLUGIN_FILE" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
