@@ -45,6 +45,10 @@ grep -q "项目/技术栈扫描" "$README_FILE"
 grep -q "快速启动支持.*--key=value" "$README_FILE"
 grep -q "code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$README_FILE"
 grep -q "phase5-prepare-incremental" "$README_FILE"
+grep -q "/cc-code-reviewer:cc-code-fixer" "$README_FILE"
+grep -q "修复阶段" "$README_FILE"
+grep -q "worktree" "$README_FILE"
+grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$README_FILE"
 
 grep -q "🧩 技术栈扫描" "$EXAMPLES_FILE"
 grep -q "飞书上传不可用" "$EXAMPLES_FILE"
@@ -148,4 +152,9 @@ fi
 
 PLUGIN_VERSION="$(grep -E '"version":' "$PLUGIN_FILE" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
+MARKETPLACE_PLUGIN_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | sed -n '2p' | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_VERSION" ]
+[ "$PLUGIN_VERSION" = "$MARKETPLACE_PLUGIN_VERSION" ]
+[ "$PLUGIN_VERSION" = "1.1.0" ]
+grep -q "code-fixer" "$PLUGIN_FILE"
+grep -q "fix" "$MARKETPLACE_FILE"

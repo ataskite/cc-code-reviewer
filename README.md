@@ -153,6 +153,24 @@ lark-cli auth login --recommend
 帮我审查 https://github.com/org/repo.git --mode standard --type incremental --scope 3 --branch develop --upload bitable
 ```
 
+## 修复阶段
+
+扫描阶段生成本地 Markdown、飞书云文档或飞书多维表格后，可以使用 `cc-code-fixer` 进入修复阶段。
+
+```text
+/cc-code-reviewer:cc-code-fixer /path/to/code-review-report-demo.md --project /path/to/project
+```
+
+修复阶段会先解析审查报告，展示可修复问题摘要，再引导你选择工作区策略、修复范围、修复维度、修复策略和输出目标。默认推荐新建 isolated worktree，避免污染当前分支。
+
+快速启动示例：
+
+```text
+/cc-code-reviewer:cc-code-fixer /path/to/report.md --project /path/to/project --scope P0,P1 --workspace worktree --strategy standard --upload no --branch fix/review-findings
+```
+
+修复完成后会生成 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。如果配置飞书输出，可按需创建修复报告云文档，或更新原飞书多维表格中的修复状态、修复时间、修复分支和备注。
+
 ---
 
 ## 审查模式
