@@ -26,8 +26,45 @@ claude plugin install cc-code-reviewer
 - **4 种审查模式**：fast（快速扫雷）、standard（日常推荐）、deep（大版本上线）、security（安全专项）
 - **2 种审查类型**：增量审查（最近 N 次提交）、存量审查（全量/指定模块）
 - **2 种使用模式**：交互式（逐步引导）、快速启动（自动化/CI/CD）
+- **报告驱动修复**：基于本地 Markdown、飞书云文档或飞书多维表格中的审查结果执行修复
 - **飞书集成**：审查报告上传云文档、问题清单录入多维表格（可选，依赖 lark-cli）
 - **跨平台脚本**：macOS/Linux 使用 Bash，Windows 使用 PowerShell，无 Python 依赖
+
+## 架构 Overview
+
+```mermaid
+flowchart TD
+    User["用户 / Claude Code 会话"]
+    ReviewSkill["审查 Skill<br/>skills/cc-code-reviewer/SKILL.md"]
+    FixSkill["修复 Skill<br/>skills/cc-code-fixer/SKILL.md"]
+    ReviewAgent["审查 Agent<br/>agents/cc-code-reviewer.md"]
+    FixAgent["修复 Agent<br/>agents/cc-code-fixer.md"]
+    Reports["审查报告<br/>Markdown / 飞书云文档 / 飞书多维表格"]
+    FixReports["修复报告<br/>Markdown / 飞书云文档 / 多维表格回写"]
+    Lark["lark-cli<br/>lark-doc / lark-base"]
+    Superpowers["Superpowers 流程<br/>brainstorming / TDD / verification"]
+
+    subgraph ScanPhase["Scan 阶段：发现问题"]
+      ReviewSkill --> ScanScripts["phase1-5 脚本<br/>项目识别 / 分支 / 技术栈 / lark / 增量准备"]
+      ScanScripts --> ReviewAgent
+      ReviewAgent --> Reports
+    end
+
+    subgraph FixPhase["Fix 阶段：确认计划并修复"]
+      FixSkill --> FixScripts["phase6-8 脚本<br/>输入解析 / Superpowers 检测 / 工作区准备"]
+      Reports --> FixSkill
+      FixScripts --> FixAgent
+      Superpowers --> FixAgent
+      FixAgent --> FixReports
+    end
+
+    User --> ReviewSkill
+    User --> FixSkill
+    Reports -.可选上传/读取.-> Lark
+    FixReports -.可选创建/回写.-> Lark
+```
+
+整体是 **skill 编排、agent 执行、脚本做环境探测** 的结构。Skill 负责模式判定、预检、用户确认和参数注入；Agent 负责真正的审查或修复，不再反问用户；脚本保持可独立测试，Bash 与 PowerShell 镜像维护。Scan 阶段产出的问题报告是 Fix 阶段的输入，Fix 阶段再通过 isolated worktree / fix 分支 / 当前工作区执行修复，并生成修复报告。
 
 ## 安装
 
@@ -272,29 +309,60 @@ bash tests/run_all.sh
 
 ## 工作流程
 
+### Scan 阶段
+
+```mermaid
+flowchart TD
+    Start["用户触发 cc-code-reviewer"]
+    Mode["模式判定<br/>检测 --mode 参数"]
+    Prescan["预扫描<br/>phase1-4 顺序执行"]
+    Summary["输出预扫描摘要"]
+    Interactive["交互式确认<br/>AskUserQuestion 6 步"]
+    Fast["快速启动参数校验"]
+    Incremental["增量准备<br/>phase5 按需执行"]
+    Agent["cc-code-reviewer Agent<br/>执行 15 维审查"]
+    LocalReport["保存本地 Markdown 报告"]
+    Upload["飞书上传<br/>可选"]
+    Done["展示审查结果"]
+
+    Start --> Mode
+    Mode --> Prescan
+    Prescan --> Summary
+    Summary -->|"无 --mode"| Interactive
+    Summary -->|"有 --mode"| Fast
+    Interactive --> Incremental
+    Fast --> Incremental
+    Incremental --> Agent
+    Agent --> LocalReport
+    LocalReport --> Upload
+    Upload --> Done
+    LocalReport --> Done
 ```
-用户触发
-  ↓
-模式判定（检测 --mode 参数）
-  ├── 无 --mode → 交互式模式
-  └── 有 --mode → 快速启动模式
-  ↓
-预扫描（4 脚本顺序执行）
-  ↓
-输出预扫描摘要
-  ↓                   ↓
-交互式确认（6步）    参数校验
-  ↓                   ↓
-确认执行计划          校验通过直接执行
-  └────────┬──────────┘
-           ↓
-    子 Agent 执行代码审查
-           ↓
-    保存本地 Markdown 报告
-           ↓
-    飞书上传（可选）
-           ↓
-    展示审查结果
+
+### Fix 阶段
+
+```mermaid
+flowchart TD
+    Start["用户触发 cc-code-fixer"]
+    Input["解析修复输入<br/>phase6"]
+    Project["项目与能力探测<br/>phase1-4 + phase7"]
+    Plan["确认修复计划<br/>工作区 / 范围 / 维度 / 策略 / 输出"]
+    Workspace["准备修复工作区<br/>phase8"]
+    Brainstorm["注入审查报告<br/>进入 brainstorming"]
+    TDD["按 test-driven-development 修复"]
+    Verify["verification-before-completion"]
+    Report["生成 fix-report Markdown"]
+    Lark["创建云文档或回写多维表格<br/>可选"]
+
+    Start --> Input
+    Input --> Project
+    Project --> Plan
+    Plan --> Workspace
+    Workspace --> Brainstorm
+    Brainstorm --> TDD
+    TDD --> Verify
+    Verify --> Report
+    Report --> Lark
 ```
 
 ## 开发与维护
