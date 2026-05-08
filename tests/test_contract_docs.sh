@@ -106,9 +106,13 @@ grep -q "docs +fetch --api-version v2 --doc" "$FIX_FEISHU_FILE"
 grep -q "docs +create" "$FIX_FEISHU_FILE"
 grep -q -- "--api-version v2" "$FIX_FEISHU_FILE"
 grep -q -- "--doc-format markdown" "$FIX_FEISHU_FILE"
-grep -q -- '--content "$(cat fix-report' "$FIX_FEISHU_FILE"
+grep -q -- "--content @fix-report" "$FIX_FEISHU_FILE"
 if grep -q "docs +fetch --url" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"; then
   echo "Task 4 fixer docs must use docs +fetch --api-version v2 --doc, not --url" >&2
+  exit 1
+fi
+if grep -A6 "docs +create" "$FIX_FEISHU_FILE" | grep -q -- "--title"; then
+  echo "Task 4 fixer docs must not use unsupported docs +create --title" >&2
   exit 1
 fi
 if grep -q -- "--markdown @" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"; then

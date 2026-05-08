@@ -129,7 +129,7 @@ lark-cli base +record-upsert \
 如果用户要求输出到云文档：
 
 1. 优先创建新的修复报告云文档，不覆盖原始审查报告。
-2. 标题使用 `Java 代码修复报告 - {PROJECT_NAME} - {YYYY-MM-DD}`。
+2. 本地 Markdown 修复报告的一级标题使用 `Java 代码修复报告 - {PROJECT_NAME} - {YYYY-MM-DD}`。
 3. 上传内容必须来自本地 Markdown 修复报告文件。
 
 示例：
@@ -137,9 +137,8 @@ lark-cli base +record-upsert \
 ```bash
 cd "$PROJECT_DIR" && lark-cli docs +create \
   --api-version v2 \
-  --title "Java 代码修复报告 - demo - 2026-05-07" \
   --doc-format markdown \
-  --content "$(cat fix-report-demo-20260507-153000.md)"
+  --content @fix-report-demo-20260507-153000.md
 ```
 
 ---
