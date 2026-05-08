@@ -49,25 +49,57 @@ grep -q "飞书上传不可用" "$EXAMPLES_FILE"
 grep -q "已识别参数" "$EXAMPLES_FILE"
 grep -q "报告已保存到" "$EXAMPLES_FILE"
 
-grep -q "## Fix Input Normalization" "$FIX_WORKFLOW_FILE"
+grep -qx "# Fix Workflow" "$FIX_WORKFLOW_FILE"
+grep -qx "## Fix Input Normalization" "$FIX_WORKFLOW_FILE"
+grep -qx "## Preflight Sequence" "$FIX_WORKFLOW_FILE"
+grep -qx "## Superpowers Flow" "$FIX_WORKFLOW_FILE"
+grep -qx "## Degraded Mode" "$FIX_WORKFLOW_FILE"
+grep -qx "## Fix Scope Rules" "$FIX_WORKFLOW_FILE"
+grep -qx "## Workspace Rules" "$FIX_WORKFLOW_FILE"
 grep -q "brainstorming" "$FIX_WORKFLOW_FILE"
 grep -q "test-driven-development" "$FIX_WORKFLOW_FILE"
 grep -q "verification-before-completion" "$FIX_WORKFLOW_FILE"
-grep -q "degraded mode" "$FIX_WORKFLOW_FILE"
+grep -q "无已归一化问题上下文时必须停止修复" "$FIX_WORKFLOW_FILE" "$FIX_FEISHU_FILE"
 
+grep -qx "# 修复报告格式规范" "$FIX_REPORT_FILE"
 grep -q "## 修复配置快照" "$FIX_REPORT_FILE"
+grep -q "## 修复输入摘要" "$FIX_REPORT_FILE"
 grep -q "## 已修复问题" "$FIX_REPORT_FILE"
+grep -q "## 部分修复问题" "$FIX_REPORT_FILE"
 grep -q "## 未修复问题" "$FIX_REPORT_FILE"
+grep -q "## 测试变更" "$FIX_REPORT_FILE"
 grep -q "## 验证命令与结果" "$FIX_REPORT_FILE"
+grep -q "## 代码变更摘要" "$FIX_REPORT_FILE"
+grep -q "## 飞书回写结果" "$FIX_REPORT_FILE"
+grep -q "## 后续建议" "$FIX_REPORT_FILE"
 
+grep -qx "# Fix Feishu Integration" "$FIX_FEISHU_FILE"
+grep -qx "## 读取飞书云文档" "$FIX_FEISHU_FILE"
+grep -qx "## 读取飞书多维表格" "$FIX_FEISHU_FILE"
+grep -qx "## 更新飞书多维表格" "$FIX_FEISHU_FILE"
+grep -qx "## 创建修复报告云文档" "$FIX_FEISHU_FILE"
+grep -qx "## 失败降级" "$FIX_FEISHU_FILE"
 grep -q "修复状态" "$FIX_FEISHU_FILE"
 grep -q "修复时间" "$FIX_FEISHU_FILE"
 grep -q "修复分支" "$FIX_FEISHU_FILE"
+grep -q "备注" "$FIX_FEISHU_FILE"
 grep -q "lark-cli base" "$FIX_FEISHU_FILE"
+grep -q "docs +fetch --api-version v2 --doc" "$FIX_FEISHU_FILE"
+if grep -q "docs +fetch --url" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"; then
+  echo "Task 4 fixer docs must use docs +fetch --api-version v2 --doc, not --url" >&2
+  exit 1
+fi
+if grep -q "+record-update" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"; then
+  echo "Task 4 fixer docs must use base +record-upsert --record-id, not +record-update" >&2
+  exit 1
+fi
+grep -q "+record-upsert" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"
 
-grep -q "本地 Markdown 报告" "$FIX_EXAMPLES_FILE"
-grep -q "飞书多维表格" "$FIX_EXAMPLES_FILE"
-grep -q "快速启动参数校验失败" "$FIX_EXAMPLES_FILE"
+grep -qx "# Fix Examples" "$FIX_EXAMPLES_FILE"
+grep -qx "## 本地 Markdown 报告" "$FIX_EXAMPLES_FILE"
+grep -qx "## 飞书多维表格" "$FIX_EXAMPLES_FILE"
+grep -qx "## 快速启动" "$FIX_EXAMPLES_FILE"
+grep -qx "## 快速启动参数校验失败" "$FIX_EXAMPLES_FILE"
 
 PLUGIN_VERSION="$(grep -E '"version":' "$PLUGIN_FILE" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
