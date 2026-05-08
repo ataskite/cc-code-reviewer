@@ -5,7 +5,7 @@
 报告文件名建议使用：
 
 ```text
-code-fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
+fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
 ```
 
 ---

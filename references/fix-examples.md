@@ -41,7 +41,7 @@
 - 已修复：4 个
 - 未修复：0 个
 - 修复分支：codex/fix-review-issues
-- 本地报告：/path/to/project/code-fix-report-demo-20260507-153000.md
+- 本地报告：/path/to/project/fix-report-demo-20260507-153000.md
 - 验证：mvn test 通过；git diff --check 通过
 ```
 
@@ -80,7 +80,7 @@
 - 飞书多维表格：已更新 2 条记录
 - 修复状态：已修复
 - 修复分支：codex/fix-p0-issues
-- 本地报告：/path/to/project/code-fix-report-demo-20260507-160000.md
+- 本地报告：/path/to/project/fix-report-demo-20260507-160000.md
 ```
 
 如果飞书更新失败：
@@ -99,7 +99,7 @@ lark-cli base +record-upsert \
   --base-token "BASE123" \
   --table-id "tbl456" \
   --record-id "rec789" \
-  --json '{"fields":{"修复状态":"已修复","修复时间":"2026-05-07","修复分支":"codex/fix-p0-issues","备注":"本地报告: code-fix-report-demo-20260507-160000.md；验证: mvn test 通过"}}'
+  --json '{"fields":{"修复状态":"已修复","修复时间":"2026-05-07","修复分支":"codex/fix-p0-issues","备注":"本地报告: fix-report-demo-20260507-160000.md；验证: mvn test 通过"}}'
 ```
 
 ---

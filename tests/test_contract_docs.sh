@@ -131,6 +131,18 @@ grep -q "verification-before-completion" "$FIX_AGENT_FILE"
 grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$FIX_AGENT_FILE"
 grep -q "修复状态" "$FIX_AGENT_FILE"
 grep -q "不得修复注入范围之外的问题" "$FIX_AGENT_FILE"
+grep -q "conservative.*standard.*deep" "$FIX_AGENT_FILE"
+grep -q "FIX_BRANCH" "$FIX_AGENT_FILE"
+grep -q "OUTPUT_TARGET" "$FIX_AGENT_FILE"
+grep -q "已修复" "$FIX_AGENT_FILE"
+grep -q "部分修复" "$FIX_AGENT_FILE"
+grep -q "待人工确认" "$FIX_AGENT_FILE"
+grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$FIX_REPORT_FILE"
+grep -q "fix-report-" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"
+if grep -qE "minimal|with-tests|TARGET_BRANCH|OUTPUT_OPTION|fixed|partially fixed|not fixed|not applicable|needs human confirmation|code-fix-report" "$FIX_AGENT_FILE" "$FIX_REPORT_FILE" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"; then
+  echo "cc-code-fixer contracts must use unified strategy names, injected parameter names, Chinese statuses, and fix-report filenames" >&2
+  exit 1
+fi
 
 PLUGIN_VERSION="$(grep -E '"version":' "$PLUGIN_FILE" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"

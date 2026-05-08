@@ -110,7 +110,7 @@ lark-cli base +record-upsert \
   --base-token "{BASE_TOKEN}" \
   --table-id "{TABLE_ID}" \
   --record-id "{RECORD_ID}" \
-  --json '{"fields":{"修复状态":"已修复","修复时间":"2026-05-07","修复分支":"codex/fix-auth","备注":"本地报告: code-fix-report-demo-20260507-153000.md；验证: mvn test 通过"}}'
+  --json '{"fields":{"修复状态":"已修复","修复时间":"2026-05-07","修复分支":"codex/fix-auth","备注":"本地报告: fix-report-demo-20260507-153000.md；验证: mvn test 通过"}}'
 ```
 
 更新前必须确认 `RECORD_ID` 来自读取结果。无法匹配记录时，只在本地报告中记录，不创建新记录。
@@ -132,7 +132,7 @@ lark-cli base +record-upsert \
 ```bash
 cd "$PROJECT_DIR" && lark-cli docs +create \
   --title "Java 代码修复报告 - demo - 2026-05-07" \
-  --markdown @code-fix-report-demo-20260507-153000.md
+  --markdown @fix-report-demo-20260507-153000.md
 ```
 
 ---
