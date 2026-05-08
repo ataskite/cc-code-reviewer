@@ -29,6 +29,12 @@ claude plugin install cc-code-reviewer
 - **飞书集成**：审查报告上传云文档、问题清单录入多维表格（可选，依赖 lark-cli）
 - **跨平台脚本**：macOS/Linux 使用 Bash，Windows 使用 PowerShell，无 Python 依赖
 
+## 架构总览
+
+![cc-code-reviewer 架构总览](docs/assets/architecture-overview.png)
+
+整体流程分为 **Scan 阶段、人工审核阶段、Fix 阶段**。Scan 阶段由 AI 产出候选问题报告；候选问题不会直接进入修复流程，必须先经过人工审核与筛选，确认误报、补充企业内部上下文、选择修复范围，并形成真正要修复的 **Fix TODO List**。Fix 阶段只消费这份已确认清单，通过受控工作区、Superpowers TDD 流程和验证步骤完成修复，并输出修复报告或回写飞书。
+
 ## 安装
 
 ### 前置条件
