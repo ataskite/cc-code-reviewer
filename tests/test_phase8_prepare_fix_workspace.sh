@@ -109,3 +109,43 @@ if bash "$ROOT_DIR/scripts/phase8-prepare-fix-workspace.sh" "$TMP_DIR" unknown "
   exit 1
 fi
 grep -q "未知工作区策略" "$UNKNOWN_MODE_OUTPUT"
+
+EXISTING_MUTATION_DIR="$LOG_DIR/existing-mutation"
+mkdir "$EXISTING_MUTATION_DIR"
+git -C "$EXISTING_MUTATION_DIR" init -q
+git -C "$EXISTING_MUTATION_DIR" config user.email test@example.com
+git -C "$EXISTING_MUTATION_DIR" config user.name test
+printf 'one\n' > "$EXISTING_MUTATION_DIR/A.java"
+git -C "$EXISTING_MUTATION_DIR" add A.java
+git -C "$EXISTING_MUTATION_DIR" commit -q -m "first"
+mkdir -p "$EXISTING_MUTATION_DIR/.worktrees/fix/existing"
+EXISTING_MUTATION_EXCLUDE="$(git -C "$EXISTING_MUTATION_DIR" rev-parse --git-path info/exclude)"
+EXISTING_MUTATION_BEFORE="$(cat "$EXISTING_MUTATION_EXCLUDE" 2>/dev/null || true)"
+EXISTING_MUTATION_OUTPUT="$LOG_DIR/phase8-existing-mutation.out"
+if bash "$ROOT_DIR/scripts/phase8-prepare-fix-workspace.sh" "$EXISTING_MUTATION_DIR" worktree "fix/existing" >"$EXISTING_MUTATION_OUTPUT" 2>&1; then
+  echo "phase8 should fail when pre-existing worktree path exists" >&2
+  exit 1
+fi
+grep -q "修复 worktree 已存在" "$EXISTING_MUTATION_OUTPUT"
+EXISTING_MUTATION_AFTER="$(cat "$EXISTING_MUTATION_EXCLUDE" 2>/dev/null || true)"
+test "$EXISTING_MUTATION_AFTER" = "$EXISTING_MUTATION_BEFORE"
+
+DIRTY_MUTATION_DIR="$LOG_DIR/dirty-mutation"
+mkdir "$DIRTY_MUTATION_DIR"
+git -C "$DIRTY_MUTATION_DIR" init -q
+git -C "$DIRTY_MUTATION_DIR" config user.email test@example.com
+git -C "$DIRTY_MUTATION_DIR" config user.name test
+printf 'one\n' > "$DIRTY_MUTATION_DIR/A.java"
+git -C "$DIRTY_MUTATION_DIR" add A.java
+git -C "$DIRTY_MUTATION_DIR" commit -q -m "first"
+printf 'dirty\n' >> "$DIRTY_MUTATION_DIR/A.java"
+DIRTY_MUTATION_EXCLUDE="$(git -C "$DIRTY_MUTATION_DIR" rev-parse --git-path info/exclude)"
+DIRTY_MUTATION_BEFORE="$(cat "$DIRTY_MUTATION_EXCLUDE" 2>/dev/null || true)"
+DIRTY_MUTATION_OUTPUT="$LOG_DIR/phase8-dirty-mutation.out"
+if bash "$ROOT_DIR/scripts/phase8-prepare-fix-workspace.sh" "$DIRTY_MUTATION_DIR" worktree "fix/dirty" >"$DIRTY_MUTATION_OUTPUT" 2>&1; then
+  echo "phase8 should fail on dirty worktree strategy before mutating exclude" >&2
+  exit 1
+fi
+grep -q "存在未提交改动" "$DIRTY_MUTATION_OUTPUT"
+DIRTY_MUTATION_AFTER="$(cat "$DIRTY_MUTATION_EXCLUDE" 2>/dev/null || true)"
+test "$DIRTY_MUTATION_AFTER" = "$DIRTY_MUTATION_BEFORE"

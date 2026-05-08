@@ -48,8 +48,13 @@ lark-cli docs +fetch --api-version v2 --doc "{DOC_URL}" --doc-format markdown
 |------|------|
 | 问题编号 | 匹配修复项 |
 | 严重级别 | 确定默认修复顺序 |
+| 所属维度 | 支持按维度筛选和修复分组 |
+| 技术栈 | 保留专项修复上下文，可为空 |
 | 位置 | 定位代码 |
 | 问题描述 | 理解问题 |
+| 置信度 | 判断是否可自动修复或需人工确认 |
+| 证据 | 保留审查依据，支持修复验证 |
+| 影响 | 判断风险和修复优先级 |
 | 修复建议 | 生成修复计划 |
 | 修复状态 | 过滤待修复记录并写回结果 |
 | 修复时间 | 写回完成时间 |
@@ -131,8 +136,10 @@ lark-cli base +record-upsert \
 
 ```bash
 cd "$PROJECT_DIR" && lark-cli docs +create \
+  --api-version v2 \
   --title "Java 代码修复报告 - demo - 2026-05-07" \
-  --markdown @fix-report-demo-20260507-153000.md
+  --doc-format markdown \
+  --content "$(cat fix-report-demo-20260507-153000.md)"
 ```
 
 ---

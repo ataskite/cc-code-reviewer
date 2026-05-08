@@ -82,7 +82,6 @@ case "$MODE" in
     PROJECT_NAME="$(basename "$PROJECT_DIR")"
     WORKTREE_ROOT="$PROJECT_DIR/.worktrees"
     WORKTREE_PATH="$WORKTREE_ROOT/$REQUESTED_BRANCH"
-    ensure_worktrees_ignored
 
     if [ -e "$WORKTREE_PATH" ]; then
       echo "修复 worktree 已存在: $WORKTREE_PATH" >&2
@@ -94,6 +93,7 @@ case "$MODE" in
       exit 1
     fi
 
+    ensure_worktrees_ignored
     mkdir -p "$WORKTREE_ROOT"
 
     if git -C "$PROJECT_DIR" show-ref --verify --quiet "refs/heads/$REQUESTED_BRANCH"; then

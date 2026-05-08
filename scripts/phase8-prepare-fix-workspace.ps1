@@ -97,7 +97,6 @@ switch ($Mode) {
     $ProjectName = Split-Path -Leaf $ProjectDir
     $WorktreeRoot = Join-Path $ProjectDir ".worktrees"
     $WorktreePath = Join-Path $WorktreeRoot $RequestedBranch
-    Ensure-WorktreesIgnored
 
     if (Test-Path -LiteralPath $WorktreePath) {
       Write-Error "修复 worktree 已存在: $WorktreePath"
@@ -109,6 +108,7 @@ switch ($Mode) {
       exit 1
     }
 
+    Ensure-WorktreesIgnored
     New-Item -ItemType Directory -Force -Path $WorktreeRoot *> $null
 
     git -C $ProjectDir show-ref --verify --quiet "refs/heads/$RequestedBranch"

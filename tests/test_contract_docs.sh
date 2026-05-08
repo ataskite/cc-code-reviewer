@@ -96,11 +96,23 @@ grep -qx "## 失败降级" "$FIX_FEISHU_FILE"
 grep -q "修复状态" "$FIX_FEISHU_FILE"
 grep -q "修复时间" "$FIX_FEISHU_FILE"
 grep -q "修复分支" "$FIX_FEISHU_FILE"
+grep -q "所属维度" "$FIX_FEISHU_FILE"
+grep -q "置信度" "$FIX_FEISHU_FILE"
+grep -q "证据" "$FIX_FEISHU_FILE"
+grep -q "影响" "$FIX_FEISHU_FILE"
 grep -q "备注" "$FIX_FEISHU_FILE"
 grep -q "lark-cli base" "$FIX_FEISHU_FILE"
 grep -q "docs +fetch --api-version v2 --doc" "$FIX_FEISHU_FILE"
+grep -q "docs +create" "$FIX_FEISHU_FILE"
+grep -q -- "--api-version v2" "$FIX_FEISHU_FILE"
+grep -q -- "--doc-format markdown" "$FIX_FEISHU_FILE"
+grep -q -- '--content "$(cat fix-report' "$FIX_FEISHU_FILE"
 if grep -q "docs +fetch --url" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"; then
   echo "Task 4 fixer docs must use docs +fetch --api-version v2 --doc, not --url" >&2
+  exit 1
+fi
+if grep -q -- "--markdown @" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"; then
+  echo "Task 4 fixer docs must create docs with docs +create --api-version v2 --doc-format markdown --content" >&2
   exit 1
 fi
 if grep -q "+record-update" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"; then
