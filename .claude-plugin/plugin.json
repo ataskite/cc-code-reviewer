@@ -7,5 +7,5 @@
   },
   "repository": "https://github.com/ataskite/cc-code-reviewer",
   "license": "MIT",
-  "keywords": ["java", "code-review", "security", "sonar"]
+  "keywords": ["java", "code-review", "code-fix", "security", "sonar"]
 }

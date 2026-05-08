@@ -49,6 +49,14 @@ grep -q "/cc-code-reviewer:cc-code-fixer" "$README_FILE"
 grep -q "修复阶段" "$README_FILE"
 grep -q "worktree" "$README_FILE"
 grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$README_FILE"
+grep -q -- "--scope P0,P1" "$README_FILE"
+grep -q -- "--workspace worktree" "$README_FILE"
+grep -q -- "--strategy standard" "$README_FILE"
+grep -q -- "--upload no" "$README_FILE"
+if grep -q "/cc-code-reviewer:cc-code-fixer .*--mode" "$README_FILE"; then
+  echo "README fixer examples must not use unsupported --mode" >&2
+  exit 1
+fi
 
 grep -q "🧩 技术栈扫描" "$EXAMPLES_FILE"
 grep -q "飞书上传不可用" "$EXAMPLES_FILE"
@@ -157,4 +165,6 @@ MARKETPLACE_PLUGIN_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | sed -n 
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_PLUGIN_VERSION" ]
 [ "$PLUGIN_VERSION" = "1.1.0" ]
 grep -q "code-fixer" "$PLUGIN_FILE"
-grep -q "fix" "$MARKETPLACE_FILE"
+grep -q '"code-fix"' "$PLUGIN_FILE"
+grep -q '"code-fix"' "$MARKETPLACE_FILE"
+grep -q "report-driven fixing" "$MARKETPLACE_FILE"
