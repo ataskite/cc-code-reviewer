@@ -26,6 +26,7 @@ claude plugin install cc-code-reviewer
 - **4 种审查模式**：fast（快速扫雷）、standard（日常推荐）、deep（大版本上线）、security（安全专项）
 - **2 种审查类型**：增量审查（最近 N 次提交）、存量审查（全量/指定模块）
 - **2 种使用模式**：交互式（逐步引导）、快速启动（自动化/CI/CD）
+- **报告驱动修复**：基于本地 Markdown、飞书云文档或飞书多维表格中的审查结果执行修复
 - **飞书集成**：审查报告上传云文档、问题清单录入多维表格（可选，依赖 lark-cli）
 - **跨平台脚本**：macOS/Linux 使用 Bash，Windows 使用 PowerShell，无 Python 依赖
 
@@ -33,52 +34,41 @@ claude plugin install cc-code-reviewer
 
 ![cc-code-reviewer 架构总览](docs/assets/architecture-overview.png)
 
-整体流程分为 **Scan 阶段、人工审核阶段、Fix 阶段**。Scan 阶段由 AI 产出候选问题报告；候选问题不会直接进入修复流程，必须先经过人工审核与筛选，确认误报、补充企业内部上下文、选择修复范围，并形成真正要修复的 **Fix TODO List**。Fix 阶段只消费这份已确认清单，通过受控工作区、Superpowers TDD 流程和验证步骤完成修复，并输出修复报告或回写飞书。
+```mermaid
+flowchart TD
+    User["用户 / Claude Code 会话"]
+    ReviewSkill["审查 Skill<br/>skills/cc-code-reviewer/SKILL.md"]
+    FixSkill["修复 Skill<br/>skills/cc-code-fixer/SKILL.md"]
+    ReviewAgent["审查 Agent<br/>agents/cc-code-reviewer.md"]
+    FixAgent["修复 Agent<br/>agents/cc-code-fixer.md"]
+    Reports["审查报告<br/>Markdown / 飞书云文档 / 飞书多维表格"]
+    FixReports["修复报告<br/>Markdown / 飞书云文档 / 多维表格回写"]
+    Lark["lark-cli<br/>lark-doc / lark-base"]
+    Superpowers["Superpowers 流程<br/>brainstorming / TDD / verification"]
 
-### 阶段 2：修复阶段输入与用法
+    subgraph ScanPhase["Scan 阶段：发现问题"]
+      ReviewSkill --> ScanScripts["phase1-5 脚本<br/>项目识别 / 分支 / 技术栈 / lark / 增量准备"]
+      ScanScripts --> ReviewAgent
+      ReviewAgent --> Reports
+    end
 
-> 当前状态：修复阶段的 `cc-code-fixer` 入口已有设计文档（`docs/superpowers/specs/2026-05-07-cc-code-fixer-design.md`），但本仓库当前尚未提供 `skills/cc-code-fixer/SKILL.md` 和 `agents/cc-code-fixer.md`，因此还不能作为插件命令直接使用。本节记录目标用法和输入契约，避免把 Scan 报告误当成可直接自动修复的指令。
+    subgraph FixPhase["Fix 阶段：确认计划并修复"]
+      FixSkill --> FixScripts["phase6-8 脚本<br/>输入解析 / Superpowers 检测 / 工作区准备"]
+      Reports --> FixSkill
+      FixScripts --> FixAgent
+      Superpowers --> FixAgent
+      FixAgent --> FixReports
+    end
 
-修复阶段的输入不是原始代码仓库，也不是未经筛选的完整审查报告，而是人工确认后的 **Fix TODO List**。推荐流程：
-
-1. 先运行 Scan 阶段，得到本地 Markdown 报告、飞书云文档或飞书多维表格。
-2. 审查者人工筛选问题，确认误报、补充上下文、选择要修复的问题，并形成 Fix TODO List。
-3. Fix 阶段只处理 Fix TODO List 中明确选中的问题，默认不修复 `待确认`、低置信度或未被选中的问题。
-4. 修复执行必须先确认修复范围和工作区策略，再按 TDD 与验证流程修改代码。
-
-Fix TODO List 建议至少包含以下字段：
-
-| 字段 | 说明 | 示例 |
-|------|------|------|
-| `问题编号` | 来自审查报告的问题 ID | `P0-1` |
-| `严重级别` | P0/P1/P2/P3/待确认 | `P1` |
-| `所属维度` | 审查维度 | `安全` |
-| `位置` | 文件与行号，或代表性位置 | `src/main/java/.../UserMapper.xml:42` |
-| `置信度` | 高/中/低 | `高` |
-| `证据` | 可复核的问题证据 | `${name}` 直接拼接 SQL |
-| `影响` | 不修复的风险 | 可能导致 SQL 注入 |
-| `修复建议` | 期望修复方向 | 改为 `#{name}` 并补充参数校验 |
-| `修复状态` | 待修复/已忽略/不适用/已修复 | `待修复` |
-| `备注` | 人工补充上下文或约束 | 保持接口兼容，不改返回结构 |
-
-目标入口设计如下（当前尚未实现）：
-
-```text
-/cc-code-reviewer:cc-code-fixer <review-source> --project /path/to/project
+    User --> ReviewSkill
+    User --> FixSkill
+    Reports -.可选上传/读取.-> Lark
+    FixReports -.可选创建/回写.-> Lark
 ```
 
-`<review-source>` 支持三类输入：本地 Markdown 审查报告、Scan 阶段生成的飞书云文档 URL、Scan 阶段生成的飞书多维表格 URL 或 token。快速模式目标参数如下：
+整体是 **skill 编排、agent 执行、脚本做环境探测** 的结构。Skill 负责模式判定、预检、用户确认和参数注入；Agent 负责真正的审查或修复，不再反问用户；脚本保持可独立测试，Bash 与 PowerShell 镜像维护。Scan 阶段产出的问题报告是 Fix 阶段的输入，Fix 阶段再通过 isolated worktree / fix 分支 / 当前工作区执行修复，并生成修复报告。
 
-```text
-/cc-code-reviewer:cc-code-fixer code-review-report-demo-20260508-103000.md \
-  --project /path/to/project \
-  --severity P0,P1 \
-  --workspace worktree \
-  --strategy standard \
-  --upload no
-```
-
-修复阶段输出为 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`，并可选回写飞书字段：`修复状态`、`修复时间`、`修复分支`、`修复人`、`备注`。
+Scan 阶段由 AI 产出候选问题报告；候选问题进入 Fix 阶段前，建议先经过人工审核与筛选，确认误报、补充企业内部上下文、选择修复范围，并形成真正要修复的 Fix TODO List。Fix 阶段只消费明确选择的问题，通过受控工作区、Superpowers TDD 流程和验证步骤完成修复，并输出修复报告或回写飞书。
 
 ## 安装
 
@@ -186,6 +176,8 @@ lark-cli auth login --recommend
 | `--branch` | 可选 | 分支名 | 审查分支，默认当前分支 |
 | `--upload` | 可选 | `no` / `doc` / `bitable` / `both` | 飞书上传，默认 `no` |
 
+快速启动支持 `--key value` 和 `--key=value` 两种写法。若同一参数重复出现，使用最后一次取值；未知参数、缺少参数值、非法取值会在预扫描摘要后直接报错，并展示已识别参数，且不会降级为交互式模式。
+
 > **注意**：快速启动模式下，必填参数缺失会直接报错终止，不会降级为交互式模式。
 
 #### 快速启动示例
@@ -203,6 +195,24 @@ lark-cli auth login --recommend
 # Git 仓库 + 指定分支
 帮我审查 https://github.com/org/repo.git --mode standard --type incremental --scope 3 --branch develop --upload bitable
 ```
+
+## 修复阶段
+
+扫描阶段生成本地 Markdown、飞书云文档或飞书多维表格后，可以使用 `cc-code-fixer` 进入修复阶段。
+
+```text
+/cc-code-reviewer:cc-code-fixer /path/to/code-review-report-demo.md --project /path/to/project
+```
+
+修复阶段会先解析审查报告，展示可修复问题摘要，再引导你选择工作区策略、修复范围、修复维度、修复策略和输出目标。默认推荐新建 isolated worktree，避免污染当前分支。
+
+快速启动示例：
+
+```text
+/cc-code-reviewer:cc-code-fixer /path/to/report.md --project /path/to/project --scope P0,P1 --workspace worktree --strategy standard --upload no --branch fix/review-findings
+```
+
+修复完成后会生成 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。如果配置飞书输出，可按需创建修复报告云文档，或更新原飞书多维表格中的修复状态、修复时间、修复分支和备注。
 
 ---
 
@@ -289,6 +299,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase5-preview-rec
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase5-prepare-incremental.ps1 "C:\path\to\project" 5
 ```
 
+子 Agent 生成完整报告后，会先保存到项目目录下的 `code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。选择飞书上传时也复用这份 Markdown 文件；未上传或上传失败时，会在对话中展示该本地报告路径和完整报告内容。
+
 ## 测试
 
 提交前优先运行完整 Bash 测试套件：
@@ -310,29 +322,60 @@ bash tests/run_all.sh
 
 ## 工作流程
 
+### Scan 阶段
+
+```mermaid
+flowchart TD
+    Start["用户触发 cc-code-reviewer"]
+    Mode["模式判定<br/>检测 --mode 参数"]
+    Prescan["预扫描<br/>phase1-4 顺序执行"]
+    Summary["输出预扫描摘要"]
+    Interactive["交互式确认<br/>AskUserQuestion 6 步"]
+    Fast["快速启动参数校验"]
+    Incremental["增量准备<br/>phase5 按需执行"]
+    Agent["cc-code-reviewer Agent<br/>执行 15 维审查"]
+    LocalReport["保存本地 Markdown 报告"]
+    Upload["飞书上传<br/>可选"]
+    Done["展示审查结果"]
+
+    Start --> Mode
+    Mode --> Prescan
+    Prescan --> Summary
+    Summary -->|"无 --mode"| Interactive
+    Summary -->|"有 --mode"| Fast
+    Interactive --> Incremental
+    Fast --> Incremental
+    Incremental --> Agent
+    Agent --> LocalReport
+    LocalReport --> Upload
+    Upload --> Done
+    LocalReport --> Done
 ```
-用户触发
-  ↓
-模式判定（检测 --mode 参数）
-  ├── 无 --mode → 交互式模式
-  └── 有 --mode → 快速启动模式
-  ↓
-预扫描（4 脚本顺序执行）
-  ↓
-输出预扫描摘要
-  ↓                   ↓
-交互式确认（6步）    参数校验
-  ↓                   ↓
-确认执行计划          校验通过直接执行
-  └────────┬──────────┘
-           ↓
-    子 Agent 执行代码审查
-           ↓
-    保存本地 Markdown 报告
-           ↓
-    飞书上传（可选）
-           ↓
-    展示审查结果
+
+### Fix 阶段
+
+```mermaid
+flowchart TD
+    Start["用户触发 cc-code-fixer"]
+    Input["解析修复输入<br/>phase6"]
+    Project["项目与能力探测<br/>phase1-4 + phase7"]
+    Plan["确认修复计划<br/>工作区 / 范围 / 维度 / 策略 / 输出"]
+    Workspace["准备修复工作区<br/>phase8"]
+    Brainstorm["注入审查报告<br/>进入 brainstorming"]
+    TDD["按 test-driven-development 修复"]
+    Verify["verification-before-completion"]
+    Report["生成 fix-report Markdown"]
+    Lark["创建云文档或回写多维表格<br/>可选"]
+
+    Start --> Input
+    Input --> Project
+    Project --> Plan
+    Plan --> Workspace
+    Workspace --> Brainstorm
+    Brainstorm --> TDD
+    TDD --> Verify
+    Verify --> Report
+    Report --> Lark
 ```
 
 ## 开发与维护
