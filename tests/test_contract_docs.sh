@@ -42,6 +42,21 @@ grep -q "另有 {N} 个" "$SKILL_FILE"
 grep -q "完整结果已注入子 agent" "$SKILL_FILE"
 grep -q "phase5-preview-recent-commits" "$SKILL_FILE"
 grep -q "最近提交概览" "$SKILL_FILE"
+grep -q "prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据" "$SKILL_FILE"
+grep -q "| 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |" "$SKILL_FILE"
+grep -q "| 报告格式路径 | {REPORT_FORMAT_PATH} |" "$SKILL_FILE"
+grep -q 'REVIEW_FRAMEWORK_PATH=.*references/review-framework.md' "$SKILL_FILE"
+grep -q 'REPORT_FORMAT_PATH=.*references/report-format.md' "$SKILL_FILE"
+GLOBAL_REFERENCE_LINE="$(grep -n "### 第五步之前：准备审查参考文件路径" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+TASK_LAUNCH_LINE="$(grep -n "### 第五步：调用子 agent 执行代码审查" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+if [ -z "$GLOBAL_REFERENCE_LINE" ] || [ -z "$TASK_LAUNCH_LINE" ] || [ "$GLOBAL_REFERENCE_LINE" -ge "$TASK_LAUNCH_LINE" ]; then
+  echo "review reference path preparation must be a global pre-Task step before launching the reviewer agent" >&2
+  exit 1
+fi
+
+grep -q "REVIEW_FRAMEWORK_PATH" "$AGENT_FILE"
+grep -q "REPORT_FORMAT_PATH" "$AGENT_FILE"
+grep -q "优先读取主 agent 注入的绝对路径" "$AGENT_FILE"
 
 grep -q "项目/技术栈扫描" "$README_FILE"
 grep -q "快速启动支持.*--key=value" "$README_FILE"
@@ -182,7 +197,7 @@ MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 
 MARKETPLACE_PLUGIN_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | sed -n '2p' | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_VERSION" ]
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_PLUGIN_VERSION" ]
-[ "$PLUGIN_VERSION" = "1.1.0" ]
+[ "$PLUGIN_VERSION" = "1.1.1" ]
 grep -q "code-fixer" "$PLUGIN_FILE"
 grep -q '"code-fix"' "$PLUGIN_FILE"
 grep -q '"code-fix"' "$MARKETPLACE_FILE"

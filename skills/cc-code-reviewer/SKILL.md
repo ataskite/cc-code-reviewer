@@ -155,11 +155,24 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 
 使用第一步之后解析出的 `FAST_PARAMS` 校验用户提供的所有参数；如提供 `--branch` 且不同于当前分支，必须先执行分支切换；全部通过后进入第五步。详细校验规则见下方「快速启动模式参数规范」章节。
 
+### 第五步之前：准备审查参考文件路径
+
+无论交互式模式还是快速启动模式，在调用子 agent 之前，都必须基于插件根目录生成参考文件绝对路径，并校验文件可读：
+
+```bash
+REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/review-framework.md"
+REPORT_FORMAT_PATH="${CLAUDE_PLUGIN_ROOT}/references/report-format.md"
+test -r "$REVIEW_FRAMEWORK_PATH"
+test -r "$REPORT_FORMAT_PATH"
+```
+
+如果任一文件不存在或不可读，必须终止并输出缺失路径，不得调用子 agent。禁止只依赖 `../references/...` 这类相对路径启动子 agent。
+
 ### 第五步：调用子 agent 执行代码审查
 
 使用 Task 工具启动 `cc-code-reviewer` 子代理：
 - description: "执行 Java 代码审查"
-- prompt: 注入审查参数表 + 项目概况 + 增量数据
+- prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据
 - subagent_type: "cc-code-reviewer:cc-code-reviewer"
 
 详细参数注入格式见下方「子 agent 调用规范」章节。
@@ -531,6 +544,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 | 飞书上传选项 | {FEISHU_UPLOAD_OPTION} |
 | 审查文件数量 | {REVIEW_FILE_COUNT} |
 | 审查代码行数 | {REVIEW_LINE_COUNT} |
+| 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
+| 报告格式路径 | {REPORT_FORMAT_PATH} |
 
 ### 项目概况（预扫描结果）
 {PROJECT_SCAN_RESULT}
@@ -563,6 +578,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 | `DETECTED_TECH_STACK` | 从 `PROJECT_SCAN_RESULT` 的 `TECH_STACK:` 行解析，来源为 Maven/Gradle 依赖指纹 | `Spring Boot, MyBatis, Redis/Cache` |
 | `REVIEW_FILE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `76` |
 | `REVIEW_LINE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `16637` |
+| `REVIEW_FRAMEWORK_PATH` | `${CLAUDE_PLUGIN_ROOT}/references/review-framework.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/review-framework.md` |
+| `REPORT_FORMAT_PATH` | `${CLAUDE_PLUGIN_ROOT}/references/report-format.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/report-format.md` |
 | `GIT_LOG_OUTPUT` | phase5 脚本输出（仅增量） | `git log --oneline -N` |
 | `CHANGED_FILES_OUTPUT` | phase5 脚本输出（仅增量） | `git diff --name-only` |
 | `DIFF_STATS_OUTPUT` | phase5 脚本输出（仅增量） | `git diff --stat` |
