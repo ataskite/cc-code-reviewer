@@ -28,7 +28,7 @@ claude plugin install cc-code-reviewer
 - **2 种使用模式**：交互式（逐步引导）、快速启动（自动化/CI/CD）
 - **报告驱动修复**：基于本地 Markdown、飞书云文档或飞书多维表格中的审查结果执行修复
 - **飞书集成**：审查报告上传云文档、问题清单录入多维表格（可选，依赖 lark-cli）
-- **跨平台脚本**：macOS/Linux 使用 Bash，Windows 使用 PowerShell，无 Python 依赖
+- **Bash 脚本**：仅支持 macOS/Linux，无 Python 依赖
 
 ## 架构总览
 
@@ -66,7 +66,7 @@ flowchart TD
     FixReports -.可选创建/回写.-> Lark
 ```
 
-整体是 **skill 编排、agent 执行、脚本做环境探测** 的结构。Skill 负责模式判定、预检、用户确认和参数注入；Agent 负责真正的审查或修复，不再反问用户；脚本保持可独立测试，Bash 与 PowerShell 镜像维护。Scan 阶段产出的问题报告是 Fix 阶段的输入，Fix 阶段再通过 isolated worktree / fix 分支 / 当前工作区执行修复，并生成修复报告。
+整体是 **skill 编排、agent 执行、脚本做环境探测** 的结构。Skill 负责模式判定、预检、用户确认和参数注入；Agent 负责真正的审查或修复，不再反问用户；脚本保持可独立测试，并统一使用 Bash 维护。Scan 阶段产出的问题报告是 Fix 阶段的输入，Fix 阶段再通过 isolated worktree / fix 分支 / 当前工作区执行修复，并生成修复报告。
 
 Scan 阶段由 AI 产出候选问题报告；候选问题进入 Fix 阶段前，建议先经过人工审核与筛选，确认误报、补充企业内部上下文、选择修复范围，并形成真正要修复的 Fix TODO List。Fix 阶段只消费明确选择的问题，通过受控工作区、Superpowers TDD 流程和验证步骤完成修复，并输出修复报告或回写飞书。
 
@@ -76,7 +76,6 @@ Scan 阶段由 AI 产出候选问题报告；候选问题进入 Fix 阶段前，
 
 - Claude Code 已安装
 - macOS/Linux：Bash 3.0+ 环境
-- Windows：Windows PowerShell 5.1+ 或 PowerShell 7+
 - 系统已安装 `git` 命令
 
 ### 安装插件
@@ -198,19 +197,16 @@ lark-cli auth login --recommend
 
 ## 修复阶段
 
-扫描阶段生成本地 Markdown、飞书云文档或飞书多维表格后，可以使用 `cc-code-fixer` 进入修复阶段。
+扫描阶段生成本地 Markdown、飞书云文档或飞书多维表格后，可以使用 `cc-code-fixer` 进入修复阶段。修复阶段必须交互确认，不支持快速启动；入口和 scan 阶段一样，只输入待修复项目地址即可。
 
 ```text
-/cc-code-reviewer:cc-code-fixer /path/to/code-review-report-demo.md --project /path/to/project
+/cc-code-reviewer:cc-code-fixer /path/to/project
+/cc-code-reviewer:cc-code-fixer https://github.com/org/repo.git
 ```
 
-修复阶段会先解析审查报告，展示可修复问题摘要，再引导你选择工作区策略、修复范围、修复维度、修复策略和输出目标。默认推荐新建 isolated worktree，避免污染当前分支。
+修复阶段第一步会通过 AskUserQuestion 要求用户提供待修复问题确认清单。清单可以是人工确认过的本地 Markdown，也可以是 scan 阶段产出的飞书云文档或飞书多维表格链接。修复器解析后会先展示问题清单表格，要求用户确认哪些问题纳入修复，再确认修复关键点、模型 / effort 和输出目标。
 
-快速启动示例：
-
-```text
-/cc-code-reviewer:cc-code-fixer /path/to/report.md --project /path/to/project --scope P0,P1 --workspace worktree --strategy standard --upload no --branch fix/review-findings
-```
+工作区策略交给 Superpowers：确认执行后从 `brainstorming` 开始，由 Superpowers 结合待修复问题清单、项目预扫描结果和修复关键点决定隔离方式，再进入 worktree / 分支准备和 TDD 修复。
 
 修复完成后会生成 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。如果配置飞书输出，可按需创建修复报告云文档，或更新原飞书多维表格中的修复状态、修复时间、修复分支和备注。
 
@@ -256,7 +252,7 @@ lark-cli auth login --recommend
 
 ## 脚本说明
 
-所有脚本位于 `scripts/` 目录，可独立运行测试。macOS/Linux 使用 `.sh`，Windows 使用 `.ps1`。
+所有脚本位于 `scripts/` 目录，可独立运行测试，并统一使用 Bash。
 
 ### 预扫描脚本（4 个，审查前顺序执行）
 
@@ -285,18 +281,6 @@ bash scripts/phase5-preview-recent-commits.sh "/path/to/project"
 
 # 增量审查准备（增量审查时生成提交记录、变更文件、diff 统计）
 bash scripts/phase5-prepare-incremental.sh "/path/to/project" 5
-```
-
-PowerShell 用法：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase1-detect-project.ps1 "C:\path\to\project"
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase2-detect-branches.ps1 "C:\path\to\project"
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase2-switch-branch.ps1 "C:\path\to\project" "target-branch" "current-branch" "local"
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase3-project-scan.ps1 "C:\path\to\project"
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase4-detect-lark-plugin.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase5-preview-recent-commits.ps1 "C:\path\to\project"
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\phase5-prepare-incremental.ps1 "C:\path\to\project" 5
 ```
 
 子 Agent 生成完整报告后，会先保存到项目目录下的 `code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。选择飞书上传时也复用这份 Markdown 文件；未上传或上传失败时，会在对话中展示该本地报告路径和完整报告内容。
@@ -381,8 +365,8 @@ flowchart TD
 ## 开发与维护
 
 ### 修改脚本逻辑
-1. 同步编辑 `scripts/` 下对应的 `.sh` 与 `.ps1` 文件
-2. 分别在 macOS/Linux 与 Windows 环境独立测试验证
+1. 编辑 `scripts/` 下对应的 `.sh` 文件
+2. 在 macOS/Linux 环境运行测试验证
 3. 无需修改 `skills/cc-code-reviewer/SKILL.md`（脚本通过路径引用），除非新增或调整脚本调用契约
 
 ### 修改审查流程

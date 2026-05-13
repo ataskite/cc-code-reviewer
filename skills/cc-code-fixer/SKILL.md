@@ -1,133 +1,64 @@
 ---
-description: Java 审查问题修复 - 基于审查报告执行 TDD 修复、验证和修复报告生成
+description: Java 审查问题修复 - 基于人工确认的问题清单执行 TDD 修复、验证和修复报告生成
 ---
 
 ## 执行算法（最高优先级，必须严格按此顺序执行）
 
-以下流程是 `cc-code-fixer` 的入口契约。主 skill 只负责解析修复输入、完成预检测、收集或校验修复计划并调用子 agent；不得在主 skill 中直接修改业务代码，也不得声称已经完成实际修复。
+`cc-code-fixer` 的入口和 scan 阶段保持一致：用户只需要提供待修复项目地址（本地路径或 Git URL）。待修复问题清单必须通过 AskUserQuestion 在交互中收集和确认。修复阶段必须交互确认，不接受用参数绕过人工确认。
 
-### 第一步：模式判定（最先执行）
+主 skill 只负责解析项目、预检测、收集待修复问题确认清单、确认模型 / effort 和输出目标，然后把人工确认后的上下文交给 Superpowers 与修复子 agent。主 skill 不直接修改业务代码，也不得声称已经完成实际修复。
 
-检测用户输入中是否包含快速启动参数：
-- `--severity`
-- `--dimensions`
-- `--issues`
-- `--scope`
-- `--workspace`
-- `--strategy`
-- `--upload`
-- `--output`
-- `--branch`
-- `--verify`
+### 第零步：模式判定（固定交互式）
 
-判定规则：
-- 包含任意快速启动参数时，设置 `FAST_MODE=true`，执行预检测后一次性校验参数，校验通过才允许调用子 agent。
-- 仅出现 `<review-source>`、`--input` 或 `--project` 不触发快速启动；这些参数只用于定位审查报告和待修复项目，后续仍进入交互式 AskUserQuestion 流程。
-- 不包含上述参数时，设置 `FAST_MODE=false`，执行预检测后逐步调用 AskUserQuestion 收集修复计划。
-- 模式判定必须先于任何脚本调用和用户交互。
+修复阶段固定为交互式人工确认流程。除项目地址外的任何修复计划都必须通过 AskUserQuestion 在后续步骤中确认。
 
-### 第二步：提取修复输入和项目路径
+### 第一步：提取项目路径
 
-模式判定完成后，必须从用户输入中提取 `<review-source>` 和 `--project`，此阶段不得调用 AskUserQuestion。
-
-#### 修复输入提取规则
-
-`<review-source>` 是已有审查结果来源，支持以下形式：
-
-1. 本地 Markdown 审查报告路径，例如 `/path/to/code-review-report-demo.md`
-2. 飞书云文档 URL，例如 `https://example.feishu.cn/docx/ABC123`
-3. 飞书多维表格 URL，例如 `https://example.feishu.cn/base/BASE123?table=tbl456`
-4. 飞书多维表格 token 表达式，例如 `base:BASE123:tbl456`
-5. 快速启动参数 `--input <review-source>` 或 `--input=<review-source>`
-
-如果无法提取 `<review-source>`，立即输出：
-
-```text
-❌ 未识别到修复输入
-
-请提供本地 Markdown 审查报告、飞书云文档、飞书多维表格 URL 或 base:{BASE_TOKEN}:{TABLE_ID}，例如：
-  /cc-code-reviewer:cc-code-fixer /path/to/code-review-report-demo.md --project /path/to/project
-  /cc-code-reviewer:cc-code-fixer --input=/path/to/report.md --project=/path/to/project --severity=P0,P1 --workspace=worktree --strategy=standard --upload=no --branch=codex/fix-review-issues
-```
-
-然后终止，不进入预检测。
+从用户输入中提取 `PROJECT_INPUT`，此阶段不得调用 AskUserQuestion。
 
 #### 项目路径提取规则
 
-必须提取 `--project`，支持 `--project /path/to/project` 和 `--project=/path/to/project`。项目路径包含空格时必须保留用户输入中的完整引号内容，传给脚本时整体加引号。
+必须按以下优先级提取项目路径：
 
-如果无法提取 `--project`，立即输出：
+1. 优先提取 Git URL：匹配 `https://...`、`http://...`、`git://...`、`git@...` 的完整 token，作为 `PROJECT_INPUT`
+2. 其次提取本地路径 token：
+   - 绝对路径：`/path/to/project`
+   - 相对路径：`.`、`..`、`./project`、`../project`、`project/subdir`
+3. 路径可以出现在自然语言中，例如 `帮我修复 /path/to/project`，不得把 `帮我修复`、`这个项目` 等自然语言词当作路径
+4. 路径包含空格时，应使用用户输入中带引号的完整路径；传给脚本时必须整体加引号
+
+如果无法提取项目路径，立即输出：
 
 ```text
 ❌ 未识别到待修复项目路径
 
-请使用 --project 指定本地项目路径，例如：
-  /cc-code-reviewer:cc-code-fixer /path/to/code-review-report-demo.md --project /path/to/project
+请提供本地项目路径或 Git 仓库地址，例如：
+  /cc-code-reviewer:cc-code-fixer /path/to/project
+  /cc-code-reviewer:cc-code-fixer https://github.com/org/repo.git
 ```
 
 然后终止，不进入预检测。
 
-#### 快速启动参数提取规则
+#### 不支持的修复计划参数
 
-当 `FAST_MODE=true` 时，必须一次性解析完整参数表 `FAST_PARAMS`：
+修复阶段只接受项目地址。若用户提供项目地址之外的修复计划参数，必须提示：
 
-| 参数 | 支持写法 | 说明 |
-|------|----------|------|
-| `--input` | `--input report.md` 或 `--input=report.md` | 修复输入来源；可由位置参数 `<review-source>` 替代 |
-| `--project` | `--project /path` 或 `--project=/path` | 待修复项目路径 |
-| `--severity` | `--severity P0,P1` 或 `--severity=P0,P1` | 按严重级别筛选 |
-| `--dimensions` | `--dimensions 安全,性能` 或 `--dimensions=安全,性能` | 按维度筛选 |
-| `--issues` | `--issues P0-1,P1-2` 或 `--issues=P0-1,P1-2` | 按问题编号筛选 |
-| `--scope` | `--scope P0,P1` 或 `--scope=P0,P1` | 严重级别范围别名，等价于 `--severity` |
-| `--workspace` | `--workspace worktree` 或 `--workspace=worktree` | 工作区策略 |
-| `--strategy` | `--strategy standard` 或 `--strategy=standard` | 修复策略 |
-| `--upload` | `--upload no` 或 `--upload=doc` | 输出/上传策略 |
-| `--output` | `--output local-markdown` 或 `--output=local-markdown` | 输出目标，等价于更明确的上传策略 |
-| `--branch` | `--branch codex/fix-x` 或 `--branch=codex/fix-x` | 修复分支名 |
-| `--verify` | `--verify "mvn test"` 或 `--verify="mvn test"` | 用户补充验证命令 |
+```text
+❌ 修复阶段必须交互确认
 
-解析要求：
-- 每个 `--key` 的值必须是紧随其后的非 `--` token；`--key=value` 按 `=` 后内容作为值。
-- 如果某个参数出现多次，使用最后一次出现的值，并在校验失败或启动提示中展示最终采用值。
-- 如果参数名不在上表中，记录为非法参数，不得忽略。
-- 如果参数缺值、值为空，或下一项也是 `--` 参数，记录为缺失值。
-- 解析出的参数必须保留原始字符串，用于后续完整性校验和错误提示。
-
-### 第三步：预检测（6 个脚本按顺序执行，此阶段禁止任何用户交互）
-
-使用第二步提取出的 `<review-source>` 和 `--project`，按以下顺序执行脚本。此阶段禁止调用 AskUserQuestion，禁止输出交互式提问。
-
-**平台检测**：先判断当前运行环境。Windows 使用 PowerShell 脚本（`.ps1`），macOS / Linux 使用 Bash 脚本（`.sh`）。不要混用两种 shell 语法。
-
-Windows（PowerShell）：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase6-detect-fix-input.ps1" "<review-source>"
-# 输出：FIX_INPUT_TYPE=local-markdown|feishu-doc|feishu-base|feishu-base-token，以及对应路径、URL 或 token 信息
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase1-detect-project.ps1" "<--project>"
-# 输出：PROJECT_DIR=<路径> PROJECT_SOURCE=local|git-cache
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase2-detect-branches.ps1" "$PROJECT_DIR"
-# 输出：IS_GIT_REPO=true/false CURRENT_BRANCH=<分支> BRANCH: ... BRANCH_REMOTE: ...
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase3-project-scan.ps1" "$PROJECT_DIR"
-# 输出：PROJECT_TYPE=... MODULE:... TECH_STACK:...
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase4-detect-lark-plugin.ps1"
-# 输出：LARK_PLUGIN_INSTALLED=true|false，失败时附带 LARK_PLUGIN_REASON
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase7-detect-superpowers.ps1"
-# 输出：SUPERPOWERS_AVAILABLE=true|false SUPERPOWER_SKILL:<skill>=available|missing
+cc-code-fixer 只接受项目地址。待修复问题确认清单、模型 / effort 和输出目标会在后续 AskUserQuestion 中逐步确认。
 ```
 
-macOS / Linux（Bash）：
+然后终止，不得降级执行，不得继续调用子 agent。
+
+### 第二步：项目预检测（5 个脚本按顺序执行，此阶段禁止任何用户交互）
+
+使用第一步提取出的 `PROJECT_INPUT`，按以下顺序执行脚本。此阶段禁止调用 AskUserQuestion，禁止输出交互式提问。
+
+仅支持 macOS / Linux（Bash）：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<review-source>"
-# 输出：FIX_INPUT_TYPE=local-markdown|feishu-doc|feishu-base|feishu-base-token，以及对应路径、URL 或 token 信息
-
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase1-detect-project.sh" "<--project>"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase1-detect-project.sh" "<项目路径或 Git URL>"
 # 输出：PROJECT_DIR=<路径> PROJECT_SOURCE=local|git-cache
 
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-detect-branches.sh" "$PROJECT_DIR"
@@ -143,23 +74,16 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase7-detect-superpowers.sh"
 # 输出：SUPERPOWERS_AVAILABLE=true|false SUPERPOWER_SKILL:<skill>=available|missing
 ```
 
-预检测全部完成后，必须读取或解析修复输入，归一化为问题清单。归一化问题字段至少包括：`issue_id`、`severity`、`dimension`、`location`、`confidence`、`evidence`、`impact`、`suggestion`、`source_type`、`source_ref`、`fix_status`。如果飞书读取失败且没有已归一化问题上下文，必须停止修复，只生成本地失败说明，不得继续调用子 agent。
+### 第三步：输出项目预检测摘要（不允许跳过）
 
-### 第四步：输出修复输入解析完成摘要（不允许跳过）
-
-6 个脚本和问题归一化全部完成后，必须输出以下格式的摘要。标题必须包含「修复输入解析完成」。
+5 个脚本全部完成后，必须输出以下格式的摘要：
 
 ```text
-🧭 修复输入解析完成
-
-📄 审查报告来源：
-- 类型：{FIX_INPUT_TYPE 对应展示，本地 Markdown / 飞书云文档 / 飞书多维表格 / Base token}
-- 来源：{FIX_INPUT_PATH 或 FIX_INPUT_URL 或 base:{BASE_TOKEN}:{TABLE_ID}}
-- 解析状态：{完整 / 部分解析 / 失败}
+🧭 修复项目预检测完成
 
 📂 项目：
+- 来源：{PROJECT_SOURCE 对应展示，本地路径 / Git仓库缓存}
 - 路径：{PROJECT_DIR}
-- 来源：{PROJECT_SOURCE}
 - 类型：{PROJECT_TYPE 展示名}
 
 🌿 Git：
@@ -167,143 +91,124 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase7-detect-superpowers.sh"
 - Git 仓库：{IS_GIT_REPO}
 - 工作区状态：{干净 / 存在未提交改动 / 未知}
 
-🧩 可修复问题统计：
-- 总问题数：{N}
-- P0：{N0} 个，P1：{N1} 个，P2：{N2} 个，P3：{N3} 个，待确认：{NU} 个
-- 已修复或跳过：{NS} 个
-- 默认候选：{NC} 个
-- 维度分布：{安全:n, 性能:n, ...}
+📊 规模：
+- Java 文件：{N} 个
+- 代码行数：{M} 行
 
 🔌 lark-cli：
-- {LARK_PLUGIN_INSTALLED=true 时显示 "✅ 可用，支持飞书读取与回写" / false 时显示 "⚠️ 不可用：{LARK_PLUGIN_REASON}，只能输出本地 Markdown 报告"}
+- {LARK_PLUGIN_INSTALLED=true 时显示 "✅ 可用，支持读取飞书问题清单和回写修复结果" / false 时显示 "⚠️ 不可用：{LARK_PLUGIN_REASON}，只能使用本地 Markdown 清单并输出本地报告"}
 
 🧠 Superpowers：
 - 状态：{SUPERPOWERS_AVAILABLE=true 时显示 "✅ 可用" / false 时显示 "⚠️ 部分不可用，进入 degraded mode"}
 - 缺失：{SUPERPOWER_MISSING 或 "无"}
 ```
 
-### 第五步：参数收集（根据模式选择分支）
+### 第四步：通过 AskUserQuestion 收集待修复问题确认清单
 
-#### 分支 A：交互式模式（FAST_MODE=false）
+第一轮 AskUserQuestion 必须用于确认待修复问题清单来源。该清单必须是人确认过的本地 Markdown、scan 阶段产出的飞书云文档、或 scan 阶段产出的飞书多维表格。不得默认把 scan 产物中的全部候选问题自动纳入修复。
 
-按「交互式确认步骤定义」逐个调用 AskUserQuestion。每个步骤必须单独调用 AskUserQuestion 并等待用户响应后才能进入下一步。禁止在一次回复中合并多个交互步骤，禁止用纯文本问题替代 AskUserQuestion。
+必须调用 AskUserQuestion：
 
-#### 分支 B：快速启动模式（FAST_MODE=true）
+- question: "请提供本次待修复问题确认清单的来源"
+- header: "问题清单"
+- options:
+  - label: "本地 Markdown"
+    description: "使用已经人工确认过的本地审查报告或 Fix TODO List"
+  - label: "飞书云文档"
+    description: "读取 scan 阶段产出的飞书云文档问题清单"
+  - label: "飞书多维表格"
+    description: "读取 scan 阶段产出的飞书多维表格问题记录"
+  - label: "取消"
+    description: "停止本次修复，不修改任何文件"
+- multiSelect: false
 
-使用 `FAST_PARAMS` 校验用户提供的所有参数。校验失败时必须输出错误并终止，不得调用 AskUserQuestion，不得执行工作区准备，不得读取或更新飞书写入目标，不得调用子 agent。快速启动模式参数校验失败时，禁止降级为交互式模式。
+用户选择来源后，必须追加一次 AskUserQuestion 收集具体路径、链接或 `base:{BASE_TOKEN}:{TABLE_ID}` token，header 使用 "清单地址"。如果当前 AskUserQuestion 不支持自由文本，必须使用 Other/free-form 收集。
 
-### 第六步：Superpowers 设计与工作区准备
-
-如果 `SUPERPOWERS_AVAILABLE=true`：
-- 将归一化问题清单、项目预扫描结果、用户选择的修复范围和修复策略注入 `brainstorming`，生成修复设计、风险边界和验证思路。
-- 如果选择 worktree 或新分支策略，按 Superpowers 工作区准备纪律确认隔离方式，再调用 phase8 工作区准备脚本。
-- 子 agent 执行阶段必须延续 `test-driven-development` 和 `verification-before-completion` 纪律。
-
-如果 `SUPERPOWERS_AVAILABLE=false`：
-- 进入 degraded mode，但不得跳过修复设计、测试优先和完成前验证纪律。
-- 在最终注入给子 agent 的修复任务参数中记录缺失的 Superpowers skills 和降级原因。
-
-工作区准备逻辑必须在调用子 agent 之前完成：
-
-Windows（PowerShell）：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase8-prepare-fix-workspace.ps1" "$PROJECT_DIR" "{WORKSPACE_STRATEGY}" "{FIX_BRANCH}"
-```
-
-macOS / Linux（Bash）：
+收集到 `FIX_INPUT_SOURCE` 后，执行：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase8-prepare-fix-workspace.sh" "$PROJECT_DIR" "{WORKSPACE_STRATEGY}" "{FIX_BRANCH}"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOURCE>"
 ```
 
-### 第七步：调用子 agent 执行修复
+然后读取或解析修复输入，归一化为问题清单。归一化问题字段至少包括：`issue_id`、`severity`、`dimension`、`location`、`confidence`、`evidence`、`impact`、`suggestion`、`source_type`、`source_ref`、`fix_status`。如果飞书读取失败且没有已归一化问题上下文，必须停止修复，只生成本地失败说明，不得继续调用子 agent。
 
-使用 Task 工具启动 `cc-code-reviewer:cc-code-fixer`：
+读取完成后必须输出「修复输入解析完成」摘要，说明清单类型、来源、解析状态、问题总数、严重级别分布和已跳过数量。
 
-- description: `执行 Java 审查问题修复`
-- subagent_type: `cc-code-reviewer:cc-code-fixer`
-- prompt: 按「子 agent 调用规范」注入完整参数
+### 第五步：展示问题清单表格并确认修复范围
 
-主 skill 不执行实际代码修复；实际代码修改、测试、验证、报告生成和飞书回写由子 agent 按注入参数完成。
+解析完成后，必须先输出问题清单表格，再调用 AskUserQuestion。表格最多展示 30 条；超过 30 条时按 P0、P1、P2、P3、待确认排序展示前 30 条，并说明完整清单会注入后续步骤。
 
----
+问题清单表格格式：
 
-## 交互式确认步骤定义（仅 FAST_MODE=false 时执行）
+```text
+| 问题ID | 严重级别 | 维度 | 置信度 | 位置 | 问题摘要 | 修复建议 |
+|--------|----------|------|--------|------|----------|----------|
+| P0-1 | P0 | 安全 | 高 | src/...:42 | ... | ... |
+```
 
-> 强制规则：
-> - 每一步必须单独调用 AskUserQuestion 工具并等待用户响应。
-> - 不允许把多个步骤合并到一次 AskUserQuestion。
-> - 不允许用纯文本提问替代 AskUserQuestion。
-> - 用户响应后，必须设置对应变量并更新执行计划，再进入下一步。
+随后必须调用 AskUserQuestion：
 
-### 步骤 1：选择工作区策略
-
-必须调用 AskUserQuestion 工具：
-- question: "请选择本次修复使用的工作区策略"
-- header: "工作区策略"
+- question: "请确认本次要纳入修复的问题"
+- header: "确认清单"
 - options:
-  - label: "新建 isolated worktree（推荐）"
-    description: "在独立 worktree 中创建修复分支，最大限度隔离现有工作区"
-  - label: "当前仓库新建 fix 分支"
-    description: "在当前仓库创建或切换到修复分支，要求工作区干净"
-  - label: "当前分支直接修复"
-    description: "直接在当前分支修改，适合用户明确允许的小范围修复"
+  - label: "确认全部纳入修复"
+    description: "修复表格中的全部可确认问题"
+  - label: "只修 P0/P1"
+    description: "只修阻塞、高风险和重要问题"
+  - label: "按问题编号自定义"
+    description: "输入逗号分隔的问题编号，例如 P0-1,P1-2"
+  - label: "取消"
+    description: "停止本次修复，不修改任何文件"
 - multiSelect: false
 
-变量赋值：`WORKSPACE_STRATEGY=worktree|branch|current`。选择 `worktree` 或 `branch` 时必须生成或收集 `FIX_BRANCH`，默认使用 `codex/fix-review-issues` 或更具体的 `codex/fix-{scope}`。
+选择「按问题编号自定义」时，必须追加一次 AskUserQuestion 收集编号，header 使用 "问题编号"。自定义编号必须逐个校验是否存在于归一化问题清单中；不存在时提示有效编号并重新收集，最多重试 3 次。
 
-### 步骤 2：选择修复范围
+### 第六步：确认修复关键点
 
-必须调用 AskUserQuestion 工具：
-- question: "请选择本次修复范围"
-- header: "修复范围"
+基于用户确认的问题集合，输出本次修复关键点：
+
+```text
+🎯 修复关键点
+
+| 问题ID | 修复意图 | 边界 | 不修内容 | 建议验证 |
+|--------|----------|------|----------|----------|
+| P0-1 | ... | ... | ... | ... |
+```
+
+然后调用 AskUserQuestion：
+
+- question: "请确认以上修复关键点是否符合预期"
+- header: "关键点确认"
 - options:
-  - label: "P0"
-    description: "只修复阻塞或高风险问题"
-  - label: "P1"
-    description: "修复重要问题"
-  - label: "P2"
-    description: "修复一般问题"
-  - label: "P3"
-    description: "修复建议项"
-  - label: "待确认"
-    description: "包含需要人工确认的问题"
-  - label: "自定义问题编号"
-    description: "按问题编号精确选择，例如 P0-1,P1-2"
-- multiSelect: true
-
-选择「自定义问题编号」时，必须追加一次 AskUserQuestion 收集逗号分隔编号，header 使用 "问题编号"。自定义编号必须逐个校验是否存在于归一化问题清单中；不存在时提示有效编号并重新收集，最多重试 3 次。
-
-### 步骤 3：选择修复维度
-
-必须调用 AskUserQuestion 工具：
-- question: "请选择需要纳入本次修复的维度"
-- header: "修复维度"
-- options: 从归一化问题清单的 `dimension` 字段动态生成，description 中标注每个维度的问题数量和最高严重级别
-- multiSelect: true
-
-如果用户在修复范围中已经精确选择问题编号，可默认选择这些问题对应维度，但仍必须展示此步骤供用户确认。
-
-### 步骤 4：选择修复策略
-
-必须调用 AskUserQuestion 工具：
-- question: "请选择修复策略"
-- header: "修复策略"
-- options:
-  - label: "conservative"
-    description: "最小改动，优先修复明确问题，避免扩大行为变更"
-  - label: "standard"
-    description: "平衡修复质量与影响面，允许补充必要测试和局部重构"
-  - label: "deep"
-    description: "处理相关根因和调用链风险，适合已确认的高风险问题组"
+  - label: "确认"
+    description: "按以上关键点进入 Superpowers 设计和修复执行"
+  - label: "调整问题清单"
+    description: "返回上一步重新选择问题"
+  - label: "取消"
+    description: "停止本次修复，不修改任何文件"
 - multiSelect: false
 
-变量赋值：`FIX_STRATEGY=conservative|standard|deep`。
+### 第七步：选择模型 / effort
 
-### 步骤 5：选择输出目标
+模型 / effort 是用户对本次修复投入程度的确认项。当前若 Task 调用无法运行时覆盖子 agent frontmatter，则必须把选择作为 `MODEL_PREFERENCE` 和 `EFFORT_PREFERENCE` 注入 prompt，约束子 agent 的执行深度。
 
-必须调用 AskUserQuestion 工具：
+必须调用 AskUserQuestion：
+
+- question: "请选择本次修复期望使用的模型 / effort"
+- header: "模型强度"
+- options:
+  - label: "默认（推荐）"
+    description: "使用插件默认 fixer agent 配置，平衡速度和修复质量"
+  - label: "高强度"
+    description: "注入 high effort 偏好，要求更充分的影响面分析和验证"
+  - label: "最高强度"
+    description: "注入 max effort 偏好，适合 P0/P1 或跨模块高风险修复"
+- multiSelect: false
+
+### 第八步：选择输出目标
+
+必须调用 AskUserQuestion：
+
 - question: "请选择修复结果输出目标"
 - header: "输出目标"
 - options:
@@ -319,113 +224,85 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase8-prepare-fix-workspace.sh" "$PROJECT_D
 
 如果 `LARK_PLUGIN_INSTALLED=false`，仍可展示飞书选项但必须在 description 中说明不可用；用户选择飞书目标时进入本地 Markdown 降级输出，并在执行计划中标注飞书上传不可用原因。
 
-### 步骤 6：确认执行计划
+### 第九步：确认执行计划
 
 在调用 AskUserQuestion 前必须展示完整执行计划：
 
 ```text
 🛠️ 修复执行计划
 
-- 修复输入：{FIX_INPUT_TYPE} {FIX_INPUT_SOURCE}
 - 项目路径：{PROJECT_DIR}
-- 工作区策略：{WORKSPACE_STRATEGY}
-- 修复分支：{FIX_BRANCH}
-- 修复范围：{FIX_SCOPE}
-- 修复维度：{FIX_DIMENSIONS}
-- 修复策略：{FIX_STRATEGY}
+- 待修复问题确认清单：{FIX_INPUT_TYPE} {FIX_INPUT_SOURCE}
+- 确认修复问题数：{N}
+- 问题编号：{CONFIRMED_ISSUE_IDS}
+- 模型 / effort：{MODEL_PREFERENCE} / {EFFORT_PREFERENCE}
 - 输出目标：{OUTPUT_TARGET}
-- 预计问题数：{N}
-- 验证命令：{VERIFY_COMMANDS}
 - Superpowers：{SUPERPOWERS_STATUS}
+- 工作区策略：工作区策略交给 Superpowers，从 brainstorming 后的隔离设计进入 worktree/branch 准备
 ```
 
-然后必须调用 AskUserQuestion 工具：
-- question: "确认执行以上修复计划吗？"
+然后必须调用 AskUserQuestion：
+
+- question: "确认以上修复计划后进入 Superpowers 设计与修复执行"
 - header: "确认执行计划"
 - options:
   - label: "确认执行"
-    description: "创建或准备工作区，并启动修复子 agent"
+    description: "从 brainstorming 开始，随后准备工作区并启动修复子 agent"
   - label: "取消"
     description: "停止本次修复，不修改任何文件"
 - multiSelect: false
 
 用户选择「取消」时立即终止，不执行工作区准备，不调用子 agent。
 
----
+### 第十步：启动 Superpowers 设计与工作区准备
 
-## 快速启动模式参数规范
+确认执行后，必须先从 `brainstorming` 开始。传入：
 
-快速启动必须提供：
+- 项目预扫描结果
+- 待修复问题确认清单
+- 用户确认的修复问题集合
+- 修复关键点
+- 模型 / effort 偏好
+- 输出目标
 
-| 必填项 | 说明 |
-|--------|------|
-| `<review-source>` 或 `--input` | 审查报告、飞书文档或飞书 Base 来源 |
-| `--project` | 待修复本地项目路径 |
-| `--workspace` | `current`、`branch`、`worktree`、`current-branch`、`new-branch` 之一 |
-| `--strategy` | `conservative`、`standard`、`deep` 之一 |
-| 范围参数 | `--severity`、`--scope`、`--dimensions`、`--issues` 中至少一个 |
+`brainstorming` 负责形成修复设计、影响面、风险边界、验证思路和工作区隔离建议。工作区策略交给 Superpowers；主 skill 不再通过 AskUserQuestion 选择工作区策略。具体修复方案也交给 brainstorming 产出的修复设计，不再由主 skill 预设档位。
 
-可选项：
-- `--branch`：当 `--workspace=branch|worktree|new-branch` 时建议提供；缺省时生成 `codex/fix-review-issues`
-- `--upload`：`no`、`doc`、`base`、`both`
-- `--output`：`local-markdown`、`feishu-doc`、`feishu-base`、`both`
-- `--verify`：用户补充验证命令
+如果选择 worktree 或新分支策略，按 Superpowers 工作区准备纪律确认隔离方式，再调用 phase8 工作区准备脚本：
 
-枚举校验：
-- `--severity` 和 `--scope` 只允许 `P0`、`P1`、`P2`、`P3`、`待确认`，可逗号分隔；两者同时出现时，以 `--severity` 为准，并在启动摘要中展示覆盖关系。
-- `--workspace=current-branch` 归一化为 `current`；`--workspace=new-branch` 归一化为 `branch`。
-- `--upload=no` 归一化为 `OUTPUT_TARGET=local-markdown`；`doc` 归一化为 `feishu-doc`；`base` 归一化为 `feishu-base`；`both` 保持组合输出。
-- `--output` 与 `--upload` 同时出现时，以 `--output` 为准，并在启动摘要中展示覆盖关系。
-
-校验失败时必须输出：
-
-```text
-快速启动参数校验失败：
-- 已识别参数：{FAST_PARAMS 摘要}
-- 缺少必填参数：{列表；无则写 无}
-- 非法参数值：{列表；无则写 无}
-- 正确示例：
-  /cc-code-reviewer:cc-code-fixer --input=/path/to/report.md --project=/path/to/project --severity=P0,P1 --workspace=worktree --strategy=standard --upload=no --branch=codex/fix-review-issues
-
-已停止执行。快速启动模式禁止降级为交互式模式。
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase8-prepare-fix-workspace.sh" "$PROJECT_DIR" "{WORKSPACE_STRATEGY}" "{FIX_BRANCH}"
 ```
 
-校验失败时不得：
-- 修改代码
-- 创建分支或 worktree
-- 读取或更新飞书写入目标
-- 调用 AskUserQuestion
-- 调用子 agent
-- 生成误导性的修复成功报告
+如果 `SUPERPOWERS_AVAILABLE=false`，进入 degraded mode，但不得跳过修复设计、测试优先和完成前验证纪律；必须在最终注入给子 agent 的修复任务参数中记录缺失的 Superpowers skills 和降级原因。
 
-校验通过时必须输出快速启动摘要，然后继续执行工作区准备和子 agent 调用。
+### 第十一步：调用子 agent 执行修复
+
+使用 Task 工具启动 `cc-code-reviewer:cc-code-fixer`：
+
+- description: `执行 Java 审查问题修复`
+- subagent_type: `cc-code-reviewer:cc-code-fixer`
+- prompt: 按「子 agent 调用规范」注入完整参数
+
+主 skill 不执行实际代码修复；实际代码修改、测试、验证、报告生成和飞书回写由子 agent 按注入参数完成。
 
 ---
 
 ## 子 agent 调用规范
-
-使用 Task 工具启动：
-
-```text
-description: 执行 Java 审查问题修复
-subagent_type: cc-code-reviewer:cc-code-fixer
-```
 
 prompt 必须包含以下章节，章节标题不得改名：
 
 ### 修复任务参数
 
 必须注入：
-- `FAST_MODE`
 - `FIX_INPUT_TYPE`
 - `FIX_INPUT_SOURCE`
 - `PROJECT_DIR`
 - `FIX_WORKSPACE_PATH`
 - `WORKSPACE_STRATEGY`
 - `FIX_BRANCH`
-- `FIX_SCOPE`
-- `FIX_DIMENSIONS`
-- `FIX_STRATEGY`
+- `CONFIRMED_ISSUE_IDS`
+- `MODEL_PREFERENCE`
+- `EFFORT_PREFERENCE`
 - `OUTPUT_TARGET`
 - `VERIFY_COMMANDS`
 - `SUPERPOWERS_STATUS`
@@ -437,7 +314,7 @@ prompt 必须包含以下章节，章节标题不得改名：
 
 ### 用户确认的修复计划
 
-注入交互式模式下用户确认的完整执行计划，或快速启动模式下通过校验的等价计划。必须包含工作区策略、修复范围、修复维度、修复策略、输出目标、验证命令和取消状态。
+注入用户确认后的完整执行计划。必须包含待修复问题确认清单来源、确认修复的问题编号、修复关键点、模型 / effort、输出目标、Superpowers 设计摘要、工作区准备结果和取消状态。
 
 ### 项目预扫描结果
 

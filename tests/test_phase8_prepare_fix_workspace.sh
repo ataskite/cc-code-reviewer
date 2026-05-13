@@ -6,13 +6,6 @@ TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/phase8 workspace.XXXXXX")"
 LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/phase8 workspace logs.XXXXXX")"
 trap 'rm -rf "$TMP_DIR" "$LOG_DIR"' EXIT
 
-PS1_FILE="$ROOT_DIR/scripts/phase8-prepare-fix-workspace.ps1"
-PS1_EXISTING_LINE="$(grep -n '修复 worktree 已存在' "$PS1_FILE" | cut -d: -f1)"
-PS1_DIRTY_LINE="$(grep -n '不能从脏工作区创建修复 worktree' "$PS1_FILE" | cut -d: -f1)"
-PS1_IGNORE_LINE="$(grep -n 'Ensure-WorktreesIgnored' "$PS1_FILE" | tail -1 | cut -d: -f1)"
-test "$PS1_EXISTING_LINE" -lt "$PS1_IGNORE_LINE"
-test "$PS1_DIRTY_LINE" -lt "$PS1_IGNORE_LINE"
-
 git -C "$TMP_DIR" init -q
 git -C "$TMP_DIR" config user.email test@example.com
 git -C "$TMP_DIR" config user.name test

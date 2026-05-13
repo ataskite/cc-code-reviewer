@@ -23,7 +23,6 @@ description: Java 代码审查 — 支持增量/存量审查、15维度评估、
 1. **优先提取 Git URL**：匹配 `https://...`、`http://...`、`git://...`、`git@...` 的完整 token，作为 `PROJECT_INPUT`
 2. 其次提取本地路径 token：
    - Unix/macOS 绝对路径：`/path/to/project`
-   - Windows 绝对路径：`C:\path\to\project` 或 `C:/path/to/project`
    - 相对路径：`.`、`..`、`./project`、`../project`、`project/subdir`
 3. 路径可以出现在自然语言中，例如 `帮我审查 /path/to/project --mode fast ...`，不得把 `帮我审查`、`这个项目` 等自然语言词当作路径
 4. 路径包含空格时，应使用用户输入中带引号的完整路径；传给脚本时必须整体加引号
@@ -60,24 +59,7 @@ description: Java 代码审查 — 支持增量/存量审查、15维度评估、
 
 使用第一步之后提取出的 `PROJECT_INPUT`，然后按以下顺序执行 4 个脚本。
 
-**平台检测**：先判断当前 Claude Code 运行环境。Windows 使用 PowerShell 脚本（`.ps1`），macOS / Linux 使用 Bash 脚本（`.sh`）。不要混用两种 shell 语法。
-
-Windows（PowerShell）：
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase1-detect-project.ps1" "<用户输入的路径>"
-# 输出：PROJECT_DIR=<路径> PROJECT_SOURCE=local|git-cache
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase2-detect-branches.ps1" "$PROJECT_DIR"
-# 输出：IS_GIT_REPO=true/false CURRENT_BRANCH=<分支> BRANCH: ... BRANCH_REMOTE: ...
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase3-project-scan.ps1" "$PROJECT_DIR"
-# 输出：PROJECT_TYPE=maven-single|maven-multi|... MODULE:模块名|相对路径|Java文件数|代码行数 TECH_STACK:技术栈|dependency:命中依赖|dimensions:建议维度|rules:专项规则
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase4-detect-lark-plugin.ps1"
-# 输出：LARK_PLUGIN_INSTALLED=true|false，失败时附带 LARK_PLUGIN_REASON
-```
-
-macOS / Linux（Bash）：
+仅支持 macOS / Linux（Bash）：
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase1-detect-project.sh" "<用户输入的路径>"
 # 输出：PROJECT_DIR=<路径> PROJECT_SOURCE=local|git-cache
@@ -200,9 +182,7 @@ test -r "$REPORT_FORMAT_PATH"
 **用户响应后**：
 - 设置 TARGET_BRANCH
 - 如果用户选择"其他分支"，不得把字面值作为分支名；必须读取用户提供的自定义分支名。若 AskUserQuestion 当前交互不支持自定义文本，追加一次 AskUserQuestion 收集分支名，header 使用 "输入分支"，options 使用可用分支中的剩余热门分支并允许 Other/free-form。
-- 如不是当前分支，按当前平台执行对应脚本：
-  - Windows：`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase2-switch-branch.ps1" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
-  - macOS / Linux：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-switch-branch.sh" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
+- 如不是当前分支，执行 `bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-switch-branch.sh" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
 - 切换失败时继续使用当前分支
 
 ### 步骤 2：选择审查类型
@@ -228,9 +208,7 @@ test -r "$REPORT_FORMAT_PATH"
 
 **增量审查时，必须先扫描并展示最近提交，再调用 AskUserQuestion 工具**：
 
-1. 按当前平台执行最近提交预览脚本（仅用于交互式用户决策，不替代后续增量预处理）：
-   - Windows：`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase5-preview-recent-commits.ps1" "$PROJECT_DIR"`
-   - macOS / Linux：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase5-preview-recent-commits.sh" "$PROJECT_DIR"`
+1. 执行最近提交预览脚本（仅用于交互式用户决策，不替代后续增量预处理）：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase5-preview-recent-commits.sh" "$PROJECT_DIR"`
 2. 展示脚本输出，格式如下；最多展示最近 10 次提交，不足 10 次时展示实际数量：
    ```text
    📜 最近提交概览：
@@ -450,10 +428,7 @@ test -r "$REPORT_FORMAT_PATH"
 
 1. 未提供 `--branch`：TARGET_BRANCH=CURRENT_BRANCH
 2. 提供 `--branch` 且等于 CURRENT_BRANCH：无需切换
-3. 提供 `--branch` 且不同于 CURRENT_BRANCH：必须执行
-   按当前平台执行对应分支切换脚本：
-   - Windows：`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase2-switch-branch.ps1" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
-   - macOS / Linux：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-switch-branch.sh" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
+3. 提供 `--branch` 且不同于 CURRENT_BRANCH：必须执行 `bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-switch-branch.sh" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
 4. 快速启动模式下，如果显式分支切换失败，必须终止本次审查并说明原因，不得静默回退到当前分支继续审查
 5. 切换成功后，重新记录 CURRENT_BRANCH/TARGET_BRANCH，用切换后的分支生成增量数据和调用子 agent
 
@@ -586,9 +561,7 @@ test -r "$REPORT_FORMAT_PATH"
 
 ### 增量审查预处理（仅增量审查时执行）
 
-在调用子 agent 之前，按当前平台执行增量预处理脚本：
-- Windows：`powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_PLUGIN_ROOT}\scripts\phase5-prepare-incremental.ps1" "$PROJECT_DIR" {N}`
-- macOS / Linux：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase5-prepare-incremental.sh" "$PROJECT_DIR" {N}`
+在调用子 agent 之前，执行增量预处理脚本：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase5-prepare-incremental.sh" "$PROJECT_DIR" {N}`
 
 脚本输出用 `# ===` 分隔为三部分：
 1. `# === 提交记录 ===` → GIT_LOG_OUTPUT

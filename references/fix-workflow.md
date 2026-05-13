@@ -1,20 +1,27 @@
 # Fix Workflow
 
-本文件定义 `cc-code-fixer` 的修复阶段工作流，供后续 skill 与子 agent 注入参数、确认计划、执行修复和生成报告时引用。修复器只消费已有审查报告或飞书问题清单，不重新执行完整代码审查。
+本文件定义 `cc-code-fixer` 的修复阶段工作流。修复器只消费已有审查报告、飞书问题清单或人工整理后的 Fix TODO List，不重新执行完整代码审查。
+
+修复阶段的核心规则：**交互确认是硬门禁**。scan 可以自动化，fix 必须由用户确认待修复问题清单、修复关键点、模型 / effort 和输出目标后才能进入 Superpowers 与子 agent 执行。
 
 ---
 
 ## Fix Input Normalization
 
-修复输入必须先被归一化为统一结构，再进入任何交互或快速启动执行流程。归一化结果至少包含：
+`cc-code-fixer` 入口只接收项目地址。待修复问题确认清单必须在项目预检测之后通过 AskUserQuestion 收集。
+
+归一化结果至少包含：
 
 | 字段 | 说明 |
 |------|------|
 | `FIX_INPUT_TYPE` | `local-markdown`、`feishu-doc`、`feishu-base` 或 `feishu-base-token` |
-| `FIX_INPUT_SOURCE` | 用户传入的原始路径、URL 或 token 表达式 |
+| `FIX_INPUT_SOURCE` | 用户在 AskUserQuestion 中提供的路径、URL 或 token 表达式 |
 | `PROJECT_DIR` | 待修复项目路径，必须是本地可访问目录 |
 | `ISSUE_SOURCE_SUMMARY` | 从报告或表格中提取的问题总数、优先级分布和来源说明 |
-| `FIX_SCOPE` | 用户选择或快速启动参数指定的修复范围 |
+| `NORMALIZED_ISSUES` | 归一化后的完整问题清单 |
+| `CONFIRMED_ISSUE_IDS` | 用户确认纳入本轮修复的问题编号 |
+| `MODEL_PREFERENCE` | 用户确认的模型偏好 |
+| `EFFORT_PREFERENCE` | 用户确认的 effort 偏好 |
 | `OUTPUT_TARGET` | `local-markdown`、`feishu-doc`、`feishu-base` 或组合输出 |
 
 ### 本地 Markdown 报告
@@ -40,11 +47,16 @@
 
 代码变更前必须完成以下预检，预检失败时不得修改代码：
 
-1. 解析并归一化修复输入，形成 `FIX_INPUT_TYPE`、`FIX_INPUT_SOURCE`、`PROJECT_DIR`、`ISSUE_SOURCE_SUMMARY`、`FIX_SCOPE` 和 `OUTPUT_TARGET`。
-2. 读取本地 Markdown、飞书云文档或飞书多维表格，提取可确认的问题编号、位置、问题描述和修复建议。
-3. 检查 `PROJECT_DIR` 是否存在、是否为 Git 仓库、当前分支和工作区状态。
-4. 识别验证命令，至少包含项目主测试命令和 `git diff --check`。
-5. 交互模式下输出修复计划并获得确认；快速启动模式下一次性校验所有必填参数和枚举值。
+1. 解析项目地址，形成 `PROJECT_DIR` 与 `PROJECT_SOURCE`。
+2. 检查 `PROJECT_DIR` 是否存在、是否为 Git 仓库、当前分支和工作区状态。
+3. 扫描项目结构、模块、技术栈和默认验证命令线索。
+4. 检测 lark-cli 与 Superpowers 可用性。
+5. 通过 AskUserQuestion 收集待修复问题确认清单来源。
+6. 读取本地 Markdown、飞书云文档或飞书多维表格，提取可确认的问题编号、位置、问题描述和修复建议。
+7. 展示问题清单表格，获得用户对本轮修复问题集合的确认。
+8. 展示修复关键点，获得用户确认。
+9. 获得模型 / effort 和输出目标确认。
+10. 输出最终执行计划并获得确认。
 
 飞书云文档或飞书多维表格读取失败时，如果没有来自本地 Markdown、已确认缓存或其他可信来源的已归一化问题上下文，必须停止在代码变更之前，只生成本地失败报告。无已归一化问题上下文时必须停止修复。
 
@@ -54,9 +66,11 @@
 
 修复器执行代码变更前必须按 Superpowers 风格组织工作：
 
-1. 使用 `brainstorming` 梳理可选修复策略、影响面和风险边界。
-2. 使用 `test-driven-development` 优先补充或定位能暴露问题的测试；无法写测试时必须说明原因，并采用最小可验证命令替代。
-3. 使用 `verification-before-completion` 在报告、飞书更新和最终答复前执行完整验证命令。
+1. 使用 `brainstorming` 梳理确认后的问题清单、修复关键点、影响面、风险边界、验证计划和隔离方式。
+2. 工作区策略交给 Superpowers：由 brainstorming 和后续工作区纪律决定当前分支、新分支或独立 worktree。`cc-code-fixer` 的 AskUserQuestion 不再单独选择工作区策略。
+3. 具体修复方案交给 Superpowers：不再由主 skill 预设档位。brainstorming 根据确认的问题集合形成本次修复设计。
+4. 使用 `test-driven-development` 优先补充或定位能暴露问题的测试；无法写测试时必须说明原因，并采用最小可验证命令替代。
+5. 使用 `verification-before-completion` 在报告、飞书更新和最终答复前执行完整验证命令。
 
 如果某个 Superpowers skill 不可用，修复器不得跳过相应纪律；必须在 degraded mode 中记录缺失项，并用等价的显式步骤完成：先提出修复思路，再写或定位验证，再运行验证命令。
 
@@ -85,17 +99,14 @@ degraded mode 下必须继续保护用户代码：
 
 ## Fix Scope Rules
 
-交互模式下，修复器在修改代码前必须向用户确认：
+修复器在修改代码前必须向用户确认：
 
-- 修复输入来源和已识别问题数量
-- 本次修复范围：全部问题、指定优先级、指定问题编号或指定模块
-- 工作区策略：当前分支直接修复、创建新分支、或使用独立 worktree
-- 验证命令：自动识别命令和用户补充命令
-- 输出目标：仅本地报告、更新飞书云文档、更新飞书多维表格或组合输出
-
-快速启动模式下，必须一次性校验所有必填参数。任何必填参数缺失或枚举值非法，都必须失败退出，禁止降级为交互式模式。
-
----
+- 待修复问题确认清单来源
+- 解析得到的问题清单表格
+- 本次确认修复的问题编号集合
+- 修复关键点：修复意图、边界、不修内容和建议验证
+- 模型 / effort 偏好
+- 输出目标：仅本地报告、创建飞书云文档、更新飞书多维表格或组合输出
 
 默认修复顺序为：
 
@@ -127,11 +138,10 @@ degraded mode 下必须继续保护用户代码：
 
 ## Workspace Rules
 
-修复前必须检查：
+工作区策略交给 Superpowers 后仍必须满足以下底线：
 
-- `PROJECT_DIR` 是否存在并包含 Git 仓库
-- 当前分支名称、上游信息和工作区是否干净
-- 用户是否允许在当前分支直接修改
-- 是否需要创建 `codex/fix-*` 分支或独立 worktree
-
-如果工作区存在未提交修改，修复器只能在用户明确确认后继续；否则应停止并说明未修改任何文件。
+- `PROJECT_DIR` 必须存在并包含 Git 仓库
+- 当前分支名称、上游信息和工作区状态必须在执行计划中可见
+- 用户未确认前不得在当前分支直接修改
+- 推荐使用 `codex/fix-*` 分支或独立 worktree 执行修复
+- 如果工作区存在未提交修改，修复器只能在 Superpowers 设计明确处理隔离方式后继续；否则应停止并说明未修改任何文件

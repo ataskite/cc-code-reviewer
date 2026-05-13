@@ -1,95 +1,124 @@
 # Fix Examples
 
-本文件给出 `cc-code-fixer` 的典型使用示例，覆盖本地报告、飞书多维表格、快速启动和参数校验失败。
+本文件给出 `cc-code-fixer` 的典型使用示例。修复阶段必须交互确认。
 
 ---
 
 ## 本地 Markdown 报告
 
-场景：用户已经通过 `cc-code-reviewer` 生成本地审查报告，希望修复 P0 和 P1 问题，并输出本地修复报告。
+场景：用户已经把 scan 阶段报告整理成人工确认过的本地 Markdown Fix TODO List，希望对项目执行修复。
 
 ```text
-用户：根据本地 Markdown 报告修复 /path/to/project/code-review-report-demo-20260507-103000.md，只修 P0 和 P1
+用户：/cc-code-reviewer:cc-code-fixer /path/to/project
 
 修复器：
-已识别修复输入：
-- 类型：本地 Markdown 报告
-- 报告路径：/path/to/project/code-review-report-demo-20260507-103000.md
-- 问题数量：P0 1 个，P1 3 个，P2 4 个
-- 项目路径：/path/to/project
+🧭 修复项目预检测完成
+- 项目：/path/to/project
+- 当前分支：main
+- lark-cli：可用
+- Superpowers：可用
 
-请选择工作区策略：
-[创建新分支 codex/fix-review-issues] [使用当前分支] [取消]
+请提供本次待修复问题确认清单的来源：
+[本地 Markdown] [飞书云文档] [飞书多维表格] [取消]
 
-用户：创建新分支
+用户：本地 Markdown
 
 修复器：
-修复计划：
-- 修复范围：P0,P1
-- 工作区策略：创建新分支 codex/fix-review-issues
-- 验证命令：mvn test, git diff --check
-- 输出目标：本地 Markdown 报告
+请提供本地 Markdown 路径。
 
-确认执行？
-[确认执行] [取消]
+用户：/path/to/project/fix-todo-confirmed.md
 ```
 
-完成后输出：
+修复器解析后必须展示待修复问题确认清单表格：
 
 ```text
-修复完成摘要：
-- 已修复：4 个
-- 未修复：0 个
-- 修复分支：codex/fix-review-issues
-- 本地报告：/path/to/project/fix-report-demo-20260507-153000.md
-- 验证：mvn test 通过；git diff --check 通过
+| 问题ID | 严重级别 | 维度 | 置信度 | 位置 | 问题摘要 | 修复建议 |
+|--------|----------|------|--------|------|----------|----------|
+| P0-1 | P0 | 安全 | 高 | src/main/java/demo/UserController.java:42 | 接口缺少鉴权 | 增加权限校验并补充拒绝访问测试 |
+| P1-1 | P1 | 正确性 | 高 | src/main/java/demo/OrderService.java:88 | 空值路径可能 NPE | 补充空值保护和回归测试 |
 ```
 
----
-
-## 飞书多维表格
-
-场景：审查结果已经进入飞书多维表格，用户希望修复所有 `待修复` 的 P0 问题，并写回状态。
+随后确认：
 
 ```text
-用户：修复这个飞书多维表格里的 P0 待修复问题 base:BASE123:tbl456，项目在 /path/to/project
+请确认本次要纳入修复的问题：
+[确认全部纳入修复] [只修 P0/P1] [按问题编号自定义] [取消]
+
+用户：确认全部纳入修复
 
 修复器：
-已识别修复输入：
-- 类型：飞书多维表格
-- Base Token：BASE123
-- Table ID：tbl456
-- 已读取记录：18 条
-- 本次候选：P0 待修复 2 条
+🎯 修复关键点
 
-将写回字段：
-- 修复状态
-- 修复时间
-- 修复分支
-- 备注
+| 问题ID | 修复意图 | 边界 | 不修内容 | 建议验证 |
+|--------|----------|------|----------|----------|
+| P0-1 | 阻断未授权访问 | 只改目标接口和直接权限测试 | 不重构权限框架 | mvn -Dtest=UserControllerTest test |
+| P1-1 | 消除空值异常 | 只改订单读取路径 | 不改变订单状态流转 | mvn -Dtest=OrderServiceTest test |
 
-确认执行？
-[确认执行] [取消]
+请确认以上修复关键点是否符合预期：
+[确认] [调整问题清单] [取消]
+
+用户：确认
+
+请选择本次修复期望使用的模型 / effort：
+[默认（推荐）] [高强度] [最高强度]
+
+用户：高强度
+
+请选择修复结果输出目标：
+[仅本地 Markdown] [上传飞书云文档] [更新原飞书多维表格] [同时云文档和多维表格]
+
+用户：仅本地 Markdown
 ```
+
+最终确认后，修复器从 `brainstorming` 开始，把项目预扫描结果、待修复问题确认清单、确认问题集合、修复关键点、模型 / effort 和输出目标注入 Superpowers。工作区策略交给 Superpowers，再启动修复子 agent。
 
 完成后输出：
 
 ```text
 修复完成摘要：
 - 已修复：2 个
-- 飞书多维表格：已更新 2 条记录
-- 修复状态：已修复
-- 修复分支：codex/fix-p0-issues
-- 本地报告：/path/to/project/fix-report-demo-20260507-160000.md
+- 待人工确认：0 个
+- 修复分支：codex/fix-confirmed-issues
+- 本地报告：/path/to/project/fix-report-demo-20260507-153000.md
+- 验证：相关测试通过；git diff --check 通过
 ```
 
-如果飞书更新失败：
+---
+
+## 飞书多维表格
+
+场景：scan 阶段已把问题写入飞书多维表格，用户先人工筛选了要修复的记录，再用表格作为待修复问题确认清单。
 
 ```text
-代码修复和本地验证已执行，但飞书写回失败。
-- 失败命令：lark-cli base +record-upsert --record-id ...
-- 回退结果：已生成本地 Markdown 报告
-- 建议：确认 Base 权限后按报告中的记录 ID 手动同步
+用户：/cc-code-reviewer:cc-code-fixer /path/to/project
+
+修复器：
+请提供本次待修复问题确认清单的来源：
+[本地 Markdown] [飞书云文档] [飞书多维表格] [取消]
+
+用户：飞书多维表格
+
+修复器：
+请提供飞书多维表格 URL 或 base:{BASE_TOKEN}:{TABLE_ID}。
+
+用户：base:BASE123:tbl456
+```
+
+读取后展示：
+
+```text
+| 问题ID | 严重级别 | 维度 | 置信度 | 位置 | 问题摘要 | 修复建议 |
+|--------|----------|------|--------|------|----------|----------|
+| P0-2 | P0 | 数据库/数据访问 | 高 | src/main/java/demo/PayService.java:61 | 事务边界覆盖不足 | 将写入链路纳入同一事务并补充失败回滚测试 |
+```
+
+确认输出目标时，用户可选择回写表格：
+
+```text
+请选择修复结果输出目标：
+[仅本地 Markdown] [上传飞书云文档] [更新原飞书多维表格] [同时云文档和多维表格]
+
+用户：更新原飞书多维表格
 ```
 
 写回命令示例：
@@ -102,72 +131,11 @@ lark-cli base +record-upsert \
   --json '{"fields":{"修复状态":"已修复","修复时间":"2026-05-07","修复分支":"codex/fix-p0-issues","备注":"本地报告: fix-report-demo-20260507-160000.md；验证: mvn test 通过"}}'
 ```
 
----
-
-## 快速启动
-
-场景：用户明确提供所有必要参数，不需要交互确认。
-
-```bash
-/cc-code-reviewer:cc-code-fixer \
-  --input=/path/to/project/code-review-report-demo-20260507-103000.md \
-  --project=/path/to/project \
-  --scope=P0,P1 \
-  --workspace=new-branch \
-  --branch=codex/fix-review-issues \
-  --output=local-markdown \
-  --verify="mvn test"
-```
-
-快速启动必须：
-
-- 一次性解析完整参数表
-- 校验 `--input`、`--project`、`--scope`、`--workspace`、`--output`
-- 校验枚举值是否合法
-- 校验本地输入文件和项目目录是否存在
-- 校验失败时直接退出，不进入交互式模式
-
-成功时输出：
+如果飞书更新失败：
 
 ```text
-快速启动参数已通过校验：
-- 输入：本地 Markdown 报告
-- 项目：/path/to/project
-- 范围：P0,P1
-- 分支：codex/fix-review-issues
-- 输出：本地 Markdown 报告
-
-开始执行修复。
+代码修复和本地验证已执行，但飞书写回失败。
+- 失败命令：lark-cli base +record-upsert --record-id ...
+- 回退结果：已生成本地 Markdown 报告
+- 建议：确认 Base 权限后按报告中的记录 ID 手动同步
 ```
-
----
-
-## 快速启动参数校验失败
-
-场景：用户缺少必填参数或传入非法枚举值。
-
-```bash
-/cc-code-reviewer:cc-code-fixer \
-  --input=/path/to/report.md \
-  --scope=P0 \
-  --workspace=magic \
-  --output=base
-```
-
-必须失败输出：
-
-```text
-快速启动参数校验失败：
-- 缺少必填参数：--project
-- 非法参数值：--workspace=magic，可选值为 current-branch,new-branch,worktree
-- 非法参数值：--output=base，可选值为 local-markdown,feishu-doc,feishu-base,both
-
-已停止执行。快速启动模式禁止降级为交互式模式。
-```
-
-失败时不得：
-
-- 修改代码
-- 创建分支
-- 读取或更新飞书数据
-- 生成误导性的修复报告

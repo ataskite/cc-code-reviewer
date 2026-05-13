@@ -133,7 +133,7 @@ The suite runs every `tests/test_*.sh` file and then `git diff --check`. It cove
 - `phase8-prepare-fix-workspace.sh`: current/branch/worktree strategies and dirty workspace protection
 - Documentation contracts for fast-mode parameter validation, report persistence, Feishu Base fields, fix-stage contracts, and test instructions
 
-PowerShell scripts mirror the Bash scripts, but the automated local suite runs Bash. When editing `.ps1` files, verify them separately on Windows or a machine with PowerShell.
+The plugin only supports macOS and Linux. Keep script changes in Bash and verify them through the local Bash suite.
 
 ### Testing Scripts Individually
 
@@ -162,7 +162,7 @@ bash scripts/phase8-prepare-fix-workspace.sh "/path/to/project" worktree "fix/re
 
 1. **Fix flow**: Edit `skills/cc-code-fixer/SKILL.md`
 2. **Fix agent prompt**: Edit `agents/cc-code-fixer.md`
-3. **Input/workspace scripts**: Edit phase6-8 Bash and PowerShell mirrors together
+3. **Input/workspace scripts**: Edit phase6-8 Bash scripts together
 4. **Fix report or Feishu contracts**: Edit `references/fix-report-format.md` and `references/fix-feishu-integration.md`
 
 **Critical**: Keep fix statuses, strategy names, injected parameter names, and report filename conventions consistent across skill, agent, references, examples, and tests.

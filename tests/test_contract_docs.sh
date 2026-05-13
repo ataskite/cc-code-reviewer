@@ -67,10 +67,13 @@ grep -q "/cc-code-reviewer:cc-code-fixer" "$README_FILE"
 grep -q "修复阶段" "$README_FILE"
 grep -q "worktree" "$README_FILE"
 grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$README_FILE"
-grep -q -- "--scope P0,P1" "$README_FILE"
-grep -q -- "--workspace worktree" "$README_FILE"
-grep -q -- "--strategy standard" "$README_FILE"
-grep -q -- "--upload no" "$README_FILE"
+grep -q "待修复问题确认清单" "$README_FILE"
+grep -q "修复阶段必须交互确认" "$README_FILE"
+grep -q "工作区策略交给 Superpowers" "$README_FILE"
+if grep -q "/cc-code-reviewer:cc-code-fixer .*--scope" "$README_FILE"; then
+  echo "README fixer examples must not use --scope fast-style parameters" >&2
+  exit 1
+fi
 if grep -q "/cc-code-reviewer:cc-code-fixer .*--mode" "$README_FILE"; then
   echo "README fixer examples must not use unsupported --mode" >&2
   exit 1
@@ -91,7 +94,13 @@ grep -qx "## Workspace Rules" "$FIX_WORKFLOW_FILE"
 grep -q "brainstorming" "$FIX_WORKFLOW_FILE"
 grep -q "test-driven-development" "$FIX_WORKFLOW_FILE"
 grep -q "verification-before-completion" "$FIX_WORKFLOW_FILE"
+grep -q "交互确认是硬门禁" "$FIX_WORKFLOW_FILE"
+grep -q "工作区策略交给 Superpowers" "$FIX_WORKFLOW_FILE"
 grep -q "无已归一化问题上下文时必须停止修复" "$FIX_WORKFLOW_FILE" "$FIX_FEISHU_FILE"
+if grep -q "快速启动" "$FIX_WORKFLOW_FILE"; then
+  echo "fix workflow must not mention fast mode" >&2
+  exit 1
+fi
 
 grep -qx "# 修复报告格式规范" "$FIX_REPORT_FILE"
 grep -q "## 修复配置快照" "$FIX_REPORT_FILE"
@@ -146,24 +155,26 @@ grep -q "+record-upsert" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"
 grep -qx "# Fix Examples" "$FIX_EXAMPLES_FILE"
 grep -qx "## 本地 Markdown 报告" "$FIX_EXAMPLES_FILE"
 grep -qx "## 飞书多维表格" "$FIX_EXAMPLES_FILE"
-grep -qx "## 快速启动" "$FIX_EXAMPLES_FILE"
-grep -qx "## 快速启动参数校验失败" "$FIX_EXAMPLES_FILE"
+grep -q "待修复问题确认清单" "$FIX_EXAMPLES_FILE"
+grep -q "模型 / effort" "$FIX_EXAMPLES_FILE"
+if grep -q "快速启动" "$FIX_EXAMPLES_FILE"; then
+  echo "fix examples must not document fast mode" >&2
+  exit 1
+fi
 
 grep -q "模式判定" "$FIX_SKILL_FILE"
 grep -q "phase6-detect-fix-input" "$FIX_SKILL_FILE"
 grep -q "phase7-detect-superpowers" "$FIX_SKILL_FILE"
 grep -q "修复输入解析完成" "$FIX_SKILL_FILE"
 grep -q "AskUserQuestion" "$FIX_SKILL_FILE"
-grep -q "工作区策略" "$FIX_SKILL_FILE"
-grep -q "修复范围" "$FIX_SKILL_FILE"
-grep -q "修复策略" "$FIX_SKILL_FILE"
+grep -q "待修复问题确认清单" "$FIX_SKILL_FILE"
+grep -q "问题清单表格" "$FIX_SKILL_FILE"
+grep -q "模型 / effort" "$FIX_SKILL_FILE"
+grep -q "工作区策略交给 Superpowers" "$FIX_SKILL_FILE"
 grep -q "确认执行计划" "$FIX_SKILL_FILE"
-grep -q "禁止降级为交互式模式" "$FIX_SKILL_FILE"
 grep -q "cc-code-reviewer:cc-code-fixer" "$FIX_SKILL_FILE"
-grep -q '`--scope`' "$FIX_SKILL_FILE"
-grep -q "不触发快速启动" "$FIX_SKILL_FILE"
-if grep -q '`--mode`' "$FIX_SKILL_FILE"; then
-  echo "cc-code-fixer must not document --mode as a fast-mode parameter" >&2
+if grep -qE 'FAST_MODE|FAST_PARAMS|快速启动|`--scope`|`--workspace`|`--strategy`|修复策略|请选择本次修复使用的工作区策略' "$FIX_SKILL_FILE"; then
+  echo "cc-code-fixer must not contain fast mode, workspace strategy, or repair strategy selection" >&2
   exit 1
 fi
 
@@ -177,7 +188,7 @@ grep -q "verification-before-completion" "$FIX_AGENT_FILE"
 grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$FIX_AGENT_FILE"
 grep -q "修复状态" "$FIX_AGENT_FILE"
 grep -q "不得修复注入范围之外的问题" "$FIX_AGENT_FILE"
-grep -q "conservative.*standard.*deep" "$FIX_AGENT_FILE"
+grep -q "模型 / effort" "$FIX_AGENT_FILE"
 grep -q "FIX_BRANCH" "$FIX_AGENT_FILE"
 grep -q "OUTPUT_TARGET" "$FIX_AGENT_FILE"
 grep -q "| 修复分支 |" "$FIX_AGENT_FILE"
