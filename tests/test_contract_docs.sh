@@ -12,6 +12,7 @@ FIX_SKILL_FILE="$ROOT_DIR/skills/cc-code-fixer/SKILL.md"
 FIX_REPORT_FILE="$ROOT_DIR/references/fix-report-format.md"
 FIX_FEISHU_FILE="$ROOT_DIR/references/fix-feishu-integration.md"
 FIX_EXAMPLES_FILE="$ROOT_DIR/references/fix-examples.md"
+ARCHITECTURE_SVG="$ROOT_DIR/docs/assets/architecture-overview.svg"
 MARKETPLACE_FILE="$ROOT_DIR/.claude-plugin/marketplace.json"
 PLUGIN_FILE="$ROOT_DIR/.claude-plugin/plugin.json"
 
@@ -70,6 +71,7 @@ grep -q "待修复问题确认清单" "$README_FILE"
 grep -q "修复阶段必须交互确认" "$README_FILE"
 grep -q "工作区策略交给 Superpowers" "$README_FILE"
 grep -q "subagent-driven-development" "$README_FILE"
+grep -q "docs/assets/architecture-overview.png" "$README_FILE"
 if grep -qE "FixAgent|agents/cc-code-fixer|模型 / effort|MODEL_PREFERENCE|EFFORT_PREFERENCE" "$README_FILE"; then
   echo "README fix flow must not reference removed fixer agent or model/effort selection" >&2
   exit 1
@@ -80,6 +82,14 @@ if grep -q "/cc-code-reviewer:cc-code-fixer .*--scope" "$README_FILE"; then
 fi
 if grep -q "/cc-code-reviewer:cc-code-fixer .*--mode" "$README_FILE"; then
   echo "README fixer examples must not use unsupported --mode" >&2
+  exit 1
+fi
+test -f "$ARCHITECTURE_SVG"
+grep -q "问题清单位置" "$ARCHITECTURE_SVG"
+grep -q "Superpowers" "$ARCHITECTURE_SVG"
+grep -q "subagent-driven-development" "$ARCHITECTURE_SVG"
+if grep -qE "Fix Agent|agents/cc-code-fixer|模型 / effort|MODEL_PREFERENCE|EFFORT_PREFERENCE" "$ARCHITECTURE_SVG"; then
+  echo "architecture overview image source must match current Superpowers-based fixer architecture" >&2
   exit 1
 fi
 
@@ -202,7 +212,7 @@ MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 
 MARKETPLACE_PLUGIN_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | sed -n '2p' | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_VERSION" ]
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_PLUGIN_VERSION" ]
-[ "$PLUGIN_VERSION" = "1.1.2" ]
+[ "$PLUGIN_VERSION" = "1.1.3" ]
 grep -q "code-fixer" "$PLUGIN_FILE"
 grep -q '"code-fix"' "$PLUGIN_FILE"
 grep -q '"code-fix"' "$MARKETPLACE_FILE"

@@ -2,7 +2,7 @@
 
 > **⚠️ 平台说明**：本插件为 **Claude Code 专用插件**，基于 Claude Code 的 Agent 机制和 Plugin 规范开发。
 
-企业级 Java 代码审查插件，支持 15 个维度全面审查，4 种审查模式，增量/存量两种审查类型，支持交互式和快速启动两种使用方式。
+企业级 Java 代码审查插件，支持 15 个维度全面审查、4 种审查模式、增量/存量两种审查类型；Scan 阶段支持交互式和快速启动，Fix 阶段固定走人工确认后的报告驱动修复。
 
 ## 快速上手
 
@@ -25,8 +25,8 @@ claude plugin install cc-code-reviewer
 - **15 维度全面审查**：正确性、代码质量、安全、性能、架构等
 - **4 种审查模式**：fast（快速扫雷）、standard（日常推荐）、deep（大版本上线）、security（安全专项）
 - **2 种审查类型**：增量审查（最近 N 次提交）、存量审查（全量/指定模块）
-- **2 种使用模式**：交互式（逐步引导）、快速启动（自动化/CI/CD）
-- **报告驱动修复**：基于本地 Markdown、飞书云文档或飞书多维表格中的审查结果执行修复
+- **2 种审查使用模式**：交互式（逐步引导）、快速启动（自动化/CI/CD）
+- **报告驱动修复**：基于本地 Markdown、飞书云文档或飞书多维表格中的确认问题清单，通过 Superpowers 执行修复
 - **飞书集成**：审查报告上传云文档、问题清单录入多维表格（可选，依赖 lark-cli）
 - **Bash 脚本**：仅支持 macOS/Linux，无 Python 依赖
 
@@ -66,9 +66,9 @@ flowchart TD
     FixReports -.可选创建/回写.-> Lark
 ```
 
-整体是 **skill 编排、agent 执行、脚本做环境探测** 的结构。Skill 负责模式判定、预检、用户确认和参数注入；Agent 负责真正的审查或修复，不再反问用户；脚本保持可独立测试，并统一使用 Bash 维护。Scan 阶段产出的问题报告是 Fix 阶段的输入，Fix 阶段再通过 isolated worktree / fix 分支 / 当前工作区执行修复，并生成修复报告。
+整体是 **skill 编排、脚本做环境探测、Scan Agent 审查、Superpowers 执行修复** 的结构。Scan Skill 负责模式判定、预检、用户确认和参数注入；Scan Agent 负责真正的 15 维审查，不再反问用户；Fix Skill 只负责预检、收集确认问题清单和输出目标，然后交给 `brainstorming` 与 `subagent-driven-development` 设计并执行修复。脚本保持可独立测试，并统一使用 Bash 维护。
 
-Scan 阶段由 AI 产出候选问题报告；候选问题进入 Fix 阶段前，建议先经过人工审核与筛选，确认误报、补充企业内部上下文、选择修复范围，并形成真正要修复的 Fix TODO List。Fix 阶段只消费明确选择的问题，通过受控工作区、Superpowers TDD 流程和验证步骤完成修复，并输出修复报告或回写飞书。
+Scan 阶段由 AI 产出候选问题报告；候选问题进入 Fix 阶段前，建议先经过人工审核与筛选，确认误报、补充企业内部上下文、选择修复范围，并形成真正要修复的 Fix TODO List。Fix 阶段只消费明确选择的问题，通过「问题清单位置」、修复范围、关键点和输出目标的逐步确认进入 Superpowers，再由 TDD、工作区隔离和完成前验证约束修复结果，最后输出修复报告或回写飞书。
 
 ## 安装
 
@@ -125,7 +125,7 @@ lark-cli auth login --recommend
 
 ## 使用方式
 
-插件支持两种使用模式：**交互式模式**（默认）和**快速启动模式**（适合自动化）。
+Scan 阶段支持两种使用模式：**交互式模式**（默认）和**快速启动模式**（适合自动化）。Fix 阶段不支持快速启动，必须先由用户确认问题清单、修复范围、关键点和输出目标。
 
 ### 方式一：交互式模式（推荐日常使用）
 
@@ -254,7 +254,7 @@ lark-cli auth login --recommend
 
 所有脚本位于 `scripts/` 目录，可独立运行测试，并统一使用 Bash。
 
-### 预扫描脚本（4 个，审查前顺序执行）
+### Scan 预扫描脚本（4 个，审查前顺序执行）
 
 ```bash
 # 项目识别（输出项目路径、来源类型）
@@ -283,7 +283,20 @@ bash scripts/phase5-preview-recent-commits.sh "/path/to/project"
 bash scripts/phase5-prepare-incremental.sh "/path/to/project" 5
 ```
 
-子 Agent 生成完整报告后，会先保存到项目目录下的 `code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。选择飞书上传时也复用这份 Markdown 文件；未上传或上传失败时，会在对话中展示该本地报告路径和完整报告内容。
+### Fix 阶段脚本（3 个，按需调用）
+
+```bash
+# 修复输入检测（本地 Markdown、飞书云文档、飞书多维表格或 base token）
+bash scripts/phase6-detect-fix-input.sh "/path/to/report.md"
+
+# Superpowers 能力检测
+bash scripts/phase7-detect-superpowers.sh
+
+# 修复工作区准备（当前分支、新分支或 worktree）
+bash scripts/phase8-prepare-fix-workspace.sh "/path/to/project" worktree "codex/fix-review-findings"
+```
+
+Scan Agent 生成完整审查报告后，会先保存到项目目录下的 `code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。选择飞书上传时也复用这份 Markdown 文件；未上传或上传失败时，会在对话中展示该本地报告路径和完整报告内容。Fix 阶段则生成 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`，并按用户选择创建飞书云文档或回写多维表格。
 
 ## 测试
 
@@ -300,7 +313,10 @@ bash tests/run_all.sh
 - `phase4-detect-lark-plugin.sh`：lark-cli 可用/不可用输出契约
 - `phase5-preview-recent-commits.sh`：最近 10 次提交的编号预览
 - `phase5-prepare-incremental.sh`：最近 N 次提交覆盖到首提交时的 diff 边界
-- 文档契约：主 skill 参数完整性、报告文件持久化、飞书 Base 字段去重、测试入口说明
+- `phase6-detect-fix-input.sh`：本地 Markdown、飞书云文档、飞书多维表格和 compact Base selector 检测
+- `phase7-detect-superpowers.sh`：Superpowers 必需技能发现
+- `phase8-prepare-fix-workspace.sh`：当前分支、新分支和 worktree 策略，脏工作区保护
+- 文档契约：主 skill 参数完整性、报告文件持久化、飞书 Base 字段去重、Fix 阶段交互门禁、Superpowers 委派和测试入口说明
 
 `tests/run_all.sh` 会按文件名顺序执行 `tests/test_*.sh`，最后运行 `git diff --check` 检查空白问题。
 
@@ -381,6 +397,12 @@ flowchart TD
 1. 审查框架：编辑 `references/review-framework.md`
 2. Agent 提示词：编辑 `agents/cc-code-reviewer.md`
 3. 确保模式×维度矩阵在两个文件中保持一致
+
+### 修改修复流程
+1. Fix 入口流程：编辑 `skills/cc-code-fixer/SKILL.md`
+2. Fix 输入、Superpowers 检测或工作区准备：编辑 `scripts/phase6-8*.sh`
+3. 修复报告格式和飞书读写：编辑 `references/fix-report-format.md` 与 `references/fix-feishu-integration.md`
+4. 同步示例、README 和 `tests/test_contract_docs.sh`，确保「问题清单位置」、Superpowers 委派和无专用 fixer agent 的契约一致
 
 ## License
 

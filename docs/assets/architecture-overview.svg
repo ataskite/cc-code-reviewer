@@ -1,0 +1,175 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <desc>cc-code-reviewer current architecture: Fix Skill collects 问题清单位置, then delegates to Superpowers and subagent-driven-development. No dedicated fixer agent is used.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 34px Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #0f172a; }
+      .subtitle { font: 18px Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #475569; }
+      .phase-title { font: 700 21px Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .box-title { font: 700 18px Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #111827; }
+      .box-text { font: 14px Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #334155; }
+      .small { font: 12px Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #475569; }
+      .tiny { font: 11px Arial, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #64748b; }
+      .blue { fill: #eff6ff; stroke: #2563eb; }
+      .blue2 { fill: #dbeafe; stroke: #60a5fa; }
+      .orange { fill: #fff7ed; stroke: #ea580c; }
+      .orange2 { fill: #ffedd5; stroke: #fb923c; }
+      .green { fill: #f0fdf4; stroke: #16a34a; }
+      .green2 { fill: #dcfce7; stroke: #4ade80; }
+      .purple { fill: #f5f3ff; stroke: #7c3aed; }
+      .card { stroke-width: 1.5; rx: 14; }
+      .panel { stroke-width: 2; rx: 18; }
+      .arrow { stroke: #1e293b; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #7c3aed; stroke-width: 2; stroke-dasharray: 7 7; fill: none; marker-end: url(#arrowPurple); }
+      .muted-line { stroke: #cbd5e1; stroke-width: 1.2; }
+    </style>
+    <marker id="arrow" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
+      <path d="M0,0 L10,5.5 L0,11 Z" fill="#1e293b"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
+      <path d="M0,0 L10,5.5 L0,11 Z" fill="#7c3aed"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="900"/>
+
+  <circle cx="52" cy="52" r="28" fill="#dbeafe" stroke="#2563eb" stroke-width="4"/>
+  <text x="52" y="61" text-anchor="middle" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#2563eb">&lt;/&gt;</text>
+  <text class="title" x="96" y="50">cc-code-reviewer 架构总览</text>
+  <text class="subtitle" x="98" y="82">Scan 发现候选问题，人工确认真实修复清单，Fix 通过 Superpowers 设计、执行和验证</text>
+
+  <rect class="card" x="22" y="200" width="112" height="168" fill="#ffffff" stroke="#cbd5e1"/>
+  <circle cx="78" cy="246" r="26" fill="#2563eb" opacity="0.9"/>
+  <rect x="48" y="282" width="60" height="36" rx="18" fill="#2563eb" opacity="0.9"/>
+  <text class="box-title" x="78" y="344" text-anchor="middle">User</text>
+  <text class="small" x="78" y="365" text-anchor="middle">开发者 / 团队</text>
+
+  <rect class="card" x="22" y="430" width="112" height="120" fill="#ffffff" stroke="#cbd5e1"/>
+  <rect x="43" y="452" width="70" height="52" rx="12" fill="#0f172a"/>
+  <text x="78" y="487" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" fill="#ffffff">CC</text>
+  <text class="box-title" x="78" y="528" text-anchor="middle">Claude Code</text>
+  <text class="small" x="78" y="548" text-anchor="middle">插件运行入口</text>
+
+  <path class="arrow" d="M134 285 H170"/>
+  <path class="arrow" d="M78 368 V428"/>
+
+  <rect class="panel blue" x="170" y="130" width="455" height="590"/>
+  <rect x="170" y="130" width="455" height="58" rx="18" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <text class="phase-title" x="398" y="166" text-anchor="middle" fill="#1d4ed8">Scan 阶段：AI 发现候选问题</text>
+
+  <rect class="card blue2" x="198" y="236" width="112" height="262"/>
+  <text class="box-title" x="254" y="300" text-anchor="middle">Scan Skill</text>
+  <line class="muted-line" x1="214" y1="324" x2="294" y2="324"/>
+  <text class="box-text" x="254" y="355" text-anchor="middle">模式判定</text>
+  <text class="box-text" x="254" y="380" text-anchor="middle">预扫描摘要</text>
+  <text class="box-text" x="254" y="405" text-anchor="middle">交互 / 快速启动</text>
+
+  <rect class="card blue2" x="335" y="236" width="128" height="262"/>
+  <text class="box-title" x="399" y="274" text-anchor="middle">phase1-5 脚本</text>
+  <text class="box-text" x="360" y="319">1 项目识别</text>
+  <text class="box-text" x="360" y="352">2 分支探测</text>
+  <text class="box-text" x="360" y="385">3 技术栈</text>
+  <text class="box-text" x="360" y="418">4 lark 检测</text>
+  <text class="box-text" x="360" y="451">5 增量准备</text>
+
+  <rect class="card blue2" x="488" y="236" width="118" height="262"/>
+  <text class="box-title" x="547" y="314" text-anchor="middle">Scan Agent</text>
+  <line class="muted-line" x1="505" y1="337" x2="589" y2="337"/>
+  <text class="box-text" x="547" y="370" text-anchor="middle">15 维审查</text>
+  <text class="small" x="547" y="408" text-anchor="middle">静态分析</text>
+  <text class="small" x="547" y="430" text-anchor="middle">语义分析</text>
+  <text class="small" x="547" y="452" text-anchor="middle">候选问题</text>
+
+  <rect class="card" x="640" y="236" width="130" height="262" fill="#ffffff" stroke="#93c5fd"/>
+  <text class="box-title" x="705" y="276" text-anchor="middle">候选问题报告</text>
+  <rect x="663" y="304" width="84" height="44" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text class="box-text" x="705" y="331" text-anchor="middle">Markdown</text>
+  <rect x="663" y="368" width="84" height="44" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text class="box-text" x="705" y="395" text-anchor="middle">飞书文档</text>
+  <rect x="663" y="432" width="84" height="44" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text class="box-text" x="705" y="459" text-anchor="middle">多维表格</text>
+
+  <path class="arrow" d="M310 367 H335"/>
+  <path class="arrow" d="M463 367 H488"/>
+  <path class="arrow" d="M606 367 H640"/>
+
+  <rect class="panel orange" x="812" y="130" width="320" height="590"/>
+  <rect x="812" y="130" width="320" height="58" rx="18" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
+  <text class="phase-title" x="972" y="166" text-anchor="middle" fill="#c2410c">人工审核阶段：确认真实修复清单</text>
+
+  <rect class="card orange2" x="850" y="238" width="190" height="300"/>
+  <text class="box-title" x="945" y="280" text-anchor="middle">人工审核与筛选</text>
+  <text class="box-text" x="886" y="326">✓ 确认误报</text>
+  <text class="box-text" x="886" y="365">✓ 补充企业上下文</text>
+  <text class="box-text" x="886" y="404">✓ 选择修复范围</text>
+  <text class="box-text" x="886" y="443">✓ 形成 Fix TODO List</text>
+  <rect x="872" y="480" width="146" height="38" rx="8" fill="#ffffff" stroke="#fb923c"/>
+  <text class="box-text" x="945" y="505" text-anchor="middle">未确认不进入 Fix</text>
+
+  <rect class="card" x="930" y="580" width="160" height="78" fill="#ffffff" stroke="#22c55e"/>
+  <text class="box-title" x="1010" y="614" text-anchor="middle" fill="#166534">已确认问题清单</text>
+  <text class="small" x="1010" y="642" text-anchor="middle">Fix TODO List</text>
+
+  <path class="arrow" d="M770 367 H812"/>
+  <path class="arrow" d="M945 538 V580"/>
+
+  <rect class="panel green" x="1175" y="130" width="395" height="590"/>
+  <rect x="1175" y="130" width="395" height="58" rx="18" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text class="phase-title" x="1372" y="166" text-anchor="middle" fill="#166534">Fix 阶段：按确认清单修复</text>
+
+  <rect class="card green2" x="1202" y="230" width="105" height="278"/>
+  <text class="box-title" x="1254" y="292" text-anchor="middle">Fix Skill</text>
+  <line class="muted-line" x1="1219" y1="316" x2="1289" y2="316"/>
+  <text class="small" x="1254" y="345" text-anchor="middle">项目预检</text>
+  <text class="small" x="1254" y="370" text-anchor="middle">选择来源</text>
+  <text class="small" x="1254" y="395" text-anchor="middle">问题清单位置</text>
+  <text class="small" x="1254" y="420" text-anchor="middle">确认范围</text>
+  <text class="small" x="1254" y="445" text-anchor="middle">确认输出</text>
+
+  <rect class="card green2" x="1328" y="230" width="116" height="278"/>
+  <text class="box-title" x="1386" y="277" text-anchor="middle">phase6-8</text>
+  <text class="box-text" x="1348" y="323">6 输入解析</text>
+  <text class="box-text" x="1348" y="360">7 能力检测</text>
+  <text class="box-text" x="1348" y="397">8 工作区准备</text>
+  <text class="tiny" x="1386" y="450" text-anchor="middle">脚本可独立测试</text>
+
+  <rect class="card" x="1198" y="555" width="252" height="140" fill="#ffffff" stroke="#22c55e"/>
+  <text class="box-title" x="1324" y="584" text-anchor="middle" fill="#166534">Superpowers</text>
+  <text class="small" x="1225" y="620">brainstorming：设计与边界</text>
+  <text class="small" x="1225" y="645">TDD：测试驱动修复</text>
+  <text class="small" x="1225" y="670">verification：完成前验证</text>
+
+  <rect class="card green2" x="1464" y="230" width="88" height="278"/>
+  <text class="box-title" x="1508" y="288" text-anchor="middle">SDD</text>
+  <text class="small" x="1508" y="318" text-anchor="middle">subagent-</text>
+  <text class="small" x="1508" y="340" text-anchor="middle">driven-</text>
+  <text class="small" x="1508" y="362" text-anchor="middle">development</text>
+  <line class="muted-line" x1="1480" y1="386" x2="1536" y2="386"/>
+  <text class="small" x="1508" y="417" text-anchor="middle">执行修复</text>
+  <text class="small" x="1508" y="442" text-anchor="middle">不扩大范围</text>
+
+  <rect class="card" x="1464" y="555" width="88" height="112" fill="#ffffff" stroke="#22c55e"/>
+  <text class="box-title" x="1508" y="588" text-anchor="middle">修复报告</text>
+  <text class="small" x="1508" y="624" text-anchor="middle">Markdown</text>
+  <text class="small" x="1508" y="649" text-anchor="middle">飞书回写</text>
+
+  <path class="arrow" d="M1090 619 C1120 619 1135 369 1175 369"/>
+  <path class="arrow" d="M1307 369 H1328"/>
+  <path class="arrow" d="M1444 369 H1464"/>
+  <path class="arrow" d="M1386 508 V555"/>
+  <path class="arrow" d="M1450 625 H1464"/>
+
+  <rect class="card purple" x="540" y="775" width="540" height="86"/>
+  <text class="box-title" x="810" y="809" text-anchor="middle" fill="#5b21b6">lark-cli</text>
+  <text class="box-text" x="810" y="837" text-anchor="middle">读取审查文档 / 创建修复报告云文档 / 回写多维表格字段</text>
+
+  <path class="dash" d="M705 498 V775"/>
+  <path class="dash" d="M1010 658 V775"/>
+  <path class="dash" d="M1508 667 V800 H1080"/>
+
+  <rect x="22" y="780" width="250" height="86" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+  <line x1="45" y1="812" x2="112" y2="812" class="arrow"/>
+  <text class="small" x="128" y="817">主流程数据流</text>
+  <line x1="45" y1="844" x2="112" y2="844" class="dash"/>
+  <text class="small" x="128" y="849">可选平台同步</text>
+</svg>
