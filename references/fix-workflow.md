@@ -2,7 +2,7 @@
 
 本文件定义 `cc-code-fixer` 的修复阶段工作流。修复器只消费已有审查报告、飞书问题清单或人工整理后的 Fix TODO List，不重新执行完整代码审查。
 
-修复阶段的核心规则：**交互确认是硬门禁**。scan 可以自动化，fix 必须由用户确认待修复问题清单、修复关键点、模型 / effort 和输出目标后才能进入 Superpowers 与子 agent 执行。
+修复阶段的核心规则：**交互确认是硬门禁**。scan 可以自动化，fix 必须由用户确认待修复问题清单、修复关键点和输出目标后才能进入 Superpowers 与修复执行。
 
 ---
 
@@ -15,13 +15,11 @@
 | 字段 | 说明 |
 |------|------|
 | `FIX_INPUT_TYPE` | `local-markdown`、`feishu-doc`、`feishu-base` 或 `feishu-base-token` |
-| `FIX_INPUT_SOURCE` | 用户在 AskUserQuestion 中提供的路径、URL 或 token 表达式 |
+| `FIX_INPUT_SOURCE` | 用户在「问题清单位置」步骤中提供的本地 Markdown 路径、飞书文档 URL、Base URL 或 `base:{BASE_TOKEN}:{TABLE_ID}` |
 | `PROJECT_DIR` | 待修复项目路径，必须是本地可访问目录 |
 | `ISSUE_SOURCE_SUMMARY` | 从报告或表格中提取的问题总数、优先级分布和来源说明 |
 | `NORMALIZED_ISSUES` | 归一化后的完整问题清单 |
 | `CONFIRMED_ISSUE_IDS` | 用户确认纳入本轮修复的问题编号 |
-| `MODEL_PREFERENCE` | 用户确认的模型偏好 |
-| `EFFORT_PREFERENCE` | 用户确认的 effort 偏好 |
 | `OUTPUT_TARGET` | `local-markdown`、`feishu-doc`、`feishu-base` 或组合输出 |
 
 ### 本地 Markdown 报告
@@ -55,7 +53,7 @@
 6. 读取本地 Markdown、飞书云文档或飞书多维表格，提取可确认的问题编号、位置、问题描述和修复建议。
 7. 展示问题清单表格，获得用户对本轮修复问题集合的确认。
 8. 展示修复关键点，获得用户确认。
-9. 获得模型 / effort 和输出目标确认。
+9. 获得输出目标确认。
 10. 输出最终执行计划并获得确认。
 
 飞书云文档或飞书多维表格读取失败时，如果没有来自本地 Markdown、已确认缓存或其他可信来源的已归一化问题上下文，必须停止在代码变更之前，只生成本地失败报告。无已归一化问题上下文时必须停止修复。
@@ -71,6 +69,7 @@
 3. 具体修复方案交给 Superpowers：不再由主 skill 预设档位。brainstorming 根据确认的问题集合形成本次修复设计。
 4. 使用 `test-driven-development` 优先补充或定位能暴露问题的测试；无法写测试时必须说明原因，并采用最小可验证命令替代。
 5. 使用 `verification-before-completion` 在报告、飞书更新和最终答复前执行完整验证命令。
+6. 使用 `subagent-driven-development` 执行 brainstorming 产出的修复计划。
 
 如果某个 Superpowers skill 不可用，修复器不得跳过相应纪律；必须在 degraded mode 中记录缺失项，并用等价的显式步骤完成：先提出修复思路，再写或定位验证，再运行验证命令。
 
@@ -105,7 +104,6 @@ degraded mode 下必须继续保护用户代码：
 - 解析得到的问题清单表格
 - 本次确认修复的问题编号集合
 - 修复关键点：修复意图、边界、不修内容和建议验证
-- 模型 / effort 偏好
 - 输出目标：仅本地报告、创建飞书云文档、更新飞书多维表格或组合输出
 
 默认修复顺序为：

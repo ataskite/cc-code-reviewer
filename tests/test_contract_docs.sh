@@ -9,7 +9,6 @@ README_FILE="$ROOT_DIR/README.md"
 EXAMPLES_FILE="$ROOT_DIR/references/examples.md"
 FIX_WORKFLOW_FILE="$ROOT_DIR/references/fix-workflow.md"
 FIX_SKILL_FILE="$ROOT_DIR/skills/cc-code-fixer/SKILL.md"
-FIX_AGENT_FILE="$ROOT_DIR/agents/cc-code-fixer.md"
 FIX_REPORT_FILE="$ROOT_DIR/references/fix-report-format.md"
 FIX_FEISHU_FILE="$ROOT_DIR/references/fix-feishu-integration.md"
 FIX_EXAMPLES_FILE="$ROOT_DIR/references/fix-examples.md"
@@ -70,6 +69,11 @@ grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$README_FILE"
 grep -q "待修复问题确认清单" "$README_FILE"
 grep -q "修复阶段必须交互确认" "$README_FILE"
 grep -q "工作区策略交给 Superpowers" "$README_FILE"
+grep -q "subagent-driven-development" "$README_FILE"
+if grep -qE "FixAgent|agents/cc-code-fixer|模型 / effort|MODEL_PREFERENCE|EFFORT_PREFERENCE" "$README_FILE"; then
+  echo "README fix flow must not reference removed fixer agent or model/effort selection" >&2
+  exit 1
+fi
 if grep -q "/cc-code-reviewer:cc-code-fixer .*--scope" "$README_FILE"; then
   echo "README fixer examples must not use --scope fast-style parameters" >&2
   exit 1
@@ -96,7 +100,12 @@ grep -q "test-driven-development" "$FIX_WORKFLOW_FILE"
 grep -q "verification-before-completion" "$FIX_WORKFLOW_FILE"
 grep -q "交互确认是硬门禁" "$FIX_WORKFLOW_FILE"
 grep -q "工作区策略交给 Superpowers" "$FIX_WORKFLOW_FILE"
+grep -q "subagent-driven-development" "$FIX_WORKFLOW_FILE"
 grep -q "无已归一化问题上下文时必须停止修复" "$FIX_WORKFLOW_FILE" "$FIX_FEISHU_FILE"
+if grep -qE "模型 / effort|MODEL_PREFERENCE|EFFORT_PREFERENCE" "$FIX_WORKFLOW_FILE"; then
+  echo "fix workflow must not require model/effort confirmation" >&2
+  exit 1
+fi
 if grep -q "快速启动" "$FIX_WORKFLOW_FILE"; then
   echo "fix workflow must not mention fast mode" >&2
   exit 1
@@ -156,7 +165,7 @@ grep -qx "# Fix Examples" "$FIX_EXAMPLES_FILE"
 grep -qx "## 本地 Markdown 报告" "$FIX_EXAMPLES_FILE"
 grep -qx "## 飞书多维表格" "$FIX_EXAMPLES_FILE"
 grep -q "待修复问题确认清单" "$FIX_EXAMPLES_FILE"
-grep -q "模型 / effort" "$FIX_EXAMPLES_FILE"
+grep -q "问题清单位置" "$FIX_EXAMPLES_FILE"
 if grep -q "快速启动" "$FIX_EXAMPLES_FILE"; then
   echo "fix examples must not document fast mode" >&2
   exit 1
@@ -168,38 +177,23 @@ grep -q "phase7-detect-superpowers" "$FIX_SKILL_FILE"
 grep -q "修复输入解析完成" "$FIX_SKILL_FILE"
 grep -q "AskUserQuestion" "$FIX_SKILL_FILE"
 grep -q "待修复问题确认清单" "$FIX_SKILL_FILE"
+grep -q "问题清单位置" "$FIX_SKILL_FILE"
 grep -q "问题清单表格" "$FIX_SKILL_FILE"
-grep -q "模型 / effort" "$FIX_SKILL_FILE"
 grep -q "工作区策略交给 Superpowers" "$FIX_SKILL_FILE"
 grep -q "确认执行计划" "$FIX_SKILL_FILE"
-grep -q "cc-code-reviewer:cc-code-fixer" "$FIX_SKILL_FILE"
+grep -q "brainstorming" "$FIX_SKILL_FILE"
+grep -q "subagent-driven-development" "$FIX_SKILL_FILE"
 if grep -qE 'FAST_MODE|FAST_PARAMS|快速启动|`--scope`|`--workspace`|`--strategy`|修复策略|请选择本次修复使用的工作区策略' "$FIX_SKILL_FILE"; then
   echo "cc-code-fixer must not contain fast mode, workspace strategy, or repair strategy selection" >&2
   exit 1
 fi
 
-test -f "$FIX_AGENT_FILE"
-grep -q "name: cc-code-fixer" "$FIX_AGENT_FILE"
-grep -q "修复任务参数" "$FIX_AGENT_FILE"
-grep -q "不得再次询问用户" "$FIX_AGENT_FILE"
-grep -q "test-driven-development" "$FIX_AGENT_FILE"
-grep -q "先写失败测试" "$FIX_AGENT_FILE"
-grep -q "verification-before-completion" "$FIX_AGENT_FILE"
-grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$FIX_AGENT_FILE"
-grep -q "修复状态" "$FIX_AGENT_FILE"
-grep -q "不得修复注入范围之外的问题" "$FIX_AGENT_FILE"
-grep -q "模型 / effort" "$FIX_AGENT_FILE"
-grep -q "FIX_BRANCH" "$FIX_AGENT_FILE"
-grep -q "OUTPUT_TARGET" "$FIX_AGENT_FILE"
-grep -q "| 修复分支 |" "$FIX_AGENT_FILE"
-grep -q "| 输出目标 |" "$FIX_AGENT_FILE"
-grep -q "已修复" "$FIX_AGENT_FILE"
-grep -q "部分修复" "$FIX_AGENT_FILE"
-grep -q "待人工确认" "$FIX_AGENT_FILE"
+# Fix agent removed: fix stage delegates to Superpowers (brainstorming → subagent-driven-development)
+# Key contracts now live in fix-report-format.md and fix-feishu-integration.md
 grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$FIX_REPORT_FILE"
 grep -q "fix-report-" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"
-if grep -qE "minimal|with-tests|目标分支|输出选项|TARGET_BRANCH|OUTPUT_OPTION|fixed|partially fixed|not fixed|not applicable|needs human confirmation|code-fix-report" "$FIX_AGENT_FILE" "$FIX_REPORT_FILE" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"; then
-  echo "cc-code-fixer contracts must use unified strategy names, injected parameter names, Chinese statuses, and fix-report filenames" >&2
+if grep -qE "minimal|with-tests|目标分支|输出选项|TARGET_BRANCH|OUTPUT_OPTION|fixed|partially fixed|not fixed|not applicable|needs human confirmation|code-fix-report" "$FIX_REPORT_FILE" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"; then
+  echo "cc-code-fixer contracts must use unified strategy names, Chinese statuses, and fix-report filenames" >&2
   exit 1
 fi
 

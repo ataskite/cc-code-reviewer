@@ -24,7 +24,10 @@
 用户：本地 Markdown
 
 修复器：
-请提供本地 Markdown 路径。
+请提供待修复问题确认清单的具体位置。
+
+问题清单位置：
+本地 Markdown 路径，例如 /path/to/project/fix-todo-confirmed.md
 
 用户：/path/to/project/fix-todo-confirmed.md
 ```
@@ -59,18 +62,13 @@
 
 用户：确认
 
-请选择本次修复期望使用的模型 / effort：
-[默认（推荐）] [高强度] [最高强度]
-
-用户：高强度
-
 请选择修复结果输出目标：
 [仅本地 Markdown] [上传飞书云文档] [更新原飞书多维表格] [同时云文档和多维表格]
 
 用户：仅本地 Markdown
 ```
 
-最终确认后，修复器从 `brainstorming` 开始，把项目预扫描结果、待修复问题确认清单、确认问题集合、修复关键点、模型 / effort 和输出目标注入 Superpowers。工作区策略交给 Superpowers，再启动修复子 agent。
+最终确认后，修复器从 `brainstorming` 开始，brainstorming 在共享上下文中可直接访问前面的报告解析结果和修复关键点。brainstorming 产出 spec 和 plan 后，由 `subagent-driven-development` 调度子 agent 执行修复。工作区策略交给 Superpowers。
 
 完成后输出：
 
@@ -99,7 +97,10 @@
 用户：飞书多维表格
 
 修复器：
-请提供飞书多维表格 URL 或 base:{BASE_TOKEN}:{TABLE_ID}。
+请提供待修复问题确认清单的具体位置。
+
+问题清单位置：
+飞书多维表格 URL 或 base:{BASE_TOKEN}:{TABLE_ID}
 
 用户：base:BASE123:tbl456
 ```

@@ -18,11 +18,11 @@ flowchart TD
     ReviewSkill["Scan Skill<br/>skills/cc-code-reviewer/SKILL.md"]
     FixSkill["Fix Skill<br/>skills/cc-code-fixer/SKILL.md"]
     ReviewAgent["Scan Agent<br/>agents/cc-code-reviewer.md"]
-    FixAgent["Fix Agent<br/>agents/cc-code-fixer.md"]
     Reports["Review reports<br/>Markdown / Feishu Doc / Feishu Base"]
     FixReports["Fix reports<br/>Markdown / Feishu Doc / Base writeback"]
     Lark["lark-cli<br/>lark-doc / lark-base"]
     Superpowers["Superpowers<br/>brainstorming / TDD / verification"]
+    SubAgentDriven["subagent-driven-development"]
 
     subgraph ScanPhase["Scan phase"]
       ReviewSkill --> ScanScripts["phase1-5 scripts<br/>project / branches / stack / lark / incremental diff"]
@@ -33,9 +33,9 @@ flowchart TD
     subgraph FixPhase["Fix phase"]
       Reports --> FixSkill
       FixSkill --> FixScripts["phase6-8 scripts<br/>input / superpowers / workspace"]
-      FixScripts --> FixAgent
-      Superpowers --> FixAgent
-      FixAgent --> FixReports
+      FixScripts --> Superpowers
+      Superpowers --> SubAgentDriven
+      SubAgentDriven --> FixReports
     end
 
     User --> ReviewSkill
@@ -61,16 +61,9 @@ flowchart TD
 **Fix Skill (`skills/cc-code-fixer/SKILL.md`)**:
 - Normalize fix input from local Markdown, Feishu Doc, or Feishu Base
 - Preflight: project detection → branch detection → project scan → lark-cli detection → Superpowers detection
-- Collect or validate fix plan: workspace strategy, severity/dimensions/issues, fix strategy, output target
-- Prepare current branch, fix branch, or isolated worktree through phase8
+- Collect confirmed issue scope and output target via AskUserQuestion
+- Hand off to Superpowers: brainstorming produces spec + plan, then subagent-driven-development executes
 - **Never** execute repairs itself
-
-**Fix Agent (`agents/cc-code-fixer.md`)**:
-- Consume the injected review report / normalized issue list and confirmed fix plan
-- Start with brainstorming context, then follow test-driven-development and verification-before-completion
-- Generate `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`
-- Optionally create a Feishu Doc or write repair status back to Feishu Base
-- **Never** repair out-of-scope issues or re-ask the user
 
 ### Execution Contract (Highest Priority)
 
@@ -79,11 +72,11 @@ These rules **must** be strictly followed:
 1. **Pre-scan before interaction**: Execute scan/fix preflight scripts first, collect environment data
 2. **Summary before questions**: Output a preflight summary once, only after the required scripts complete
 3. **Structured interaction**: In interactive mode, use AskUserQuestion for each step separately
-4. **Fast mode no interaction**: For scan, `--mode` triggers fast mode; for fix, scope/workspace/strategy selectors trigger fast mode. Validate and launch sub-agent immediately, no AskUserQuestion
+4. **Fast mode no interaction**: For scan, `--mode` triggers fast mode. Fix stage is always interactive.
 5. **No text replacement**: Never use plain text questions to replace AskUserQuestion steps
 6. **Never skip summary**: Even if all parameters provided, always show pre-scan summary
-7. **Fix stage honors confirmed scope**: `cc-code-fixer` must only repair the injected issue set selected by severity, dimension, or issue id
-8. **Fix stage uses controlled workspace**: prefer isolated worktree unless the user explicitly chooses current branch or fix branch
+7. **Fix stage honors confirmed scope**: `cc-code-fixer` must only repair the confirmed issue set
+8. **Fix stage delegates to Superpowers**: brainstorming produces spec + plan, subagent-driven-development executes; no dedicated fix sub-agent
 
 ## File Structure
 
@@ -91,7 +84,6 @@ These rules **must** be strictly followed:
 skills/cc-code-reviewer/SKILL.md    # Main skill definition (entry point)
 skills/cc-code-fixer/SKILL.md       # Fix-stage skill definition
 agents/cc-code-reviewer.md          # Sub agent for review execution
-agents/cc-code-fixer.md             # Sub agent for report-driven fixing
 references/
   ├── review-framework.md             # 15 dimensions definition + mode matrix
   ├── report-format.md                # Report output format specification
@@ -161,11 +153,10 @@ bash scripts/phase8-prepare-fix-workspace.sh "/path/to/project" worktree "fix/re
 ### Modifying Fix Logic
 
 1. **Fix flow**: Edit `skills/cc-code-fixer/SKILL.md`
-2. **Fix agent prompt**: Edit `agents/cc-code-fixer.md`
-3. **Input/workspace scripts**: Edit phase6-8 Bash scripts together
-4. **Fix report or Feishu contracts**: Edit `references/fix-report-format.md` and `references/fix-feishu-integration.md`
+2. **Input/workspace scripts**: Edit phase6-8 Bash scripts together
+3. **Fix report or Feishu contracts**: Edit `references/fix-report-format.md` and `references/fix-feishu-integration.md`
 
-**Critical**: Keep fix statuses, strategy names, injected parameter names, and report filename conventions consistent across skill, agent, references, examples, and tests.
+**Critical**: Keep fix statuses, report filename conventions, and Feishu field names consistent across skill, references, and tests.
 
 ### Plugin Installation
 
@@ -186,9 +177,8 @@ Verify installation by triggering the skill with a Java review request such as `
 
 ### Fix Mode Detection
 
-- **Interactive mode**: only input/project are present → parse report, summarize fix candidates, then collect plan via AskUserQuestion
-- **Fast mode**: fix selectors such as `--scope`, `--severity`, `--dimensions`, `--issues`, `--workspace`, `--strategy`, `--upload`, `--output`, `--branch`, or `--verify` are present → validate and execute directly
-- **No `--mode` parameter**: `cc-code-fixer` intentionally does not use scan-stage `--mode`
+- **Fixed interactive mode**: `cc-code-fixer` always requires interactive confirmation. No fast mode or `--mode` parameter.
+- User provides project path only; all fix planning is collected through AskUserQuestion steps.
 
 ### AskUserQuestion Usage
 

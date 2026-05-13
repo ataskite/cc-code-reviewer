@@ -40,11 +40,11 @@ flowchart TD
     ReviewSkill["审查 Skill<br/>skills/cc-code-reviewer/SKILL.md"]
     FixSkill["修复 Skill<br/>skills/cc-code-fixer/SKILL.md"]
     ReviewAgent["审查 Agent<br/>agents/cc-code-reviewer.md"]
-    FixAgent["修复 Agent<br/>agents/cc-code-fixer.md"]
     Reports["审查报告<br/>Markdown / 飞书云文档 / 飞书多维表格"]
     FixReports["修复报告<br/>Markdown / 飞书云文档 / 多维表格回写"]
     Lark["lark-cli<br/>lark-doc / lark-base"]
     Superpowers["Superpowers 流程<br/>brainstorming / TDD / verification"]
+    SubAgentDriven["subagent-driven-development"]
 
     subgraph ScanPhase["Scan 阶段：发现问题"]
       ReviewSkill --> ScanScripts["phase1-5 脚本<br/>项目识别 / 分支 / 技术栈 / lark / 增量准备"]
@@ -55,9 +55,9 @@ flowchart TD
     subgraph FixPhase["Fix 阶段：确认计划并修复"]
       FixSkill --> FixScripts["phase6-8 脚本<br/>输入解析 / Superpowers 检测 / 工作区准备"]
       Reports --> FixSkill
-      FixScripts --> FixAgent
-      Superpowers --> FixAgent
-      FixAgent --> FixReports
+      FixScripts --> Superpowers
+      Superpowers --> SubAgentDriven
+      SubAgentDriven --> FixReports
     end
 
     User --> ReviewSkill
@@ -204,9 +204,9 @@ lark-cli auth login --recommend
 /cc-code-reviewer:cc-code-fixer https://github.com/org/repo.git
 ```
 
-修复阶段第一步会通过 AskUserQuestion 要求用户提供待修复问题确认清单。清单可以是人工确认过的本地 Markdown，也可以是 scan 阶段产出的飞书云文档或飞书多维表格链接。修复器解析后会先展示问题清单表格，要求用户确认哪些问题纳入修复，再确认修复关键点、模型 / effort 和输出目标。
+修复阶段第一步会通过 AskUserQuestion 要求用户先选择待修复问题确认清单来源，再填写「问题清单位置」。清单可以是人工确认过的本地 Markdown，也可以是 scan 阶段产出的飞书云文档或飞书多维表格链接。修复器解析后会先展示问题清单表格，要求用户确认哪些问题纳入修复，再确认修复关键点和输出目标。
 
-工作区策略交给 Superpowers：确认执行后从 `brainstorming` 开始，由 Superpowers 结合待修复问题清单、项目预扫描结果和修复关键点决定隔离方式，再进入 worktree / 分支准备和 TDD 修复。
+工作区策略交给 Superpowers：确认执行后从 `brainstorming` 开始，由 Superpowers 结合待修复问题清单、项目预扫描结果和修复关键点决定隔离方式，再通过 `subagent-driven-development` 进入 worktree / 分支准备和 TDD 修复。
 
 修复完成后会生成 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。如果配置飞书输出，可按需创建修复报告云文档，或更新原飞书多维表格中的修复状态、修复时间、修复分支和备注。
 
@@ -341,23 +341,27 @@ flowchart TD
 ```mermaid
 flowchart TD
     Start["用户触发 cc-code-fixer"]
-    Input["解析修复输入<br/>phase6"]
     Project["项目与能力探测<br/>phase1-4 + phase7"]
-    Plan["确认修复计划<br/>工作区 / 范围 / 维度 / 策略 / 输出"]
-    Workspace["准备修复工作区<br/>phase8"]
-    Brainstorm["注入审查报告<br/>进入 brainstorming"]
-    TDD["按 test-driven-development 修复"]
+    InputAsk["AskUserQuestion<br/>选择来源并填写问题清单位置"]
+    Input["解析问题清单<br/>phase6"]
+    Confirm["展示问题表格<br/>确认问题与关键点"]
+    Output["确认输出目标"]
+    Brainstorm["brainstorming<br/>形成修复设计与隔离建议"]
+    Workspace["按 Superpowers 建议准备工作区<br/>phase8"]
+    SubAgentDriven["subagent-driven-development<br/>执行 TDD 修复"]
     Verify["verification-before-completion"]
     Report["生成 fix-report Markdown"]
     Lark["创建云文档或回写多维表格<br/>可选"]
 
-    Start --> Input
-    Input --> Project
-    Project --> Plan
-    Plan --> Workspace
-    Workspace --> Brainstorm
-    Brainstorm --> TDD
-    TDD --> Verify
+    Start --> Project
+    Project --> InputAsk
+    InputAsk --> Input
+    Input --> Confirm
+    Confirm --> Output
+    Output --> Brainstorm
+    Brainstorm --> Workspace
+    Workspace --> SubAgentDriven
+    SubAgentDriven --> Verify
     Verify --> Report
     Report --> Lark
 ```

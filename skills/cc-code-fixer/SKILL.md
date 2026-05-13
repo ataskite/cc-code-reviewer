@@ -1,12 +1,12 @@
 ---
-description: Java 审查问题修复 - 基于人工确认的问题清单执行 TDD 修复、验证和修复报告生成
+description: Java 审查问题修复 - 基于人工确认的问题清单，通过 Superpowers 执行 TDD 修复、验证和修复报告生成
 ---
 
 ## 执行算法（最高优先级，必须严格按此顺序执行）
 
 `cc-code-fixer` 的入口和 scan 阶段保持一致：用户只需要提供待修复项目地址（本地路径或 Git URL）。待修复问题清单必须通过 AskUserQuestion 在交互中收集和确认。修复阶段必须交互确认，不接受用参数绕过人工确认。
 
-主 skill 只负责解析项目、预检测、收集待修复问题确认清单、确认模型 / effort 和输出目标，然后把人工确认后的上下文交给 Superpowers 与修复子 agent。主 skill 不直接修改业务代码，也不得声称已经完成实际修复。
+主 skill 只负责解析项目、预检测、收集待修复问题确认清单和输出目标，然后把确认后的上下文交给 Superpowers（brainstorming → subagent-driven-development）。主 skill 不直接修改业务代码，也不得声称已经完成实际修复。
 
 ### 第零步：模式判定（固定交互式）
 
@@ -46,7 +46,7 @@ description: Java 审查问题修复 - 基于人工确认的问题清单执行 T
 ```text
 ❌ 修复阶段必须交互确认
 
-cc-code-fixer 只接受项目地址。待修复问题确认清单、模型 / effort 和输出目标会在后续 AskUserQuestion 中逐步确认。
+cc-code-fixer 只接受项目地址。待修复问题确认清单和输出目标会在后续 AskUserQuestion 中逐步确认。
 ```
 
 然后终止，不得降级执行，不得继续调用子 agent。
@@ -122,7 +122,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase7-detect-superpowers.sh"
     description: "停止本次修复，不修改任何文件"
 - multiSelect: false
 
-用户选择来源后，必须追加一次 AskUserQuestion 收集具体路径、链接或 `base:{BASE_TOKEN}:{TABLE_ID}` token，header 使用 "清单地址"。如果当前 AskUserQuestion 不支持自由文本，必须使用 Other/free-form 收集。
+用户选择来源后，必须追加一次 AskUserQuestion 收集「问题清单位置」，即本地 Markdown 路径、飞书云文档链接、飞书多维表格 URL 或 `base:{BASE_TOKEN}:{TABLE_ID}` token。question 使用 "请提供待修复问题确认清单的具体位置"，header 使用 "问题清单位置"。如果当前 AskUserQuestion 不支持自由文本，必须使用 Other/free-form 收集。
 
 收集到 `FIX_INPUT_SOURCE` 后，执行：
 
@@ -130,7 +130,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase7-detect-superpowers.sh"
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOURCE>"
 ```
 
-然后读取或解析修复输入，归一化为问题清单。归一化问题字段至少包括：`issue_id`、`severity`、`dimension`、`location`、`confidence`、`evidence`、`impact`、`suggestion`、`source_type`、`source_ref`、`fix_status`。如果飞书读取失败且没有已归一化问题上下文，必须停止修复，只生成本地失败说明，不得继续调用子 agent。
+然后读取或解析修复输入，归一化为问题清单。归一化问题字段至少包括：`issue_id`、`severity`、`dimension`、`location`、`confidence`、`evidence`、`impact`、`suggestion`、`source_type`、`source_ref`、`fix_status`。如果飞书读取失败且没有已归一化问题上下文，必须停止修复，只生成本地失败说明，不得继续进入 Superpowers。
 
 读取完成后必须输出「修复输入解析完成」摘要，说明清单类型、来源、解析状态、问题总数、严重级别分布和已跳过数量。
 
@@ -188,24 +188,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOUR
     description: "停止本次修复，不修改任何文件"
 - multiSelect: false
 
-### 第七步：选择模型 / effort
-
-模型 / effort 是用户对本次修复投入程度的确认项。当前若 Task 调用无法运行时覆盖子 agent frontmatter，则必须把选择作为 `MODEL_PREFERENCE` 和 `EFFORT_PREFERENCE` 注入 prompt，约束子 agent 的执行深度。
-
-必须调用 AskUserQuestion：
-
-- question: "请选择本次修复期望使用的模型 / effort"
-- header: "模型强度"
-- options:
-  - label: "默认（推荐）"
-    description: "使用插件默认 fixer agent 配置，平衡速度和修复质量"
-  - label: "高强度"
-    description: "注入 high effort 偏好，要求更充分的影响面分析和验证"
-  - label: "最高强度"
-    description: "注入 max effort 偏好，适合 P0/P1 或跨模块高风险修复"
-- multiSelect: false
-
-### 第八步：选择输出目标
+### 第七步：选择输出目标
 
 必须调用 AskUserQuestion：
 
@@ -224,7 +207,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOUR
 
 如果 `LARK_PLUGIN_INSTALLED=false`，仍可展示飞书选项但必须在 description 中说明不可用；用户选择飞书目标时进入本地 Markdown 降级输出，并在执行计划中标注飞书上传不可用原因。
 
-### 第九步：确认执行计划
+### 第八步：确认执行计划
 
 在调用 AskUserQuestion 前必须展示完整执行计划：
 
@@ -235,10 +218,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOUR
 - 待修复问题确认清单：{FIX_INPUT_TYPE} {FIX_INPUT_SOURCE}
 - 确认修复问题数：{N}
 - 问题编号：{CONFIRMED_ISSUE_IDS}
-- 模型 / effort：{MODEL_PREFERENCE} / {EFFORT_PREFERENCE}
 - 输出目标：{OUTPUT_TARGET}
 - Superpowers：{SUPERPOWERS_STATUS}
-- 工作区策略：工作区策略交给 Superpowers，从 brainstorming 后的隔离设计进入 worktree/branch 准备
+- 工作区策略：工作区策略交给 Superpowers，从 brainstorming 后的隔离设计进入工作区准备
 ```
 
 然后必须调用 AskUserQuestion：
@@ -247,77 +229,57 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOUR
 - header: "确认执行计划"
 - options:
   - label: "确认执行"
-    description: "从 brainstorming 开始，随后准备工作区并启动修复子 agent"
+    description: "从 brainstorming 开始，随后由 Superpowers 调度修复执行"
   - label: "取消"
     description: "停止本次修复，不修改任何文件"
 - multiSelect: false
 
-用户选择「取消」时立即终止，不执行工作区准备，不调用子 agent。
+用户选择「取消」时立即终止，不执行工作区准备，不进入 Superpowers。
 
-### 第十步：启动 Superpowers 设计与工作区准备
+### 第九步：启动 Superpowers 设计与修复执行
 
-确认执行后，必须先从 `brainstorming` 开始。传入：
+确认执行后，调用 `brainstorming` skill。brainstorming 运行在主 skill 的共享上下文中，可以直接访问前面的预检测摘要、报告解析结果、问题表格和修复关键点，无需额外注入参数。
 
-- 项目预扫描结果
-- 待修复问题确认清单
-- 用户确认的修复问题集合
-- 修复关键点
-- 模型 / effort 偏好
-- 输出目标
+brainstorming 负责形成：
+- 修复设计（方案、影响面、风险边界）
+- 验证思路
+- 工作区隔离建议
+- 产出 spec 和 plan
 
-`brainstorming` 负责形成修复设计、影响面、风险边界、验证思路和工作区隔离建议。工作区策略交给 Superpowers；主 skill 不再通过 AskUserQuestion 选择工作区策略。具体修复方案也交给 brainstorming 产出的修复设计，不再由主 skill 预设档位。
-
-如果选择 worktree 或新分支策略，按 Superpowers 工作区准备纪律确认隔离方式，再调用 phase8 工作区准备脚本：
+如果 brainstorming 建议使用 worktree 或新分支策略，调用 phase8 工作区准备脚本：
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase8-prepare-fix-workspace.sh" "$PROJECT_DIR" "{WORKSPACE_STRATEGY}" "{FIX_BRANCH}"
 ```
 
-如果 `SUPERPOWERS_AVAILABLE=false`，进入 degraded mode，但不得跳过修复设计、测试优先和完成前验证纪律；必须在最终注入给子 agent 的修复任务参数中记录缺失的 Superpowers skills 和降级原因。
+如果 `SUPERPOWERS_AVAILABLE=false`，进入 degraded mode，但不得跳过修复设计、测试优先和完成前验证纪律。
 
-### 第十一步：调用子 agent 执行修复
+brainstorming 产出 plan 后，调用 `subagent-driven-development` skill 执行修复计划。修复执行必须遵守以下约束：
 
-使用 Task 工具启动 `cc-code-reviewer:cc-code-fixer`：
-
-- description: `执行 Java 审查问题修复`
-- subagent_type: `cc-code-reviewer:cc-code-fixer`
-- prompt: 按「子 agent 调用规范」注入完整参数
-
-主 skill 不执行实际代码修复；实际代码修改、测试、验证、报告生成和飞书回写由子 agent 按注入参数完成。
+- **范围优先**：只修复用户确认的问题，不得修复范围外问题
+- **测试驱动**：遵守 `test-driven-development`
+- **验证后声明**：遵守 `verification-before-completion`
+- **修复报告**：按 `references/fix-report-format.md` 生成 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`
+- **飞书回写**：按 `references/fix-feishu-integration.md` 执行（如用户选择了飞书输出目标）
+- **默认中文**：报告、状态说明和最终汇总使用中文
 
 ---
 
-## 子 agent 调用规范
+## Degraded Mode
 
-prompt 必须包含以下章节，章节标题不得改名：
+进入 degraded mode 的典型条件：
 
-### 修复任务参数
+- 飞书读取或更新失败
+- Superpowers skill 检测不完整
+- 项目依赖无法下载或测试环境不可用
+- 审查报告字段缺失，只能解析部分问题
+- 当前工作区存在用户修改且无法安全创建隔离分支
 
-必须注入：
-- `FIX_INPUT_TYPE`
-- `FIX_INPUT_SOURCE`
-- `PROJECT_DIR`
-- `FIX_WORKSPACE_PATH`
-- `WORKSPACE_STRATEGY`
-- `FIX_BRANCH`
-- `CONFIRMED_ISSUE_IDS`
-- `MODEL_PREFERENCE`
-- `EFFORT_PREFERENCE`
-- `OUTPUT_TARGET`
-- `VERIFY_COMMANDS`
-- `SUPERPOWERS_STATUS`
-- `DEGRADED_MODE_REASON`
+degraded mode 下必须继续保护用户代码：
 
-### 归一化问题清单
+- 不扩大修复范围
+- 不覆盖已有未提交修改
+- 报告中明确列出降级原因、已完成动作、未完成动作和建议补救步骤
+- 能生成本地报告时必须生成本地 Markdown 报告
 
-注入完整的归一化问题列表，不只注入摘要。每条问题至少包含 `issue_id`、`severity`、`dimension`、`location`、`confidence`、`evidence`、`impact`、`suggestion`、`source_type`、`source_ref`、`fix_status`。
-
-### 用户确认的修复计划
-
-注入用户确认后的完整执行计划。必须包含待修复问题确认清单来源、确认修复的问题编号、修复关键点、模型 / effort、输出目标、Superpowers 设计摘要、工作区准备结果和取消状态。
-
-### 项目预扫描结果
-
-注入 phase1、phase2、phase3、phase4、phase6、phase7 的完整原始输出，保留 `MODULE:`、`TECH_STACK:`、`BRANCH:`、`SUPERPOWER_SKILL:` 等行，供子 agent 判断影响面、验证命令和降级状态。
-
-子 agent 返回后，主 skill 只负责展示子 agent 的最终摘要，不重写问题状态，不补造测试结果，不追加未经验证的成功结论。
+飞书读取失败的 degraded mode 是只读失败降级：没有已归一化问题上下文时必须停止修复并生成本地失败报告。飞书写入或更新失败的 degraded mode 允许继续完成代码修复、验证和本地报告，只把飞书回写结果标记为失败。

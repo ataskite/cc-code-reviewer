@@ -8,6 +8,7 @@ REQUIRED_SKILLS=(
   "test-driven-development"
   "verification-before-completion"
   "finishing-a-development-branch"
+  "subagent-driven-development"
 )
 
 missing=()
