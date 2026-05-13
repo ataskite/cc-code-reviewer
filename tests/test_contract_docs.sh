@@ -112,6 +112,9 @@ grep -q "交互确认是硬门禁" "$FIX_WORKFLOW_FILE"
 grep -q "工作区策略交给 Superpowers" "$FIX_WORKFLOW_FILE"
 grep -q "subagent-driven-development" "$FIX_WORKFLOW_FILE"
 grep -q "无已归一化问题上下文时必须停止修复" "$FIX_WORKFLOW_FILE" "$FIX_FEISHU_FILE"
+grep -q "Other/free-form 中粘贴" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
+grep -q "本地 Markdown 必须直接读取文件内容" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
+grep -q "不得使用 Python 脚本读取飞书云文档或飞书多维表格" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_FEISHU_FILE"
 if grep -qE "模型 / effort|MODEL_PREFERENCE|EFFORT_PREFERENCE" "$FIX_WORKFLOW_FILE"; then
   echo "fix workflow must not require model/effort confirmation" >&2
   exit 1
@@ -212,7 +215,7 @@ MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 
 MARKETPLACE_PLUGIN_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | sed -n '2p' | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_VERSION" ]
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_PLUGIN_VERSION" ]
-[ "$PLUGIN_VERSION" = "1.1.3" ]
+[ "$PLUGIN_VERSION" = "1.1.4" ]
 grep -q "code-fixer" "$PLUGIN_FILE"
 grep -q '"code-fix"' "$PLUGIN_FILE"
 grep -q '"code-fix"' "$MARKETPLACE_FILE"

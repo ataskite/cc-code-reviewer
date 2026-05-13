@@ -122,7 +122,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase7-detect-superpowers.sh"
     description: "停止本次修复，不修改任何文件"
 - multiSelect: false
 
-用户选择来源后，必须追加一次 AskUserQuestion 收集「问题清单位置」，即本地 Markdown 路径、飞书云文档链接、飞书多维表格 URL 或 `base:{BASE_TOKEN}:{TABLE_ID}` token。question 使用 "请提供待修复问题确认清单的具体位置"，header 使用 "问题清单位置"。如果当前 AskUserQuestion 不支持自由文本，必须使用 Other/free-form 收集。
+用户选择来源后，必须追加一次 AskUserQuestion 收集「问题清单位置」，即本地 Markdown 路径、飞书云文档链接、飞书多维表格 URL 或 `base:{BASE_TOKEN}:{TABLE_ID}` token。question 使用 "请提供待修复问题确认清单的具体位置，并在 Other/free-form 中粘贴 URL 或本地路径"，header 使用 "问题清单位置"。如果当前 AskUserQuestion 不支持自由文本，必须使用 Other/free-form 收集，并在选项描述里明确要求用户在 Other/free-form 中粘贴本地 Markdown 路径、飞书云文档 URL、飞书多维表格 URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。
 
 收集到 `FIX_INPUT_SOURCE` 后，执行：
 
@@ -131,6 +131,14 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOUR
 ```
 
 然后读取或解析修复输入，归一化为问题清单。归一化问题字段至少包括：`issue_id`、`severity`、`dimension`、`location`、`confidence`、`evidence`、`impact`、`suggestion`、`source_type`、`source_ref`、`fix_status`。如果飞书读取失败且没有已归一化问题上下文，必须停止修复，只生成本地失败说明，不得继续进入 Superpowers。
+
+输入读取规则：
+
+- 本地 Markdown 必须直接读取文件内容，再按 Markdown 报告规则解析。
+- 飞书云文档必须使用 `lark-cli docs` 和 `lark-doc` skill 读取。
+- 飞书多维表格必须使用 `lark-cli base` 和 `lark-base` skill 读取。
+- `phase6-detect-fix-input.sh` 只用于识别输入类型和提取必要 token，不得读取云文档或多维表格内容。
+- 不得使用 Python 脚本读取飞书云文档或飞书多维表格。
 
 读取完成后必须输出「修复输入解析完成」摘要，说明清单类型、来源、解析状态、问题总数、严重级别分布和已跳过数量。
 

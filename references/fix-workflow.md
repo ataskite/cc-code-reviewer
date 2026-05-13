@@ -8,7 +8,7 @@
 
 ## Fix Input Normalization
 
-`cc-code-fixer` 入口只接收项目地址。待修复问题确认清单必须在项目预检测之后通过 AskUserQuestion 收集。
+`cc-code-fixer` 入口只接收项目地址。待修复问题确认清单必须在项目预检测之后通过 AskUserQuestion 收集。收集「问题清单位置」时，必须明确要求用户在 Other/free-form 中粘贴 URL 或本地路径。
 
 归一化结果至少包含：
 
@@ -27,17 +27,18 @@
 本地报告必须满足：
 
 - 文件存在且扩展名为 `.md`
+- 本地 Markdown 必须直接读取文件内容，再按 Markdown 报告规则解析
 - 内容包含可识别的问题编号、位置、问题描述和修复建议
 - 相对路径必须基于当前工作目录解析为绝对路径
 - 如果报告格式不完整，修复器只能提取可确认的问题，并把其余项列入「未修复问题」或「待人工确认」
 
 ### 飞书云文档
 
-飞书云文档输入必须先通过 `lark-cli docs` 读取文档内容，再按 Markdown 报告规则解析。读取失败时不得继续假装拥有完整问题上下文，应进入 degraded mode，并要求用户改用本地 Markdown 或飞书多维表格来源。
+飞书云文档输入必须先通过 `lark-cli docs` 和 `lark-doc` skill 读取文档内容，再按 Markdown 报告规则解析。不得使用 Python 脚本读取飞书云文档或飞书多维表格。读取失败时不得继续假装拥有完整问题上下文，应进入 degraded mode，并要求用户改用本地 Markdown 或飞书多维表格来源。
 
 ### 飞书多维表格
 
-飞书 Base 输入必须解析出 `base_token` 与 `table_id`。如果 URL 无法稳定提取表 ID，必须要求用户补充 `base:{BASE_TOKEN}:{TABLE_ID}` 格式。读取记录时只处理具备「问题编号」「位置」「问题描述」「修复建议」「修复状态」字段的数据行。
+飞书 Base 输入必须解析出 `base_token` 与 `table_id`，并通过 `lark-cli base` 和 `lark-base` skill 读取记录。如果 URL 无法稳定提取表 ID，必须要求用户补充 `base:{BASE_TOKEN}:{TABLE_ID}` 格式。读取记录时只处理具备「问题编号」「位置」「问题描述」「修复建议」「修复状态」字段的数据行。`phase6-detect-fix-input.sh` 只负责识别输入类型和提取必要 token，不得读取云文档或多维表格内容。
 
 ---
 

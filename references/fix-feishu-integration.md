@@ -1,12 +1,14 @@
 # Fix Feishu Integration
 
-本文件定义 `cc-code-fixer` 使用 `lark-cli` 读取审查结果、更新修复状态和降级回退的规则。所有飞书操作均通过 `lark-cli` 完成，禁止使用旧版 `feishu_create_doc` 或 `feishu_bitable_*` 工具。
+本文件定义 `cc-code-fixer` 使用 `lark-cli` 读取审查结果、更新修复状态和降级回退的规则。所有飞书操作均通过 `lark-cli` 完成，禁止使用旧版 `feishu_create_doc` 或 `feishu_bitable_*` 工具。不得使用 Python 脚本读取飞书云文档或飞书多维表格。
 
 ---
 
 ## 读取飞书云文档
 
 适用输入：`https://.../docx/...` 或 `https://.../docs/...`
+
+必须使用 `lark-cli docs` 和 `lark-doc` skill 读取云文档内容。
 
 - 飞书操作失败不得阻塞本地修复报告生成。
 - 写操作前必须先读，确认目标文档或表格存在。
@@ -39,6 +41,8 @@ lark-cli docs +fetch --api-version v2 --doc "{DOC_URL}" --doc-format markdown
 ## 读取飞书多维表格
 
 适用输入：Base URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。
+
+必须使用 `lark-cli base` 和 `lark-base` skill 读取多维表格记录。
 
 ### 表结构要求
 
