@@ -15,7 +15,7 @@
 | 字段 | 说明 |
 |------|------|
 | `FIX_INPUT_TYPE` | `local-markdown`、`feishu-doc`、`feishu-base` 或 `feishu-base-token` |
-| `FIX_INPUT_SOURCE` | 用户在「问题清单位置」步骤中提供的本地 Markdown 路径、飞书文档 URL、Base URL 或 `base:{BASE_TOKEN}:{TABLE_ID}` |
+| `FIX_INPUT_SOURCE` | 用户在「问题清单位置」步骤中提供的本地 Markdown 路径、飞书文档 URL、Base URL、带 `table=` 的 wiki URL 或 `base:{BASE_TOKEN}:{TABLE_ID}` |
 | `PROJECT_DIR` | 待修复项目路径，必须是本地可访问目录 |
 | `ISSUE_SOURCE_SUMMARY` | 从报告或表格中提取的问题总数、优先级分布和来源说明 |
 | `NORMALIZED_ISSUES` | 归一化后的完整问题清单 |
@@ -38,7 +38,7 @@
 
 ### 飞书多维表格
 
-飞书 Base 输入必须解析出 `base_token` 与 `table_id`，并通过 `lark-cli base` 和 `lark-base` skill 读取记录。如果 URL 无法稳定提取表 ID，必须要求用户补充 `base:{BASE_TOKEN}:{TABLE_ID}` 格式。读取记录时只处理具备「问题编号」「位置」「问题描述」「修复建议」「修复状态」字段的数据行。`phase6-detect-fix-input.sh` 只负责识别输入类型和提取必要 token，不得读取云文档或多维表格内容。
+飞书 Base 输入可以是 `/base/` URL、带 `table=` 参数的 `/wiki/` URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。输入必须解析出 `table_id`；可直接解析 `base_token` 时也要保留，并通过 `lark-cli base` 和 `lark-base` skill 读取记录。如果 URL 无法稳定提取表 ID，必须要求用户补充 `base:{BASE_TOKEN}:{TABLE_ID}` 格式。读取记录时只处理具备「问题编号」「位置」「问题描述」「修复建议」「修复状态」字段的数据行。`phase6-detect-fix-input.sh` 只负责识别输入类型和提取必要 token，不得读取云文档或多维表格内容。
 
 ---
 

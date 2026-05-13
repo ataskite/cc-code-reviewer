@@ -100,7 +100,7 @@
 请提供待修复问题确认清单的具体位置。
 
 问题清单位置：
-请在 Other/free-form 中粘贴飞书多维表格 URL 或 base:{BASE_TOKEN}:{TABLE_ID}
+请在 Other/free-form 中粘贴飞书多维表格 URL、带 table 参数的 wiki URL 或 base:{BASE_TOKEN}:{TABLE_ID}
 
 用户：base:BASE123:tbl456
 ```

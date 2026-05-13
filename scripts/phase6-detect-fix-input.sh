@@ -22,6 +22,17 @@ case "$INPUT" in
     echo "FIX_INPUT_TYPE=feishu-base"
     echo "FIX_INPUT_URL=$INPUT"
     ;;
+  http://*wiki/*table=*|https://*wiki/*table=*)
+    TABLE_PART="${INPUT#*table=}"
+    TABLE_ID="${TABLE_PART%%&*}"
+    if [ -z "$TABLE_ID" ] || [ "$TABLE_ID" = "$INPUT" ]; then
+      echo "无法识别修复输入来源: $INPUT" >&2
+      exit 1
+    fi
+    echo "FIX_INPUT_TYPE=feishu-base"
+    echo "FIX_INPUT_URL=$INPUT"
+    echo "FEISHU_TABLE_ID=$TABLE_ID"
+    ;;
   base:*:*)
     REST="${INPUT#base:}"
     BASE_TOKEN="${REST%%:*}"

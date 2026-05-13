@@ -28,6 +28,12 @@ BASE_OUTPUT="$(bash "$ROOT_DIR/scripts/phase6-detect-fix-input.sh" "https://exam
 echo "$BASE_OUTPUT" | grep -Fq "FIX_INPUT_TYPE=feishu-base"
 echo "$BASE_OUTPUT" | grep -Fq "FIX_INPUT_URL=https://example.feishu.cn/base/BASE123?table=tbl456"
 
+WIKI_BASE_URL="https://example.feishu.cn/wiki/FlKdwsFpIih3CzkQhl7cwR40nsz?table=tblhnVIjMA4Rts1i&view=vewiXLBlKx"
+WIKI_BASE_OUTPUT="$(bash "$ROOT_DIR/scripts/phase6-detect-fix-input.sh" "$WIKI_BASE_URL")"
+echo "$WIKI_BASE_OUTPUT" | grep -Fq "FIX_INPUT_TYPE=feishu-base"
+echo "$WIKI_BASE_OUTPUT" | grep -Fq "FIX_INPUT_URL=$WIKI_BASE_URL"
+echo "$WIKI_BASE_OUTPUT" | grep -Fq "FEISHU_TABLE_ID=tblhnVIjMA4Rts1i"
+
 TOKEN_OUTPUT="$(bash "$ROOT_DIR/scripts/phase6-detect-fix-input.sh" "base:BASE123:tbl456")"
 echo "$TOKEN_OUTPUT" | grep -Fq "FIX_INPUT_TYPE=feishu-base-token"
 echo "$TOKEN_OUTPUT" | grep -Fq "FEISHU_BASE_TOKEN=BASE123"

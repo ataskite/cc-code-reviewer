@@ -2,7 +2,7 @@
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "cc-code-reviewer",
   "description": "Java code review and report-driven fixing plugin for Claude Code",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "owner": {
     "name": "ataskite"
   },
@@ -11,7 +11,7 @@
       "name": "cc-code-reviewer",
       "description": "AI-powered Java code review and report-driven fixing with TDD workflow support",
       "source": "./",
-      "version": "1.1.4",
+      "version": "1.1.5",
       "category": "development",
       "tags": ["java", "code-review", "code-fix", "quality", "security"]
     }
