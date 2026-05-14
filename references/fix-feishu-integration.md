@@ -42,9 +42,19 @@ lark-cli docs +fetch --api-version v2 --doc "{DOC_URL}" --doc-format markdown
 
 ## 读取飞书多维表格
 
-适用输入：Base URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。
+适用输入：Base URL、带 `table=` 参数的 Wiki URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。
 
 必须使用 `lark-cli base` 和 `lark-base` skill 读取多维表格记录。
+
+### URL 解析规则
+
+对形如 `https://...feishu.cn/wiki/{WIKI_TOKEN}?table={TABLE_ID}&view={VIEW_ID}` 的链接，必须按以下顺序解析：
+
+1. 从路径 `/wiki/{WIKI_TOKEN}` 提取 wiki token。
+2. 从查询参数 `table` 提取表格 ID，作为 `--table-id`。
+3. 从查询参数 `view` 提取视图 ID，作为可选 `--view-id`；如果后续读取命令不支持 view 参数，可以只用于记录来源上下文。
+4. 使用 `lark-cli wiki spaces get_node` 将 wiki token 解析为真实 base token，取返回 JSON 的 `.data.node.obj_token`。
+5. 使用真实 base token 和 table ID 调用 `lark-cli base +record-list`；不得把 wiki token 直接当作 base token。
 
 ### 表结构要求
 
@@ -72,6 +82,23 @@ lark-cli docs +fetch --api-version v2 --doc "{DOC_URL}" --doc-format markdown
 
 ```bash
 lark-cli base +record-list --base-token "{BASE_TOKEN}" --table-id "{TABLE_ID}"
+```
+
+Wiki 链接读取模板：
+
+```bash
+WIKI_TOKEN="FlKdwsFpIih3CzkQhl7cwR40nsz"
+TABLE_ID="tblhnVIjMA4Rts1i"
+VIEW_ID="vewiXLBlKx"
+
+BASE_TOKEN=$(lark-cli wiki spaces get_node \
+  --params "{\"token\": \"$WIKI_TOKEN\"}" \
+  --as user | jq -r '.data.node.obj_token')
+
+lark-cli base +record-list \
+  --base-token "$BASE_TOKEN" \
+  --table-id "$TABLE_ID" \
+  --as user
 ```
 
 如果命令环境要求显式子命令前缀，可使用等价的 `lark-cli base` 读记录命令，但必须保持同一 CLI 家族，不混用旧工具。

@@ -82,7 +82,7 @@ Scan 报告进入 Fix 前，建议先经过人工审核与筛选：确认误报�
 ```mermaid
 flowchart TD
     Start["用户触发 cc-code-fixer"]
-    Source["选择待修复问题确认清单"]
+    Source["输入问题清单位置<br/>动态识别类型"]
     Confirm["确认问题范围<br/>修复关键点<br/>输出目标"]
     Route["选择执行方式<br/>直接修复 / Superpowers 修复"]
     Workspace["确认工作区策略<br/>当前分支 / 新分支 / worktree"]
@@ -169,12 +169,12 @@ Git 仓库地址也支持：
 /cc-code-reviewer:cc-code-fixer /path/to/project
 ```
 
-Fix 阶段会要求你选择待修复问题确认清单来源，并在后续步骤中确认修复范围、关键点、输出目标和执行方式。
+Fix 阶段会要求你输入待修复问题确认清单的本地路径或飞书链接，并根据输入动态识别为本地 Markdown、飞书云文档或飞书多维表格；后续步骤会确认修复范围、关键点、输出目标和执行方式。
 
 ### 更新插件
 
 ```bash
-claude plugin update cc-code-reviewer
+claude plugin update cc-code-reviewer@cc-code-reviewer
 ```
 
 更新后进入 Claude Code 会话执行：
@@ -314,7 +314,7 @@ Fix 阶段用于把已经确认的问题清单转化为代码修复，适合：
 
 ### 问题清单来源
 
-Fix 阶段支持三类来源：
+Fix 阶段只让用户输入一次问题清单位置，不再先选择来源类型。输入后动态识别三类来源：
 
 - **本地 Markdown**：人工确认后的审查报告或 Fix TODO List。
 - **飞书云文档**：Scan 阶段上传或团队二次整理后的云文档。

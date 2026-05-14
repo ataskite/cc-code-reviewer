@@ -8,7 +8,7 @@
 
 ## Fix Input Normalization
 
-`cc-code-fixer` 入口只接收项目地址。待修复问题确认清单必须在项目预检测之后通过 AskUserQuestion 收集。收集「问题清单位置」时，必须明确要求用户在 Other/free-form 中粘贴 URL 或本地路径。
+`cc-code-fixer` 入口只接收项目地址。待修复问题确认清单必须在项目预检测之后通过一次 AskUserQuestion 收集问题清单位置。不得先让用户选择本地 Markdown、飞书云文档或飞书多维表格；必须明确要求用户在 Other/free-form 中粘贴 URL 或本地路径，并根据输入动态识别为本地 Markdown、飞书云文档或飞书多维表格。
 
 归一化结果至少包含：
 
@@ -38,13 +38,15 @@
 - 相对路径必须基于当前工作目录解析为绝对路径
 - 如果报告格式不完整，修复器只能提取可确认的问题，并把其余项列入「未修复问题」或「待人工确认」
 
+本地 Markdown 的识别基于用户输入的路径形态和文件存在性。识别为本地 Markdown 后才允许调用 `phase6-detect-fix-input.sh` 做路径校验和绝对路径归一化。
+
 ### 飞书云文档
 
-飞书云文档输入必须先通过 `lark-cli docs` 和 `lark-doc` skill 读取文档内容，再按 Markdown 报告规则解析。飞书云文档和飞书多维表格不得调用 `phase6-detect-fix-input.sh`，不得使用 Bash 脚本识别、提取或归一化云端问题清单输入。不得使用 Python 脚本读取飞书云文档或飞书多维表格。读取失败时不得继续假装拥有完整问题上下文，应进入 degraded mode，并要求用户改用本地 Markdown 或飞书多维表格来源。
+飞书云文档输入必须根据用户粘贴的 URL 动态识别，常见形态包括飞书或 Lark 的 `/docx/`、`/docs/` 文档 URL。识别后必须先通过 `lark-cli docs` 和 `lark-doc` skill 读取文档内容，再按 Markdown 报告规则解析。飞书云文档和飞书多维表格不得调用 `phase6-detect-fix-input.sh`，不得使用 Bash 脚本识别、提取或归一化云端问题清单输入。不得使用 Python 脚本读取飞书云文档或飞书多维表格。读取失败时不得继续假装拥有完整问题上下文，应进入 degraded mode，并要求用户改用本地 Markdown 或飞书多维表格来源。
 
 ### 飞书多维表格
 
-飞书 Base 输入可以是 `/base/` URL、带 `table=` 参数的 `/wiki/` URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。输入必须解析出 `table_id`；可直接解析 `base_token` 时也要保留，并通过 `lark-cli base` 和 `lark-base` skill 读取记录。如果输入是 `/wiki/` 链接，必须按 `lark-base` skill 要求先解析为真实 bitable，再读取记录；如果 URL 无法稳定提取表 ID，必须要求用户补充 `base:{BASE_TOKEN}:{TABLE_ID}` 格式。读取记录时只处理具备「问题编号」「位置」「问题描述」「修复建议」「修复状态」字段的数据行。飞书 Base 输入不得调用 `phase6-detect-fix-input.sh`。
+飞书 Base 输入必须根据用户粘贴的 URL 或 token 动态识别，可以是 `/base/` URL、带 `table=` 参数的 `/wiki/` URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。输入必须解析出 `table_id`；可直接解析 `base_token` 时也要保留，并通过 `lark-cli base` 和 `lark-base` skill 读取记录。如果输入是 `/wiki/{WIKI_TOKEN}?table={TABLE_ID}&view={VIEW_ID}` 链接，必须从查询参数中提取 `table` 作为 `table_id`、可选提取 `view` 作为 `view_id`，并用 `lark-cli wiki spaces get_node` 将 wiki token 解析为真实 `base_token`（`.data.node.obj_token`）后再读取记录；不得把 wiki token 当作 base token 使用。如果 URL 无法稳定提取表 ID，必须要求用户补充 `base:{BASE_TOKEN}:{TABLE_ID}` 格式。读取记录时只处理具备「问题编号」「位置」「问题描述」「修复建议」「修复状态」字段的数据行。飞书 Base 输入不得调用 `phase6-detect-fix-input.sh`。
 
 ---
 
@@ -56,8 +58,8 @@
 2. 检查 `PROJECT_DIR` 是否存在、是否为 Git 仓库、当前分支和工作区状态。
 3. 扫描项目结构、模块、技术栈和默认验证命令线索。
 4. 检测 lark-cli 与 Superpowers 可用性。
-5. 通过 AskUserQuestion 收集待修复问题确认清单来源。
-6. 读取本地 Markdown、飞书云文档或飞书多维表格，提取可确认的问题编号、位置、问题描述和修复建议。
+5. 通过一次 AskUserQuestion 收集问题清单位置，并根据输入动态识别清单类型。
+6. 按识别结果读取本地 Markdown、飞书云文档或飞书多维表格，提取可确认的问题编号、位置、问题描述和修复建议。
 7. 展示问题清单表格，获得用户对本轮修复问题集合的确认。
 8. 展示修复关键点，获得用户确认。
 9. 获得输出目标确认：根据 `FIX_INPUT_TYPE` 只展示一个写回原始问题清单来源的选项，并同时展示三种独立修复报告选项。

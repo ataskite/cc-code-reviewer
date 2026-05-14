@@ -155,6 +155,13 @@ grep -q "直接修复路线必须确认工作区策略" "$FIX_WORKFLOW_FILE"
 grep -q "subagent-driven-development" "$FIX_WORKFLOW_FILE"
 grep -q "无已归一化问题上下文时必须停止修复" "$FIX_WORKFLOW_FILE" "$FIX_FEISHU_FILE"
 grep -q "Other/free-form 中粘贴" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
+grep -q "一次 AskUserQuestion 收集问题清单位置" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
+grep -q "根据输入动态识别" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
+grep -q "不得先让用户选择本地 Markdown、飞书云文档或飞书多维表格" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
+if grep -q "请提供本次待修复问题确认清单的来源" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"; then
+  echo "fix flow must collect a single source/path input and infer the source type dynamically" >&2
+  exit 1
+fi
 grep -q "本地 Markdown 必须直接读取文件内容" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
 grep -q "不得使用 Python 脚本读取飞书云文档或飞书多维表格" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_FEISHU_FILE"
 grep -q "飞书云文档和飞书多维表格不得调用.*phase6-detect-fix-input" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
@@ -215,6 +222,11 @@ grep -q "证据" "$FIX_FEISHU_FILE"
 grep -q "影响" "$FIX_FEISHU_FILE"
 grep -q "备注" "$FIX_FEISHU_FILE"
 grep -q "lark-cli base" "$FIX_FEISHU_FILE"
+grep -q "wiki spaces get_node" "$FIX_FEISHU_FILE" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
+grep -q "obj_token" "$FIX_FEISHU_FILE" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
+grep -q "查询参数 .*table" "$FIX_FEISHU_FILE" "$FIX_WORKFLOW_FILE"
+grep -q "查询参数 .*view" "$FIX_FEISHU_FILE" "$FIX_WORKFLOW_FILE"
+grep -q -- "--table-id" "$FIX_FEISHU_FILE" "$FIX_SKILL_FILE"
 grep -q "docs +fetch --api-version v2 --doc" "$FIX_FEISHU_FILE"
 grep -q "docs +create" "$FIX_FEISHU_FILE"
 grep -q -- "--api-version v2" "$FIX_FEISHU_FILE"
@@ -290,7 +302,7 @@ MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 
 MARKETPLACE_PLUGIN_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | sed -n '2p' | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_VERSION" ]
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_PLUGIN_VERSION" ]
-[ "$PLUGIN_VERSION" = "1.1.6" ]
+[ "$PLUGIN_VERSION" = "1.1.7" ]
 grep -q "code-fixer" "$PLUGIN_FILE"
 grep -q '"code-fix"' "$PLUGIN_FILE"
 grep -q '"code-fix"' "$MARKETPLACE_FILE"

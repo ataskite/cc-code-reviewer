@@ -18,18 +18,14 @@
 - lark-cli：可用
 - Superpowers：可用
 
-请提供本次待修复问题确认清单的来源：
-[本地 Markdown] [飞书云文档] [飞书多维表格] [取消]
-
-用户：本地 Markdown
-
-修复器：
-请提供待修复问题确认清单的具体位置。
-
 问题清单位置：
-请在 Other/free-form 中粘贴本地 Markdown 路径，例如 /path/to/project/fix-todo-confirmed.md
+请在 Other/free-form 中粘贴本地 Markdown 路径、飞书云文档 URL、飞书多维表格 URL 或 base:{BASE_TOKEN}:{TABLE_ID}
+[粘贴路径或链接] [取消]
 
 用户：/path/to/project/fix-todo-confirmed.md
+
+修复器：
+根据输入动态识别为本地 Markdown，开始解析确认清单。
 ```
 
 修复器解析后必须展示待修复问题确认清单表格：
@@ -106,18 +102,14 @@
 用户：/cc-code-reviewer:cc-code-fixer /path/to/project
 
 修复器：
-请提供本次待修复问题确认清单的来源：
-[本地 Markdown] [飞书云文档] [飞书多维表格] [取消]
-
-用户：飞书多维表格
-
-修复器：
-请提供待修复问题确认清单的具体位置。
-
 问题清单位置：
-请在 Other/free-form 中粘贴飞书多维表格 URL、带 table 参数的 wiki URL 或 base:{BASE_TOKEN}:{TABLE_ID}
+请在 Other/free-form 中粘贴本地 Markdown 路径、飞书云文档 URL、飞书多维表格 URL 或 base:{BASE_TOKEN}:{TABLE_ID}
+[粘贴路径或链接] [取消]
 
 用户：base:BASE123:tbl456
+
+修复器：
+根据输入动态识别为飞书多维表格，使用 lark-base 读取确认清单。
 ```
 
 读取后展示：

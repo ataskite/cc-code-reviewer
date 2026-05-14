@@ -105,43 +105,38 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase7-detect-superpowers.sh"
 
 ### 第四步：通过 AskUserQuestion 收集待修复问题确认清单
 
-第一轮 AskUserQuestion 必须用于确认待修复问题清单来源。该清单必须是人确认过的本地 Markdown、scan 阶段产出的飞书云文档、或 scan 阶段产出的飞书多维表格。不得默认把 scan 产物中的全部候选问题自动纳入修复。
+必须用一次 AskUserQuestion 收集问题清单位置，不得先让用户选择本地 Markdown、飞书云文档或飞书多维表格。该清单必须是人确认过的本地 Markdown、scan 阶段产出的飞书云文档、或 scan 阶段产出的飞书多维表格。不得默认把 scan 产物中的全部候选问题自动纳入修复。
 
 必须调用 AskUserQuestion：
 
-- question: "请提供本次待修复问题确认清单的来源"
-- header: "问题清单"
+- question: "请提供待修复问题确认清单的具体位置，并在 Other/free-form 中粘贴 URL 或本地路径"
+- header: "问题清单位置"
 - options:
-  - label: "本地 Markdown"
-    description: "使用已经人工确认过的本地审查报告或 Fix TODO List"
-  - label: "飞书云文档"
-    description: "读取 scan 阶段产出的飞书云文档问题清单"
-  - label: "飞书多维表格"
-    description: "读取 scan 阶段产出的飞书多维表格问题记录"
+  - label: "粘贴路径或链接"
+    description: "在 Other/free-form 中粘贴本地 Markdown 路径、飞书云文档 URL、飞书多维表格 URL 或 base:{BASE_TOKEN}:{TABLE_ID}"
   - label: "取消"
     description: "停止本次修复，不修改任何文件"
 - multiSelect: false
 
-用户选择来源后，必须追加一次 AskUserQuestion 收集「问题清单位置」，即本地 Markdown 路径、飞书云文档链接、飞书多维表格 URL 或 `base:{BASE_TOKEN}:{TABLE_ID}` token。question 使用 "请提供待修复问题确认清单的具体位置，并在 Other/free-form 中粘贴 URL 或本地路径"，header 使用 "问题清单位置"。如果当前 AskUserQuestion 不支持自由文本，必须使用 Other/free-form 收集，并在选项描述里明确要求用户在 Other/free-form 中粘贴本地 Markdown 路径、飞书云文档 URL、飞书多维表格 URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。
+如果当前 AskUserQuestion 支持直接自由文本输入，可以直接收集 `FIX_INPUT_SOURCE`；如果只支持选项，必须使用 Other/free-form 收集。收集到 `FIX_INPUT_SOURCE` 后，必须根据输入动态识别来源类型并分流，不得再次询问用户选择来源，也不得把所有输入都交给 Bash 脚本：
 
-收集到 `FIX_INPUT_SOURCE` 后，必须按用户在上一轮选择的来源分流，不得把所有输入都交给 Bash 脚本：
-
-- 选择「本地 Markdown」时，执行：
+- 识别为本地 Markdown 路径时，执行：
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOURCE>"
 ```
 
-- 选择「飞书云文档」时，不得调用 `phase6-detect-fix-input.sh`；必须直接使用 `lark-cli docs` 和 `lark-doc` skill 读取。
-- 选择「飞书多维表格」时，不得调用 `phase6-detect-fix-input.sh`；必须直接使用 `lark-cli base` 和 `lark-base` skill 读取。输入为 `/wiki/` 链接时，先按 `lark-base` skill 要求解析为真实 bitable，再读取记录；输入为 `base:{BASE_TOKEN}:{TABLE_ID}` 时，由 skill 直接解析 token，不经 Bash 脚本。
+- 识别为飞书云文档 URL 时，不得调用 `phase6-detect-fix-input.sh`；必须直接使用 `lark-cli docs` 和 `lark-doc` skill 读取。
+- 识别为飞书多维表格 URL 或 `base:{BASE_TOKEN}:{TABLE_ID}` 时，不得调用 `phase6-detect-fix-input.sh`；必须直接使用 `lark-cli base` 和 `lark-base` skill 读取。输入为 `/wiki/{WIKI_TOKEN}?table={TABLE_ID}&view={VIEW_ID}` 时，提取 `table` 作为 `--table-id`、可选提取 `view` 作为 `--view-id`，再用 `lark-cli wiki spaces get_node` 将 wiki token 解析成真实 `base-token` 后读取记录；输入为 `base:{BASE_TOKEN}:{TABLE_ID}` 时，由 skill 直接解析 token，不经 Bash 脚本。
+- 输入无法识别时，只能要求用户重新提供一个可识别的位置或取消；不得进入修复执行。
 
 然后读取或解析修复输入，归一化为问题清单。归一化问题字段至少包括：`issue_id`、`severity`、`dimension`、`location`、`confidence`、`evidence`、`impact`、`suggestion`、`source_type`、`source_ref`、`fix_status`。如果飞书读取失败且没有已归一化问题上下文，必须停止修复，只生成本地失败说明，不得继续进入修复执行。
 
 输入读取规则：
 
-- 本地 Markdown 必须直接读取文件内容，再按 Markdown 报告规则解析。
-- 飞书云文档必须使用 `lark-cli docs` 和 `lark-doc` skill 读取。
-- 飞书多维表格必须使用 `lark-cli base` 和 `lark-base` skill 读取。
+- 本地 Markdown 必须直接读取文件内容，再按 Markdown 报告规则解析；相对路径以当前工作目录为基准。
+- 飞书云文档必须使用 `lark-cli docs` 和 `lark-doc` skill 读取。常见输入包括飞书或 Lark 的 `/docx/`、`/docs/` 文档 URL。
+- 飞书多维表格必须使用 `lark-cli base` 和 `lark-base` skill 读取。常见输入包括 `/base/` URL、带 `table=` 参数的 `/wiki/` URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。`/wiki/` URL 的真实 base token 必须通过 `lark-cli wiki spaces get_node --params '{"token":"WIKI_TOKEN"}' --as user` 返回的 `.data.node.obj_token` 获取。
 - `phase6-detect-fix-input.sh` 只用于本地 Markdown 路径存在性校验和绝对路径归一化。
 - 飞书云文档和飞书多维表格不得调用 `phase6-detect-fix-input.sh`，也不得让 Bash 脚本识别、提取或归一化云端问题清单输入。
 - 不得使用 Python 脚本读取飞书云文档或飞书多维表格。
