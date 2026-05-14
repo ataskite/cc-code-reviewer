@@ -28,7 +28,7 @@ fi
 
 grep -q 'field-update .*"name":"备注","type":"text"' "$FEISHU_FILE"
 grep -q "共 17 个字段" "$FEISHU_FILE"
-grep -q "基础字段（14个）" "$README_FILE"
+grep -q "基础字段（14 个）" "$README_FILE"
 if grep -q "负责人" "$FEISHU_FILE" "$README_FILE"; then
   echo "scan-stage Feishu Base schema must not include 负责人" >&2
   exit 1
@@ -66,10 +66,12 @@ grep -q "REPORT_FORMAT_PATH" "$AGENT_FILE"
 grep -q "优先读取主 agent 注入的绝对路径" "$AGENT_FILE"
 
 grep -q "项目/技术栈扫描" "$README_FILE"
+grep -q "扫描 → 人工确认 → 修复 → 验证 → 报告/写回" "$README_FILE"
+grep -q "## 产品定位" "$README_FILE"
+grep -q "## 核心能力" "$README_FILE"
+grep -q "端到端闭环" "$README_FILE"
 grep -q "快速启动支持.*--key=value" "$README_FILE"
 grep -q "code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$README_FILE"
-grep -q "phase5-preview-recent-commits" "$README_FILE"
-grep -q "phase5-prepare-incremental" "$README_FILE"
 grep -q "/cc-code-reviewer:cc-code-fixer" "$README_FILE"
 grep -q "修复阶段" "$README_FILE"
 grep -q "worktree" "$README_FILE"
@@ -77,7 +79,7 @@ grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$README_FILE"
 grep -q "待修复问题确认清单" "$README_FILE"
 grep -q "修复阶段必须交互确认" "$README_FILE"
 grep -q "Superpowers 可选" "$README_FILE"
-grep -q "直接开始修复" "$README_FILE"
+grep -q "直接修复" "$README_FILE"
 grep -q "subagent-driven-development" "$README_FILE"
 grep -q "写回原始本地 Markdown" "$README_FILE"
 grep -q "写回原始飞书云文档" "$README_FILE"
@@ -85,10 +87,29 @@ grep -q "写回原始飞书多维表格" "$README_FILE"
 grep -q "创建独立本地 Markdown 修复报告" "$README_FILE"
 grep -q "创建独立飞书云文档修复报告" "$README_FILE"
 grep -q "创建独立飞书多维表格修复报告" "$README_FILE"
-grep -q "仅本地 Markdown 路径校验和绝对路径归一化" "$README_FILE"
-grep -q "phase9-collect-fix-metadata" "$README_FILE" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
-grep -q "修复人取当前 Git 用户" "$README_FILE"
+grep -q "技术栈识别与审查维度动态匹配" "$README_FILE"
+grep -q "15 个维度是基础框架" "$README_FILE"
+grep -q "Scan 不修改业务代码，Fix 不重新执行完整审查" "$README_FILE"
+grep -q "当前 Git 用户" "$README_FILE"
+grep -q "## Harness 架构设计" "$README_FILE"
+grep -q "整体 Harness 架构图" "$README_FILE"
+grep -q "入口层：User / Claude Code" "$README_FILE"
+grep -q "Scan Harness：发现候选问题" "$README_FILE"
+grep -q "人工确认层：从候选问题到 Fix TODO List" "$README_FILE"
+grep -q "Fix Harness：确认后分支执行" "$README_FILE"
+grep -q "修复执行层：直接修复 / Superpowers 修复" "$README_FILE"
+grep -q "Integration 层：lark-cli 可选平台读写能力" "$README_FILE"
+grep -q "Harness 边界" "$README_FILE"
+grep -q "phase9-collect-fix-metadata" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
 grep -q "docs/assets/architecture-overview.png" "$README_FILE"
+if grep -qE "## (脚本说明|测试|开发与维护)" "$README_FILE"; then
+  echo "README should not include script, testing, or development-maintenance sections" >&2
+  exit 1
+fi
+if grep -qE "phase[0-9]-|scripts/|tests/run_all.sh" "$README_FILE"; then
+  echo "README should not expose internal script/test details" >&2
+  exit 1
+fi
 if grep -qE "FixAgent|agents/cc-code-fixer|模型 / effort|MODEL_PREFERENCE|EFFORT_PREFERENCE" "$README_FILE"; then
   echo "README fix flow must not reference removed fixer agent or model/effort selection" >&2
   exit 1
