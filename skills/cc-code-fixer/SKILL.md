@@ -6,7 +6,7 @@ description: Java 审查问题修复 - 基于人工确认的问题清单，支�
 
 `cc-code-fixer` 的入口和 scan 阶段保持一致：用户只需要提供待修复项目地址（本地路径或 Git URL）。待修复问题清单必须通过 AskUserQuestion 在交互中收集和确认。修复阶段必须交互确认，不接受用参数绕过人工确认。
 
-主 skill 负责解析项目、预检测、收集待修复问题确认清单、确认执行方式和输出目标。修复执行有两条路线：默认的直接修复路线由主 skill 执行；检测到 Superpowers 相关技能完整安装时，才额外展示 Superpowers 修复路线（brainstorming → subagent-driven-development）。两条路线都必须遵守用户确认的问题范围、测试优先和完成前验证。
+主 skill 负责解析项目、预检测、收集待修复问题确认清单、确认执行方式和输出目标。修复执行有两条路线：默认的直接修复路线由主 skill 执行；检测到 Superpowers 相关技能完整安装时，才额外展示 Superpowers 修复路线（brainstorming → subagent-driven-development）。两条路线都必须遵守用户确认的问题范围、测试优先和完成前验证。输出目标必须根据问题清单来源动态压缩：只给一个写回原始来源选项，再给三个额外创建独立修复报告选项。
 
 ### 第零步：模式判定（固定交互式）
 
@@ -124,11 +124,16 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase7-detect-superpowers.sh"
 
 用户选择来源后，必须追加一次 AskUserQuestion 收集「问题清单位置」，即本地 Markdown 路径、飞书云文档链接、飞书多维表格 URL 或 `base:{BASE_TOKEN}:{TABLE_ID}` token。question 使用 "请提供待修复问题确认清单的具体位置，并在 Other/free-form 中粘贴 URL 或本地路径"，header 使用 "问题清单位置"。如果当前 AskUserQuestion 不支持自由文本，必须使用 Other/free-form 收集，并在选项描述里明确要求用户在 Other/free-form 中粘贴本地 Markdown 路径、飞书云文档 URL、飞书多维表格 URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。
 
-收集到 `FIX_INPUT_SOURCE` 后，执行：
+收集到 `FIX_INPUT_SOURCE` 后，必须按用户在上一轮选择的来源分流，不得把所有输入都交给 Bash 脚本：
+
+- 选择「本地 Markdown」时，执行：
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOURCE>"
 ```
+
+- 选择「飞书云文档」时，不得调用 `phase6-detect-fix-input.sh`；必须直接使用 `lark-cli docs` 和 `lark-doc` skill 读取。
+- 选择「飞书多维表格」时，不得调用 `phase6-detect-fix-input.sh`；必须直接使用 `lark-cli base` 和 `lark-base` skill 读取。输入为 `/wiki/` 链接时，先按 `lark-base` skill 要求解析为真实 bitable，再读取记录；输入为 `base:{BASE_TOKEN}:{TABLE_ID}` 时，由 skill 直接解析 token，不经 Bash 脚本。
 
 然后读取或解析修复输入，归一化为问题清单。归一化问题字段至少包括：`issue_id`、`severity`、`dimension`、`location`、`confidence`、`evidence`、`impact`、`suggestion`、`source_type`、`source_ref`、`fix_status`。如果飞书读取失败且没有已归一化问题上下文，必须停止修复，只生成本地失败说明，不得继续进入修复执行。
 
@@ -137,7 +142,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOUR
 - 本地 Markdown 必须直接读取文件内容，再按 Markdown 报告规则解析。
 - 飞书云文档必须使用 `lark-cli docs` 和 `lark-doc` skill 读取。
 - 飞书多维表格必须使用 `lark-cli base` 和 `lark-base` skill 读取。
-- `phase6-detect-fix-input.sh` 只用于识别输入类型和提取必要 token，不得读取云文档或多维表格内容。
+- `phase6-detect-fix-input.sh` 只用于本地 Markdown 路径存在性校验和绝对路径归一化。
+- 飞书云文档和飞书多维表格不得调用 `phase6-detect-fix-input.sh`，也不得让 Bash 脚本识别、提取或归一化云端问题清单输入。
 - 不得使用 Python 脚本读取飞书云文档或飞书多维表格。
 
 读取完成后必须输出「修复输入解析完成」摘要，说明清单类型、来源、解析状态、问题总数、严重级别分布和已跳过数量。
@@ -211,17 +217,25 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOUR
 - question: "请选择修复结果输出目标"
 - header: "输出目标"
 - options:
-  - label: "仅本地 Markdown"
-    description: "生成本地修复报告，不上传飞书"
-  - label: "上传飞书云文档"
-    description: "生成本地报告后创建飞书云文档"
-  - label: "更新原飞书多维表格"
-    description: "写回修复状态、修复时间、修复分支和备注"
-  - label: "同时云文档和多维表格"
-    description: "创建云文档并更新多维表格记录"
+  - label: "{按 FIX_INPUT_TYPE 动态生成的写回原始来源选项}"
+    description: "把本轮确认问题的修复状态、修复时间、修复分支、修复人和备注写回用户输入的原始问题清单来源"
+  - label: "创建独立本地 Markdown 修复报告"
+    description: "不修改原始问题清单来源，只创建独立本地 Markdown 修复报告"
+  - label: "创建独立飞书云文档修复报告"
+    description: "不修改原始问题清单来源，只创建独立飞书云文档修复报告"
+  - label: "创建独立飞书多维表格修复报告"
+    description: "不修改原始问题清单来源，只创建独立飞书多维表格修复报告"
 - multiSelect: false
 
-如果 `LARK_PLUGIN_INSTALLED=false`，仍可展示飞书选项但必须在 description 中说明不可用；用户选择飞书目标时进入本地 Markdown 降级输出，并在执行计划中标注飞书上传不可用原因。
+写回原始来源选项必须按 `FIX_INPUT_TYPE` 生成，且一轮只展示一个：
+
+- `local-markdown`：label 使用 "写回原始本地 Markdown"，只更新 `FIX_INPUT_SOURCE` 指向的本地 Markdown。
+- `feishu-doc`：label 使用 "写回原始飞书云文档"，只更新 `FIX_INPUT_SOURCE` 指向的飞书云文档。
+- `feishu-base` 或 `feishu-base-token`：label 使用 "写回原始飞书多维表格"，只更新读取阶段定位到的原始 Base 表格记录。
+
+用户选择写回原始来源时，设置 `OUTPUT_TARGET=original-source`，修复完成后只更新 `CONFIRMED_ISSUE_IDS` 对应问题项的 `修复状态`、`修复时间`、`修复分支`、`修复人`、`备注`。用户选择三个独立报告选项之一时，分别设置 `OUTPUT_TARGET=report-local-markdown`、`OUTPUT_TARGET=report-feishu-doc` 或 `OUTPUT_TARGET=report-feishu-base`，不得修改原始问题清单来源。
+
+如果 `LARK_PLUGIN_INSTALLED=false`，仍可展示飞书独立报告选项但必须在 description 中说明不可用；用户选择飞书目标时进入本地 Markdown 降级输出，并在执行计划中标注飞书上传不可用原因。
 
 ### 第八步：选择执行方式
 
@@ -309,8 +323,15 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase8-prepare-fix-workspace.sh" "$PROJECT_D
 2. 先补充或定位能暴露问题的测试；无法写测试时必须说明原因，并采用最小可验证命令替代。
 3. 只修改用户确认问题所需的业务代码、测试和必要配置，不修复范围外问题。
 4. 运行对应验证命令和 `git diff --check`，未验证前不得声称已修复。
-5. 按 `references/fix-report-format.md` 生成 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。
-6. 如用户选择飞书输出目标，按 `references/fix-feishu-integration.md` 执行云文档创建或 Base 写回。
+5. 修复完成后，在实际修复工作区执行：
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase9-collect-fix-metadata.sh" "{FIX_WORKSPACE_PATH}"
+```
+
+6. 必须用该脚本输出的 `FIX_COMPLETED_AT` 作为修复时间，`FIX_BRANCH` 作为修复分支，`FIX_ACTOR` 作为修复人；不得再询问用户，也不得使用静态占位值。
+7. 按 `references/fix-report-format.md` 生成本地审计用 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。
+8. 按 `OUTPUT_TARGET` 写回原始问题清单来源，或创建独立修复报告。选择独立报告时不得修改原始问题清单来源。
 
 直接修复路线仍必须执行测试优先和完成前验证纪律；这些纪律由主 skill 显式执行，不依赖 Superpowers skill 是否安装。
 
@@ -337,8 +358,9 @@ brainstorming 产出 plan 后，调用 `subagent-driven-development` skill 执�
 - **范围优先**：只修复用户确认的问题，不得修复范围外问题
 - **测试驱动**：遵守 `test-driven-development`
 - **验证后声明**：遵守 `verification-before-completion`
+- **修复元数据**：修复完成后在实际修复工作区执行 `phase9-collect-fix-metadata.sh`；使用 `FIX_COMPLETED_AT`、`FIX_BRANCH`、`FIX_ACTOR` 填写修复时间、修复分支、修复人，不得再次询问用户
 - **修复报告**：按 `references/fix-report-format.md` 生成 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`
-- **飞书回写**：按 `references/fix-feishu-integration.md` 执行（如用户选择了飞书输出目标）
+- **输出目标**：按 `OUTPUT_TARGET` 写回原始问题清单来源，或创建独立修复报告；选择独立报告时不得修改原始问题清单来源
 - **默认中文**：报告、状态说明和最终汇总使用中文
 
 ---

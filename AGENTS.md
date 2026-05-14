@@ -101,7 +101,8 @@ scripts/
   ├── phase5-prepare-incremental.sh   # Incremental review preparation
   ├── phase6-detect-fix-input.sh      # Fix input detection
   ├── phase7-detect-superpowers.sh    # Superpowers workflow detection
-  └── phase8-prepare-fix-workspace.sh # Fix branch/worktree preparation
+  ├── phase8-prepare-fix-workspace.sh # Fix branch/worktree preparation
+  └── phase9-collect-fix-metadata.sh  # Fix completion time, branch, and git user
 ```
 
 ## Common Development Tasks
@@ -139,6 +140,7 @@ bash scripts/phase5-prepare-incremental.sh "/path/to/project" 5
 bash scripts/phase6-detect-fix-input.sh "/path/to/report.md"
 bash scripts/phase7-detect-superpowers.sh
 bash scripts/phase8-prepare-fix-workspace.sh "/path/to/project" worktree "fix/review-findings"
+bash scripts/phase9-collect-fix-metadata.sh "/path/to/project"
 ```
 
 ### Modifying Review Logic

@@ -17,11 +17,12 @@ fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
 - 生成时间
 - 项目路径
 - 修复分支
+- 修复人
 - 修复输入类型：本地 Markdown、飞书云文档、飞书多维表格或 token
 - 修复输入来源：文件路径、文档 URL、Base URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`
 - 修复范围：全部问题、指定优先级、指定问题编号或指定模块
 - 工作区策略：当前分支、新分支或 worktree
-- 输出目标：本地报告、飞书云文档、飞书多维表格或组合输出
+- 输出目标：写回原始问题清单来源，或创建独立本地 Markdown、飞书云文档、飞书多维表格修复报告
 - Superpowers 状态：可用、部分可用或 degraded mode
 - 验证命令列表
 
@@ -32,9 +33,10 @@ fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
 |--------|----|
 | 项目路径 | /path/to/project |
 | 修复分支 | codex/fix-auth-check |
+| 修复人 | Fix User <fixer@example.com> |
 | 修复输入类型 | 本地 Markdown |
 | 修复范围 | P0,P1 |
-| 输出目标 | 本地报告 + 飞书多维表格 |
+| 输出目标 | 写回原始本地 Markdown |
 ```
 
 ---
@@ -98,7 +100,7 @@ fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
 
 **已完成修复**：补充空值保护，避免当前崩溃路径。
 
-**剩余风险**：鉴权策略仍需业务负责人确认。
+**剩余风险**：鉴权策略仍需业务方确认。
 
 **验证证据**：
 `mvn -Dtest=AuthServiceTest test` 通过。
@@ -124,7 +126,7 @@ fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
 
 **已尝试动作**：阅读调用链并运行现有任务测试，未修改业务逻辑。
 
-**建议后续处理**：由业务负责人确认重试策略后再修复。
+**建议后续处理**：由业务方确认重试策略后再修复。
 ```
 
 未修复原因必须具体，禁止只写「环境原因」「时间不足」等泛化描述。
@@ -184,15 +186,34 @@ fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
 
 ## 飞书回写结果
 
-当输出目标包含飞书时，必须记录：
+当输出目标涉及飞书读取、写回或独立报告创建时，必须记录：
 
 - 云文档读取结果
 - 多维表格读取结果
-- 多维表格更新结果
+- 原始问题清单写回结果
+- 独立飞书修复报告创建结果
 - 更新失败的记录编号
 - 是否已回退为本地 Markdown 报告
 
-如果没有启用飞书输出，写「未启用飞书同步」。
+如果输出目标未涉及飞书，写「未启用飞书同步」。
+
+---
+
+## 输出目标执行结果
+
+本节记录第七步选择的输出目标执行结果，必须包含：
+
+- 输出目标：`original-source`、`report-local-markdown`、`report-feishu-doc` 或 `report-feishu-base`
+- 原始问题清单源：本地 Markdown、飞书云文档、飞书多维表格或 token
+- 输出动作：写回原始来源，或创建独立修复报告
+- 已处理的问题编号
+- 成功输出的问题编号或记录数
+- 输出失败的问题编号或记录数
+- 输出位置：文件路径、文档 URL、Base URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`
+
+如果用户选择独立修复报告，必须写「未修改原始问题清单来源」。
+
+如果输出失败，必须写明失败源、失败命令或文件位置、错误摘要和建议手动同步字段。
 
 ---
 
@@ -207,6 +228,8 @@ fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
 报告末尾标注：
 
 ```markdown
-**修复人**：Claude Code 修复 Agent (`cc-code-fixer`)
+**修复人**：{FIX_ACTOR}
 **报告版本**：1.0
 ```
+
+`生成时间` 和所有写回字段中的 `修复时间` 必须使用 `phase9-collect-fix-metadata.sh` 输出的 `FIX_COMPLETED_AT`；`修复分支` 必须使用同一脚本输出的 `FIX_BRANCH`；`修复人` 必须使用同一脚本输出的 `FIX_ACTOR`，即当前修复工作区的 Git 用户。

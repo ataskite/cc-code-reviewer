@@ -63,7 +63,7 @@ lark-cli docs +create \
 
 **前置条件**：`FEISHU_UPLOAD_OPTION` 为 `上传到多维表格` 或 `同时上传两者`，且审查报告生成完毕。
 
-### 2.1 字段定义（共 18 个字段，必须完整使用）
+### 2.1 字段定义（共 17 个字段，必须完整使用）
 
 | # | 字段名 | lark-cli type 值 | 选项列表 | 说明 |
 |---|--------|-----------------|----------|------|
@@ -80,11 +80,10 @@ lark-cli docs +create \
 | 11 | 修复状态 | select | 待修复、修复中、已修复、已忽略、不适用 | 默认"待修复" |
 | 12 | 审查模式 | select | fast、standard、deep、security | 本次审查使用的模式 |
 | 13 | 审查日期 | datetime | yyyy-MM-dd | 审查执行日期 |
-| 14 | 负责人 | user | - | 留空，由团队分配 |
-| 15 | 备注 | text | - | 补充说明；复用默认主字段重命名得到，不再额外创建同名字段 |
-| 16 | 修复时间 | datetime | yyyy-MM-dd | 预留字段，初始留空 |
-| 17 | 修复分支 | text | - | 预留字段，初始留空 |
-| 18 | 修复人 | user | - | 预留字段，初始留空 |
+| 14 | 备注 | text | - | 补充说明；复用默认主字段重命名得到，不再额外创建同名字段 |
+| 15 | 修复时间 | datetime | yyyy-MM-dd | 预留字段，初始留空 |
+| 16 | 修复分支 | text | - | 预留字段，初始留空 |
+| 17 | 修复人 | user | - | 预留字段，初始留空 |
 
 ### 2.2 执行步骤
 
@@ -131,7 +130,7 @@ lark-cli base +field-update --base-token {BASE_TOKEN} --table-id {TABLE_ID} \
   --field-id {PRIMARY_FIELD_ID} --json '{"name":"备注","type":"text"}'
 ```
 
-#### 步骤 4：逐个创建其余 17 个字段
+#### 步骤 4：逐个创建其余 16 个字段
 
 **⚠️ 关键：`--json` 中 `type` 必须使用字符串名称，不能使用数字。**
 
@@ -147,7 +146,7 @@ lark-cli base +field-update --base-token {BASE_TOKEN} --table-id {TABLE_ID} \
 
 **⚠️ 关键：`options` 必须是对象数组 `[{name:"..."}]`，不能用纯字符串数组，也不能放在 `property` 里。**
 
-以下为除默认主字段"备注"以外的 17 个字段创建命令：
+以下为除默认主字段"备注"以外的 16 个字段创建命令：
 
 ```bash
 BT="{BASE_TOKEN}" && TI="{TABLE_ID}"
@@ -204,19 +203,15 @@ lark-cli base +field-create --base-token $BT --table-id $TI \
 lark-cli base +field-create --base-token $BT --table-id $TI \
   --json '{"name":"审查日期","type":"datetime"}'
 
-# 14. 负责人
-lark-cli base +field-create --base-token $BT --table-id $TI \
-  --json '{"name":"负责人","type":"user"}'
-
-# 16. 修复时间
+# 15. 修复时间
 lark-cli base +field-create --base-token $BT --table-id $TI \
   --json '{"name":"修复时间","type":"datetime"}'
 
-# 17. 修复分支
+# 16. 修复分支
 lark-cli base +field-create --base-token $BT --table-id $TI \
   --json '{"name":"修复分支","type":"text"}'
 
-# 18. 修复人
+# 17. 修复人
 lark-cli base +field-create --base-token $BT --table-id $TI \
   --json '{"name":"修复人","type":"user"}'
 ```
@@ -230,9 +225,9 @@ lark-cli base +record-batch-create \
   --base-token {BASE_TOKEN} \
   --table-id {TABLE_ID} \
   --json '{
-    "fields": ["问题编号","严重级别","所属维度","技术栈","问题描述","位置","置信度","证据","影响","修复建议","修复状态","审查模式","审查日期","负责人","备注","修复时间","修复分支","修复人"],
+    "fields": ["问题编号","严重级别","所属维度","技术栈","问题描述","位置","置信度","证据","影响","修复建议","修复状态","审查模式","审查日期","备注","修复时间","修复分支","修复人"],
     "rows": [
-      ["P0-1","P0 严重","安全",["Spring Boot"],"问题描述","文件.java:22","高","证据内容","影响说明","修复建议","待修复","deep",1744588800000,"","","","",""]
+      ["P0-1","P0 严重","安全",["Spring Boot"],"问题描述","文件.java:22","高","证据内容","影响说明","修复建议","待修复","deep",1744588800000,"","","",""]
     ]
   }'
 ```
@@ -251,7 +246,6 @@ lark-cli base +record-batch-create \
 - `修复状态`：默认填 `"待修复"`
 - `审查模式`：当前 REVIEW_MODE 值（`"fast"` / `"standard"` / `"deep"` / `"security"`）
 - `审查日期`：当前日期的毫秒时间戳（如 `1744588800000`）
-- `负责人`：留空 `""`
 - `备注`：留空 `""`
 - `修复时间`：预留字段，留空 `""`
 - `修复分支`：预留字段，留空 `""`
@@ -308,7 +302,7 @@ BT="{BASE_TOKEN}" TI="{TABLE_ID}"
 lark-cli base +field-list --base-token $BT --table-id $TI
 lark-cli base +field-update --base-token $BT --table-id $TI --field-id {主字段ID} --json '{"name":"备注","type":"text"}'
 
-# 4. 创建其余 17 个字段（见步骤 4 的完整命令）
+# 4. 创建其余 16 个字段（见步骤 4 的完整命令）
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"问题编号","type":"text"}'
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"严重级别","type":"select","options":[{"name":"P0 严重"},{"name":"P1 重要"},{"name":"P2 一般"},{"name":"P3 建议"},{"name":"待确认"}]}'
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"所属维度","type":"select","options":[{"name":"正确性"},{"name":"代码质量"},{"name":"Spring Boot 规范"},{"name":"数据库/数据访问"},{"name":"安全"},{"name":"性能"},{"name":"资源管理"},{"name":"日志/可观测性"},{"name":"测试质量"},{"name":"技术债"},{"name":"架构"},{"name":"分布式系统"},{"name":"消息队列"},{"name":"缓存"},{"name":"API 设计"}]}'
@@ -322,14 +316,13 @@ lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"修
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"修复状态","type":"select","options":[{"name":"待修复"},{"name":"修复中"},{"name":"已修复"},{"name":"已忽略"},{"name":"不适用"}]}'
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"审查模式","type":"select","options":[{"name":"fast"},{"name":"standard"},{"name":"deep"},{"name":"security"}]}'
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"审查日期","type":"datetime"}'
-lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"负责人","type":"user"}'
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"修复时间","type":"datetime"}'
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"修复分支","type":"text"}'
 lark-cli base +field-create --base-token $BT --table-id $TI --json '{"name":"修复人","type":"user"}'
 
-# 5. 批量录入数据（18 个字段，其中"备注"是已重命名的默认主字段）
+# 5. 批量录入数据（17 个字段，其中"备注"是已重命名的默认主字段）
 lark-cli base +record-batch-create --base-token $BT --table-id $TI \
-  --json '{"fields":["问题编号","严重级别","所属维度","技术栈","问题描述","位置","置信度","证据","影响","修复建议","修复状态","审查模式","审查日期","负责人","备注","修复时间","修复分支","修复人"],"rows":[["P0-1","P0 严重","安全",["Spring Boot"],"问题描述","文件.java:22","高","证据","影响","建议","待修复","deep",1744588800000,"","","","",""]]}'
+  --json '{"fields":["问题编号","严重级别","所属维度","技术栈","问题描述","位置","置信度","证据","影响","修复建议","修复状态","审查模式","审查日期","备注","修复时间","修复分支","修复人"],"rows":[["P0-1","P0 严重","安全",["Spring Boot"],"问题描述","文件.java:22","高","证据","影响","建议","待修复","deep",1744588800000,"","","",""]]}'
 
 # 6. 清理默认非主字段（先查 list 获取 ID，再逐个删除）
 lark-cli base +field-list --base-token $BT --table-id $TI

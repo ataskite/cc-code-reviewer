@@ -14,36 +14,9 @@ if [[ "$INPUT" == *$'\n'* || "$INPUT" == *$'\r'* ]]; then
 fi
 
 case "$INPUT" in
-  http://*docx/*|https://*docx/*|http://*docs/*|https://*docs/*)
-    echo "FIX_INPUT_TYPE=feishu-doc"
-    echo "FIX_INPUT_URL=$INPUT"
-    ;;
-  http://*base/*|https://*base/*)
-    echo "FIX_INPUT_TYPE=feishu-base"
-    echo "FIX_INPUT_URL=$INPUT"
-    ;;
-  http://*wiki/*table=*|https://*wiki/*table=*)
-    TABLE_PART="${INPUT#*table=}"
-    TABLE_ID="${TABLE_PART%%&*}"
-    if [ -z "$TABLE_ID" ] || [ "$TABLE_ID" = "$INPUT" ]; then
-      echo "无法识别修复输入来源: $INPUT" >&2
-      exit 1
-    fi
-    echo "FIX_INPUT_TYPE=feishu-base"
-    echo "FIX_INPUT_URL=$INPUT"
-    echo "FEISHU_TABLE_ID=$TABLE_ID"
-    ;;
-  base:*:*)
-    REST="${INPUT#base:}"
-    BASE_TOKEN="${REST%%:*}"
-    TABLE_ID="${REST#*:}"
-    if [ -z "$BASE_TOKEN" ] || [ -z "$TABLE_ID" ] || [ "$BASE_TOKEN" = "$TABLE_ID" ] || [ "$TABLE_ID" != "${TABLE_ID%%:*}" ]; then
-      echo "无法识别修复输入来源: $INPUT" >&2
-      exit 1
-    fi
-    echo "FIX_INPUT_TYPE=feishu-base-token"
-    echo "FEISHU_BASE_TOKEN=$BASE_TOKEN"
-    echo "FEISHU_TABLE_ID=$TABLE_ID"
+  http://*docx/*|https://*docx/*|http://*docs/*|https://*docs/*|http://*base/*|https://*base/*|http://*wiki/*|https://*wiki/*|base:*:*)
+    echo "飞书云文档和飞书多维表格输入不得调用 phase6-detect-fix-input.sh；请使用 lark-doc 或 lark-base 读取并归一化问题清单" >&2
+    exit 1
     ;;
   *.md)
     if [ ! -f "$INPUT" ]; then

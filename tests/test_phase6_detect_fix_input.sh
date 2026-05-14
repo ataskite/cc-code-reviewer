@@ -20,24 +20,34 @@ echo "$LOCAL_OUTPUT" | grep -Fq "FIX_INPUT_TYPE=local-markdown"
 echo "$LOCAL_OUTPUT" | grep -Fq "FIX_INPUT_PATH=$REPORT_FILE"
 echo "$LOCAL_OUTPUT" | grep -Fq "FIX_INPUT_EXISTS=true"
 
-DOC_OUTPUT="$(bash "$ROOT_DIR/scripts/phase6-detect-fix-input.sh" "https://example.feishu.cn/docx/ABC123")"
-echo "$DOC_OUTPUT" | grep -Fq "FIX_INPUT_TYPE=feishu-doc"
-echo "$DOC_OUTPUT" | grep -Fq "FIX_INPUT_URL=https://example.feishu.cn/docx/ABC123"
+DOC_OUTPUT="$TMP_DIR/phase6-doc.out"
+if bash "$ROOT_DIR/scripts/phase6-detect-fix-input.sh" "https://example.feishu.cn/docx/ABC123" >"$DOC_OUTPUT" 2>&1; then
+  echo "phase6 must not handle Feishu doc inputs" >&2
+  exit 1
+fi
+grep -Fq "飞书云文档和飞书多维表格输入不得调用 phase6-detect-fix-input.sh" "$DOC_OUTPUT"
 
-BASE_OUTPUT="$(bash "$ROOT_DIR/scripts/phase6-detect-fix-input.sh" "https://example.feishu.cn/base/BASE123?table=tbl456")"
-echo "$BASE_OUTPUT" | grep -Fq "FIX_INPUT_TYPE=feishu-base"
-echo "$BASE_OUTPUT" | grep -Fq "FIX_INPUT_URL=https://example.feishu.cn/base/BASE123?table=tbl456"
+BASE_OUTPUT="$TMP_DIR/phase6-base.out"
+if bash "$ROOT_DIR/scripts/phase6-detect-fix-input.sh" "https://example.feishu.cn/base/BASE123?table=tbl456" >"$BASE_OUTPUT" 2>&1; then
+  echo "phase6 must not handle Feishu base inputs" >&2
+  exit 1
+fi
+grep -Fq "飞书云文档和飞书多维表格输入不得调用 phase6-detect-fix-input.sh" "$BASE_OUTPUT"
 
 WIKI_BASE_URL="https://example.feishu.cn/wiki/FlKdwsFpIih3CzkQhl7cwR40nsz?table=tblhnVIjMA4Rts1i&view=vewiXLBlKx"
-WIKI_BASE_OUTPUT="$(bash "$ROOT_DIR/scripts/phase6-detect-fix-input.sh" "$WIKI_BASE_URL")"
-echo "$WIKI_BASE_OUTPUT" | grep -Fq "FIX_INPUT_TYPE=feishu-base"
-echo "$WIKI_BASE_OUTPUT" | grep -Fq "FIX_INPUT_URL=$WIKI_BASE_URL"
-echo "$WIKI_BASE_OUTPUT" | grep -Fq "FEISHU_TABLE_ID=tblhnVIjMA4Rts1i"
+WIKI_BASE_OUTPUT="$TMP_DIR/phase6-wiki-base.out"
+if bash "$ROOT_DIR/scripts/phase6-detect-fix-input.sh" "$WIKI_BASE_URL" >"$WIKI_BASE_OUTPUT" 2>&1; then
+  echo "phase6 must not handle Feishu wiki base inputs" >&2
+  exit 1
+fi
+grep -Fq "飞书云文档和飞书多维表格输入不得调用 phase6-detect-fix-input.sh" "$WIKI_BASE_OUTPUT"
 
-TOKEN_OUTPUT="$(bash "$ROOT_DIR/scripts/phase6-detect-fix-input.sh" "base:BASE123:tbl456")"
-echo "$TOKEN_OUTPUT" | grep -Fq "FIX_INPUT_TYPE=feishu-base-token"
-echo "$TOKEN_OUTPUT" | grep -Fq "FEISHU_BASE_TOKEN=BASE123"
-echo "$TOKEN_OUTPUT" | grep -Fq "FEISHU_TABLE_ID=tbl456"
+TOKEN_OUTPUT="$TMP_DIR/phase6-base-token.out"
+if bash "$ROOT_DIR/scripts/phase6-detect-fix-input.sh" "base:BASE123:tbl456" >"$TOKEN_OUTPUT" 2>&1; then
+  echo "phase6 must not handle Feishu base token inputs" >&2
+  exit 1
+fi
+grep -Fq "飞书云文档和飞书多维表格输入不得调用 phase6-detect-fix-input.sh" "$TOKEN_OUTPUT"
 
 MISSING_OUTPUT="$TMP_DIR/phase6-missing.out"
 if bash "$ROOT_DIR/scripts/phase6-detect-fix-input.sh" "$TMP_DIR/missing.md" >"$MISSING_OUTPUT" 2>&1; then

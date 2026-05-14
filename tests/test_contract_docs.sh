@@ -12,6 +12,7 @@ FIX_SKILL_FILE="$ROOT_DIR/skills/cc-code-fixer/SKILL.md"
 FIX_REPORT_FILE="$ROOT_DIR/references/fix-report-format.md"
 FIX_FEISHU_FILE="$ROOT_DIR/references/fix-feishu-integration.md"
 FIX_EXAMPLES_FILE="$ROOT_DIR/references/fix-examples.md"
+ARCHITECTURE_PNG="$ROOT_DIR/docs/assets/architecture-overview.png"
 ARCHITECTURE_SVG="$ROOT_DIR/docs/assets/architecture-overview.svg"
 MARKETPLACE_FILE="$ROOT_DIR/.claude-plugin/marketplace.json"
 PLUGIN_FILE="$ROOT_DIR/.claude-plugin/plugin.json"
@@ -26,6 +27,12 @@ if grep -q 'field-create .*"name":"备注","type":"text"' "$FEISHU_FILE"; then
 fi
 
 grep -q 'field-update .*"name":"备注","type":"text"' "$FEISHU_FILE"
+grep -q "共 17 个字段" "$FEISHU_FILE"
+grep -q "基础字段（14个）" "$README_FILE"
+if grep -q "负责人" "$FEISHU_FILE" "$README_FILE"; then
+  echo "scan-stage Feishu Base schema must not include 负责人" >&2
+  exit 1
+fi
 
 grep -q "### 第一步之后：提取项目路径与快速启动参数" "$SKILL_FILE"
 grep -q "优先提取 Git URL" "$SKILL_FILE"
@@ -72,9 +79,22 @@ grep -q "修复阶段必须交互确认" "$README_FILE"
 grep -q "Superpowers 可选" "$README_FILE"
 grep -q "直接开始修复" "$README_FILE"
 grep -q "subagent-driven-development" "$README_FILE"
+grep -q "写回原始本地 Markdown" "$README_FILE"
+grep -q "写回原始飞书云文档" "$README_FILE"
+grep -q "写回原始飞书多维表格" "$README_FILE"
+grep -q "创建独立本地 Markdown 修复报告" "$README_FILE"
+grep -q "创建独立飞书云文档修复报告" "$README_FILE"
+grep -q "创建独立飞书多维表格修复报告" "$README_FILE"
+grep -q "仅本地 Markdown 路径校验和绝对路径归一化" "$README_FILE"
+grep -q "phase9-collect-fix-metadata" "$README_FILE" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
+grep -q "修复人取当前 Git 用户" "$README_FILE"
 grep -q "docs/assets/architecture-overview.png" "$README_FILE"
 if grep -qE "FixAgent|agents/cc-code-fixer|模型 / effort|MODEL_PREFERENCE|EFFORT_PREFERENCE" "$README_FILE"; then
   echo "README fix flow must not reference removed fixer agent or model/effort selection" >&2
+  exit 1
+fi
+if grep -q "创建飞书云文档或回写多维表格" "$README_FILE"; then
+  echo "README fix flow must describe dynamic output targets, not the old cloud-doc/base-only output" >&2
   exit 1
 fi
 if grep -q "/cc-code-reviewer:cc-code-fixer .*--scope" "$README_FILE"; then
@@ -85,12 +105,9 @@ if grep -q "/cc-code-reviewer:cc-code-fixer .*--mode" "$README_FILE"; then
   echo "README fixer examples must not use unsupported --mode" >&2
   exit 1
 fi
-test -f "$ARCHITECTURE_SVG"
-grep -q "问题清单位置" "$ARCHITECTURE_SVG"
-grep -q "Superpowers" "$ARCHITECTURE_SVG"
-grep -q "subagent-driven-development" "$ARCHITECTURE_SVG"
-if grep -qE "Fix Agent|agents/cc-code-fixer|模型 / effort|MODEL_PREFERENCE|EFFORT_PREFERENCE" "$ARCHITECTURE_SVG"; then
-  echo "architecture overview image source must match current Superpowers-based fixer architecture" >&2
+test -f "$ARCHITECTURE_PNG"
+if [ -f "$ARCHITECTURE_SVG" ]; then
+  echo "architecture overview is imagegen PNG-only; SVG source should not be kept" >&2
   exit 1
 fi
 
@@ -119,6 +136,28 @@ grep -q "无已归一化问题上下文时必须停止修复" "$FIX_WORKFLOW_FIL
 grep -q "Other/free-form 中粘贴" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
 grep -q "本地 Markdown 必须直接读取文件内容" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
 grep -q "不得使用 Python 脚本读取飞书云文档或飞书多维表格" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_FEISHU_FILE"
+grep -q "飞书云文档和飞书多维表格不得调用.*phase6-detect-fix-input" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
+grep -q "一个写回原始来源选项" "$FIX_WORKFLOW_FILE"
+grep -q "创建独立本地 Markdown 修复报告" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
+grep -q "创建独立飞书云文档修复报告" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
+grep -q "创建独立飞书多维表格修复报告" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
+grep -q "写回原始本地 Markdown" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
+grep -q "写回原始飞书云文档" "$FIX_SKILL_FILE"
+grep -q "写回原始飞书多维表格" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
+grep -q "不得在修复完成后追加新的回写确认问题" "$FIX_WORKFLOW_FILE"
+grep -q "不得修改原始问题清单来源" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_FEISHU_FILE" "$FIX_REPORT_FILE"
+grep -q "FIX_COMPLETED_AT" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE" "$FIX_FEISHU_FILE"
+grep -q "FIX_ACTOR" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE" "$FIX_FEISHU_FILE"
+grep -q "修复人" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"
+grep -q "不得再询问用户" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE"
+if grep -q "是否把修复状态更新回问题清单源" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"; then
+  echo "fix flow must not add a separate post-repair writeback AskUserQuestion" >&2
+  exit 1
+fi
+if grep -q "SOURCE_STATUS_WRITEBACK" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_REPORT_FILE"; then
+  echo "source writeback must be folded into OUTPUT_TARGET, not tracked as a separate prompt" >&2
+  exit 1
+fi
 if grep -qE "模型 / effort|MODEL_PREFERENCE|EFFORT_PREFERENCE" "$FIX_WORKFLOW_FILE"; then
   echo "fix workflow must not require model/effort confirmation" >&2
   exit 1
@@ -230,7 +269,7 @@ MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 
 MARKETPLACE_PLUGIN_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | sed -n '2p' | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_VERSION" ]
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_PLUGIN_VERSION" ]
-[ "$PLUGIN_VERSION" = "1.1.5" ]
+[ "$PLUGIN_VERSION" = "1.1.6" ]
 grep -q "code-fixer" "$PLUGIN_FILE"
 grep -q '"code-fix"' "$PLUGIN_FILE"
 grep -q '"code-fix"' "$MARKETPLACE_FILE"

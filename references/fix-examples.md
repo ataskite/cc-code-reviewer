@@ -63,9 +63,9 @@
 用户：确认
 
 请选择修复结果输出目标：
-[仅本地 Markdown] [上传飞书云文档] [更新原飞书多维表格] [同时云文档和多维表格]
+[写回原始本地 Markdown] [创建独立本地 Markdown 修复报告] [创建独立飞书云文档修复报告] [创建独立飞书多维表格修复报告]
 
-用户：仅本地 Markdown
+用户：创建独立本地 Markdown 修复报告
 
 请选择本次修复的执行方式：
 [直接开始修复] [使用 Superpowers 修复] [取消]
@@ -83,7 +83,7 @@
 用户：fix/review-confirmed-issues
 ```
 
-最终确认后，直接修复路线由主 skill 调用 `phase8-prepare-fix-workspace.sh` 准备工作区，然后执行修复、测试、验证和本地报告生成。若选择 `使用 Superpowers 修复`，则从 `brainstorming` 开始，并由 `subagent-driven-development` 调度修复。
+最终确认后，直接修复路线由主 skill 调用 `phase8-prepare-fix-workspace.sh` 准备工作区，然后执行修复、测试、验证和输出目标处理。若选择 `使用 Superpowers 修复`，则从 `brainstorming` 开始，并由 `subagent-driven-development` 调度修复。
 
 完成后输出：
 
@@ -128,13 +128,13 @@
 | P0-2 | P0 | 数据库/数据访问 | 事务边界不足 | 纳入同一事务并测回滚 |
 ```
 
-确认输出目标时，用户可选择回写表格：
+确认输出目标时，只展示一个与原始输入对应的写回选项；这里因为输入是飞书多维表格，所以原始来源选项是写回原始飞书多维表格：
 
 ```text
 请选择修复结果输出目标：
-[仅本地 Markdown] [上传飞书云文档] [更新原飞书多维表格] [同时云文档和多维表格]
+[写回原始飞书多维表格] [创建独立本地 Markdown 修复报告] [创建独立飞书云文档修复报告] [创建独立飞书多维表格修复报告]
 
-用户：更新原飞书多维表格
+用户：写回原始飞书多维表格
 
 请选择本次修复的执行方式：
 [直接开始修复] [使用 Superpowers 修复] [取消]
@@ -149,7 +149,7 @@ lark-cli base +record-upsert \
   --base-token "BASE123" \
   --table-id "tbl456" \
   --record-id "rec789" \
-  --json '{"fields":{"修复状态":"已修复","修复时间":"2026-05-07","修复分支":"codex/fix-p0-issues","备注":"本地报告: fix-report-demo-20260507-160000.md；验证: mvn test 通过"}}'
+  --json '{"fields":{"修复状态":"已修复","修复时间":"2026-05-07 16:00:00 +0800","修复分支":"codex/fix-p0-issues","修复人":"Fix User <fixer@example.com>","备注":"本地报告: fix-report-demo-20260507-160000.md；验证: mvn test 通过"}}'
 ```
 
 如果飞书更新失败：

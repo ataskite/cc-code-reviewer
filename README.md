@@ -174,9 +174,11 @@ Scan 阶段支持两种使用模式：**交互式模式**（默认）和**快速
 
 修复阶段第一步会通过 AskUserQuestion 要求用户先选择待修复问题确认清单来源，再填写「问题清单位置」。清单可以是人工确认过的本地 Markdown，也可以是 scan 阶段产出的飞书云文档或飞书多维表格链接。修复器解析后会先展示问题清单表格，要求用户确认哪些问题纳入修复，再确认修复关键点、输出目标和执行方式。
 
+输出目标会根据问题清单来源动态压缩：只展示一个写回原始来源选项，以及三个额外创建独立修复报告选项。比如输入源是本地 Markdown 时，选项为 `写回原始本地 Markdown`、`创建独立本地 Markdown 修复报告`、`创建独立飞书云文档修复报告`、`创建独立飞书多维表格修复报告`；输入源是飞书云文档时，第一个选项变为 `写回原始飞书云文档`；输入源是飞书多维表格时，第一个选项变为 `写回原始飞书多维表格`。
+
 执行方式有两条：`直接开始修复` 和 `使用 Superpowers 修复`。Superpowers 可选，只有检测到相关技能完整安装时才展示该选项。直接开始修复会继续询问工作区策略：当前分支修复、创建新分支修复或创建 worktree 修复；使用 Superpowers 修复时从 `brainstorming` 开始，再通过 `subagent-driven-development` 进入设计、隔离和 TDD 修复。
 
-修复完成后会生成 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。如果配置飞书输出，可按需创建修复报告云文档，或更新原飞书多维表格中的修复状态、修复时间、修复分支和备注。
+修复完成后会生成本地审计用 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。如果输出目标选择写回原始来源，只更新本轮确认问题的修复状态、修复时间、修复分支、修复人和备注；如果选择独立修复报告，则不修改原始问题清单来源。修复时间取完成时的本地时间，修复分支取实际修复工作区当前分支，修复人取当前 Git 用户。
 
 ---
 
@@ -211,9 +213,9 @@ Scan 阶段支持两种使用模式：**交互式模式**（默认）和**快速
 
 ## 飞书多维表格
 
-审查问题可录入飞书多维表格，包含 18 个字段：
+审查问题可录入飞书多维表格，包含 17 个字段：
 
-- **基础字段（15个）**：问题编号、严重级别、所属维度、技术栈、问题描述、位置、置信度、证据、影响、修复建议、修复状态、审查模式、审查日期、负责人、备注
+- **基础字段（14个）**：问题编号、严重级别、所属维度、技术栈、问题描述、位置、置信度、证据、影响、修复建议、修复状态、审查模式、审查日期、备注
 - **预留修复字段（3个）**：修复时间、修复分支、修复人（初始留空，供后续修复流程更新）
 
 未上传飞书时，报告保存为 `code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。
@@ -251,10 +253,10 @@ bash scripts/phase5-preview-recent-commits.sh "/path/to/project"
 bash scripts/phase5-prepare-incremental.sh "/path/to/project" 5
 ```
 
-### Fix 阶段脚本（3 个，按需调用）
+### Fix 阶段脚本（4 个，按需调用）
 
 ```bash
-# 修复输入检测（本地 Markdown、飞书云文档、飞书多维表格或 base token）
+# 修复输入检测（仅本地 Markdown 路径校验和绝对路径归一化）
 bash scripts/phase6-detect-fix-input.sh "/path/to/report.md"
 
 # Superpowers 能力检测（可选执行路线）
@@ -262,9 +264,12 @@ bash scripts/phase7-detect-superpowers.sh
 
 # 修复工作区准备（当前分支、新分支或 worktree）
 bash scripts/phase8-prepare-fix-workspace.sh "/path/to/project" worktree "codex/fix-review-findings"
+
+# 修复完成元数据采集
+bash scripts/phase9-collect-fix-metadata.sh "/path/to/project"
 ```
 
-Scan Agent 生成完整审查报告后，会先保存到项目目录下的 `code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。选择飞书上传时也复用这份 Markdown 文件；未上传或上传失败时，会在对话中展示该本地报告路径和完整报告内容。Fix 阶段则生成 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`，并按用户选择创建飞书云文档或回写多维表格。
+Scan Agent 生成完整审查报告后，会先保存到项目目录下的 `code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。选择飞书上传时也复用这份 Markdown 文件；未上传或上传失败时，会在对话中展示该本地报告路径和完整报告内容。Fix 阶段则生成本地审计用 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`，并按用户选择写回原始问题清单来源，或额外创建独立本地 Markdown、飞书云文档、飞书多维表格修复报告。
 
 ## 测试
 
@@ -281,9 +286,10 @@ bash tests/run_all.sh
 - `phase4-detect-lark-plugin.sh`：lark-cli 可用/不可用输出契约
 - `phase5-preview-recent-commits.sh`：最近 10 次提交的编号预览
 - `phase5-prepare-incremental.sh`：最近 N 次提交覆盖到首提交时的 diff 边界
-- `phase6-detect-fix-input.sh`：本地 Markdown、飞书云文档、飞书多维表格和 compact Base selector 检测
+- `phase6-detect-fix-input.sh`：本地 Markdown 路径存在性校验和绝对路径归一化；飞书云文档和飞书多维表格由 lark-doc / lark-base 读取
 - `phase7-detect-superpowers.sh`：Superpowers 可选执行路线的技能发现
 - `phase8-prepare-fix-workspace.sh`：当前分支、新分支和 worktree 策略，脏工作区保护
+- `phase9-collect-fix-metadata.sh`：修复完成时间、实际修复分支和当前 Git 用户采集
 - 文档契约：主 skill 参数完整性、报告文件持久化、飞书 Base 字段去重、Fix 阶段交互门禁、直接修复与 Superpowers 可选路线、测试入口说明
 
 `tests/run_all.sh` 会按文件名顺序执行 `tests/test_*.sh`，最后运行 `git diff --check` 检查空白问题。
@@ -338,7 +344,7 @@ flowchart TD
     SubAgentDriven["subagent-driven-development<br/>执行 TDD 修复"]
     Verify["verification-before-completion"]
     Report["生成 fix-report Markdown"]
-    Lark["创建云文档或回写多维表格<br/>可选"]
+    Target["按输出目标处理<br/>写回原始来源 / 创建独立报告"]
 
     Start --> Project
     Project --> InputAsk
@@ -354,7 +360,7 @@ flowchart TD
     Workspace --> SubAgentDriven
     SubAgentDriven --> Verify
     Verify --> Report
-    Report --> Lark
+    Report --> Target
 ```
 
 ## 开发与维护
@@ -377,7 +383,7 @@ flowchart TD
 1. Fix 入口流程：编辑 `skills/cc-code-fixer/SKILL.md`
 2. Fix 输入、Superpowers 检测或工作区准备：编辑 `scripts/phase6-8*.sh`
 3. 修复报告格式和飞书读写：编辑 `references/fix-report-format.md` 与 `references/fix-feishu-integration.md`
-4. 同步示例、README 和 `tests/test_contract_docs.sh`，确保「问题清单位置」、直接修复 / Superpowers 可选路线和无专用 fixer agent 的契约一致
+4. 同步示例、README 和 `tests/test_contract_docs.sh`，确保「问题清单位置」、动态输出目标、直接修复 / Superpowers 可选路线和无专用 fixer agent 的契约一致
 
 ## License
 

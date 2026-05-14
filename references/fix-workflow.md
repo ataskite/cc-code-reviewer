@@ -2,7 +2,7 @@
 
 本文件定义 `cc-code-fixer` 的修复阶段工作流。修复器只消费已有审查报告、飞书问题清单或人工整理后的 Fix TODO List，不重新执行完整代码审查。
 
-修复阶段的核心规则：**交互确认是硬门禁**。scan 可以自动化，fix 必须由用户确认待修复问题清单、修复关键点、输出目标和执行方式后才能修改代码。Superpowers 可选：只有检测到相关技能完整安装时，才展示 Superpowers 修复路线；否则只进入直接修复路线。
+修复阶段的核心规则：**交互确认是硬门禁**。scan 可以自动化，fix 必须由用户确认待修复问题清单、修复关键点、输出目标和执行方式后才能修改代码。输出目标根据输入的问题清单类型动态展示：一个写回原始来源选项，加三个额外创建独立修复报告的选项。Superpowers 可选：只有检测到相关技能完整安装时，才展示 Superpowers 修复路线；否则只进入直接修复路线。
 
 ---
 
@@ -20,15 +20,19 @@
 | `ISSUE_SOURCE_SUMMARY` | 从报告或表格中提取的问题总数、优先级分布和来源说明 |
 | `NORMALIZED_ISSUES` | 归一化后的完整问题清单 |
 | `CONFIRMED_ISSUE_IDS` | 用户确认纳入本轮修复的问题编号 |
-| `OUTPUT_TARGET` | `local-markdown`、`feishu-doc`、`feishu-base` 或组合输出 |
+| `OUTPUT_TARGET` | `original-source`、`report-local-markdown`、`report-feishu-doc` 或 `report-feishu-base` |
 | `EXECUTION_ROUTE` | `direct` 或 `superpowers` |
 | `WORKSPACE_STRATEGY` | 直接修复路线下为 `current`、`branch` 或 `worktree` |
+| `FIX_COMPLETED_AT` | 修复完成后由 `phase9-collect-fix-metadata.sh` 输出的当前时间 |
+| `FIX_BRANCH` | 修复完成后由实际修复工作区 Git 状态输出的当前分支 |
+| `FIX_ACTOR` | 修复完成后由实际修复工作区 `git config user.name/user.email` 输出的当前 Git 用户 |
 
 ### 本地 Markdown 报告
 
 本地报告必须满足：
 
 - 文件存在且扩展名为 `.md`
+- 只有本地 Markdown 输入允许调用 `phase6-detect-fix-input.sh`，用于路径存在性校验和绝对路径归一化
 - 本地 Markdown 必须直接读取文件内容，再按 Markdown 报告规则解析
 - 内容包含可识别的问题编号、位置、问题描述和修复建议
 - 相对路径必须基于当前工作目录解析为绝对路径
@@ -36,11 +40,11 @@
 
 ### 飞书云文档
 
-飞书云文档输入必须先通过 `lark-cli docs` 和 `lark-doc` skill 读取文档内容，再按 Markdown 报告规则解析。不得使用 Python 脚本读取飞书云文档或飞书多维表格。读取失败时不得继续假装拥有完整问题上下文，应进入 degraded mode，并要求用户改用本地 Markdown 或飞书多维表格来源。
+飞书云文档输入必须先通过 `lark-cli docs` 和 `lark-doc` skill 读取文档内容，再按 Markdown 报告规则解析。飞书云文档和飞书多维表格不得调用 `phase6-detect-fix-input.sh`，不得使用 Bash 脚本识别、提取或归一化云端问题清单输入。不得使用 Python 脚本读取飞书云文档或飞书多维表格。读取失败时不得继续假装拥有完整问题上下文，应进入 degraded mode，并要求用户改用本地 Markdown 或飞书多维表格来源。
 
 ### 飞书多维表格
 
-飞书 Base 输入可以是 `/base/` URL、带 `table=` 参数的 `/wiki/` URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。输入必须解析出 `table_id`；可直接解析 `base_token` 时也要保留，并通过 `lark-cli base` 和 `lark-base` skill 读取记录。如果 URL 无法稳定提取表 ID，必须要求用户补充 `base:{BASE_TOKEN}:{TABLE_ID}` 格式。读取记录时只处理具备「问题编号」「位置」「问题描述」「修复建议」「修复状态」字段的数据行。`phase6-detect-fix-input.sh` 只负责识别输入类型和提取必要 token，不得读取云文档或多维表格内容。
+飞书 Base 输入可以是 `/base/` URL、带 `table=` 参数的 `/wiki/` URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。输入必须解析出 `table_id`；可直接解析 `base_token` 时也要保留，并通过 `lark-cli base` 和 `lark-base` skill 读取记录。如果输入是 `/wiki/` 链接，必须按 `lark-base` skill 要求先解析为真实 bitable，再读取记录；如果 URL 无法稳定提取表 ID，必须要求用户补充 `base:{BASE_TOKEN}:{TABLE_ID}` 格式。读取记录时只处理具备「问题编号」「位置」「问题描述」「修复建议」「修复状态」字段的数据行。飞书 Base 输入不得调用 `phase6-detect-fix-input.sh`。
 
 ---
 
@@ -56,7 +60,7 @@
 6. 读取本地 Markdown、飞书云文档或飞书多维表格，提取可确认的问题编号、位置、问题描述和修复建议。
 7. 展示问题清单表格，获得用户对本轮修复问题集合的确认。
 8. 展示修复关键点，获得用户确认。
-9. 获得输出目标确认。
+9. 获得输出目标确认：根据 `FIX_INPUT_TYPE` 只展示一个写回原始问题清单来源的选项，并同时展示三种独立修复报告选项。
 10. 通过 AskUserQuestion 选择执行方式：直接开始修复，或在 Superpowers 可用时使用 Superpowers 修复。
 11. 直接修复路线必须确认工作区策略：当前分支、新分支或 worktree。
 12. 输出最终执行计划并获得确认。
@@ -77,6 +81,30 @@ Superpowers 不完整安装时，不进入 degraded mode，也不展示 `使用 
 
 ---
 
+## Output Target Selection
+
+输出目标只通过一次 AskUserQuestion 确认，不得在修复完成后追加新的回写确认问题。
+
+该 AskUserQuestion 必须根据用户先前提供的问题清单类型动态生成选项：
+
+- 如果 `FIX_INPUT_TYPE=local-markdown`，写回原始来源选项为 `写回原始本地 Markdown`，只更新 `FIX_INPUT_SOURCE` 指向的原始本地 Markdown 文件。
+- 如果 `FIX_INPUT_TYPE=feishu-doc`，写回原始来源选项为 `写回原始飞书云文档`，只更新 `FIX_INPUT_SOURCE` 指向的原始云文档。
+- 如果 `FIX_INPUT_TYPE=feishu-base` 或 `feishu-base-token`，写回原始来源选项为 `写回原始飞书多维表格`，只更新读取阶段定位到的原始 Base 表格记录。
+
+同时必须展示三个额外创建独立修复报告的选项：
+
+- `创建独立本地 Markdown 修复报告`
+- `创建独立飞书云文档修复报告`
+- `创建独立飞书多维表格修复报告`
+
+用户选择写回原始来源时，必须只更新本轮 `CONFIRMED_ISSUE_IDS` 对应的问题项，字段至少包括：`修复状态`、`修复时间`、`修复分支`、`修复人`、`备注`。本地 Markdown 和云文档没有结构化字段时，必须在对应问题条目下追加或更新同名状态行。无法稳定定位条目时不得整文件重写，只在本地报告中记录待手动同步。
+
+用户选择独立修复报告时，不得修改原始问题清单来源。独立报告必须包含修复配置快照、修复输入摘要、问题状态、验证结果和后续建议。
+
+如果 `LARK_PLUGIN_INSTALLED=false`，飞书云文档和飞书多维表格独立报告选项仍可展示，但 description 必须说明不可用；用户选择飞书目标时进入本地 Markdown 降级输出，并在执行计划中标注飞书上传不可用原因。
+
+---
+
 ## Direct Fix Flow
 
 直接修复路线由主 skill 执行，不能调用 Superpowers skill 或 dedicated fix sub-agent。直接修复路线必须确认工作区策略，并在代码变更前调用 `phase8-prepare-fix-workspace.sh`：
@@ -93,7 +121,8 @@ Superpowers 不完整安装时，不进入 degraded mode，也不展示 `使用 
 2. 优先补充或定位能暴露问题的测试；无法写测试时必须说明原因，并采用最小可验证命令替代。
 3. 只修复用户确认的问题，不扩大范围。
 4. 验证命令和 `git diff --check` 通过前，不得声称完成。
-5. 生成本地 Markdown 修复报告；如用户选择飞书输出，按飞书集成规则同步。
+5. 修复完成后在实际修复工作区执行 `phase9-collect-fix-metadata.sh`，用 `FIX_COMPLETED_AT` 填写修复时间、`FIX_BRANCH` 填写修复分支、`FIX_ACTOR` 填写修复人；这些值不得再次询问用户。
+6. 按 `OUTPUT_TARGET` 写回原始问题清单来源，或创建独立修复报告。
 
 ---
 
@@ -107,6 +136,8 @@ Superpowers 路线仅在 `SUPERPOWERS_AVAILABLE=true` 且用户明确选择 `使
 4. 使用 `test-driven-development` 优先补充或定位能暴露问题的测试；无法写测试时必须说明原因，并采用最小可验证命令替代。
 5. 使用 `verification-before-completion` 在报告、飞书更新和最终答复前执行完整验证命令。
 6. 使用 `subagent-driven-development` 执行 brainstorming 产出的修复计划。
+7. 修复完成后在实际修复工作区执行 `phase9-collect-fix-metadata.sh`，用 `FIX_COMPLETED_AT` 填写修复时间、`FIX_BRANCH` 填写修复分支、`FIX_ACTOR` 填写修复人；这些值不得再次询问用户。
+8. 按 `OUTPUT_TARGET` 写回原始问题清单来源，或创建独立修复报告。
 
 ---
 
@@ -138,7 +169,7 @@ degraded mode 下必须继续保护用户代码：
 - 解析得到的问题清单表格
 - 本次确认修复的问题编号集合
 - 修复关键点：修复意图、边界、不修内容和建议验证
-- 输出目标：仅本地报告、创建飞书云文档、更新飞书多维表格或组合输出
+- 输出目标：写回原始问题清单来源，或创建独立本地 Markdown、飞书云文档、飞书多维表格修复报告
 
 默认修复顺序为：
 
