@@ -19,6 +19,8 @@
 | `PROJECT_DIR` | 待修复项目路径，必须是本地可访问目录 |
 | `ISSUE_SOURCE_SUMMARY` | 从报告或表格中提取的问题总数、优先级分布和来源说明 |
 | `NORMALIZED_ISSUES` | 归一化后的完整问题清单 |
+| `STATUS_FILTERED_ISSUES` | 排除已完成或明确不处理状态后的待确认问题清单 |
+| `SKIPPED_STATUS_COUNTS` | 因 `fix_status` 跳过的问题数量，按状态聚合 |
 | `CONFIRMED_ISSUE_IDS` | 用户确认纳入本轮修复的问题编号 |
 | `OUTPUT_TARGET` | `original-source`、`report-local-markdown`、`report-feishu-doc` 或 `report-feishu-base` |
 | `EXECUTION_ROUTE` | `direct` 或 `superpowers` |
@@ -48,6 +50,16 @@
 
 飞书 Base 输入必须根据用户粘贴的 URL 或 token 动态识别，可以是 `/base/` URL、带 `table=` 参数的 `/wiki/` URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。输入必须解析出 `table_id`；可直接解析 `base_token` 时也要保留，并通过 `lark-cli base` 和 `lark-base` skill 读取记录。如果输入是 `/wiki/{WIKI_TOKEN}?table={TABLE_ID}&view={VIEW_ID}` 链接，必须从查询参数中提取 `table` 作为 `table_id`、可选提取 `view` 作为 `view_id`，并用 `lark-cli wiki spaces get_node` 将 wiki token 解析为真实 `base_token`（`.data.node.obj_token`）后再读取记录；不得把 wiki token 当作 base token 使用。如果 URL 无法稳定提取表 ID，必须要求用户补充 `base:{BASE_TOKEN}:{TABLE_ID}` 格式。读取记录时只处理具备「问题编号」「位置」「问题描述」「修复建议」「修复状态」字段的数据行。飞书 Base 输入不得调用 `phase6-detect-fix-input.sh`。
 
+### 状态过滤
+
+本地 Markdown、飞书云文档和飞书 Base 都可能是重复使用的有状态问题清单。修复器必须在归一化后、展示确认表格前执行统一状态过滤：
+
+- `fix_status` 为空或为 `待修复`：进入待确认问题清单。
+- `fix_status` 为 `修复中`：默认跳过；只有用户明确要求继续处理修复中的问题时才进入待确认问题清单。
+- `fix_status` 为 `已修复`、`已忽略` 或 `不适用`：必须跳过，不能进入待确认问题清单，不能被「确认全部纳入修复」隐式选中。
+- 本地 Markdown 和飞书云文档如果出现 `修复状态`、`fix_status`、`状态：已修复` 等状态行，或问题位于「已修复问题」分区下，必须映射到对应 `fix_status`；没有状态信息时才按 `待修复` 处理。
+- 「修复输入解析完成」摘要必须展示原始问题总数、可纳入确认数、因状态跳过数量和 `SKIPPED_STATUS_COUNTS`。
+
 ---
 
 ## Preflight Sequence
@@ -59,13 +71,14 @@
 3. 扫描项目结构、模块、技术栈和默认验证命令线索。
 4. 检测 lark-cli 与 Superpowers 可用性。
 5. 通过一次 AskUserQuestion 收集问题清单位置，并根据输入动态识别清单类型。
-6. 按识别结果读取本地 Markdown、飞书云文档或飞书多维表格，提取可确认的问题编号、位置、问题描述和修复建议。
-7. 展示问题清单表格，获得用户对本轮修复问题集合的确认。
-8. 展示修复关键点，获得用户确认。
-9. 获得输出目标确认：根据 `FIX_INPUT_TYPE` 只展示一个写回原始问题清单来源的选项，并同时展示三种独立修复报告选项。
-10. 通过 AskUserQuestion 选择执行方式：直接开始修复，或在 Superpowers 可用时使用 Superpowers 修复。
-11. 直接修复路线必须确认工作区策略：当前分支、新分支或 worktree。
-12. 输出最终执行计划并获得确认。
+6. 按识别结果读取本地 Markdown、飞书云文档或飞书多维表格，提取可确认的问题编号、位置、问题描述、修复建议和修复状态。
+7. 对归一化问题清单执行状态过滤，跳过明确 `已修复`、`已忽略`、`不适用` 的问题。
+8. 展示状态过滤后的问题清单表格，获得用户对本轮修复问题集合的确认。
+9. 展示修复关键点，获得用户确认。
+10. 获得输出目标确认：根据 `FIX_INPUT_TYPE` 只展示一个写回原始问题清单来源的选项，并同时展示三种独立修复报告选项。
+11. 通过 AskUserQuestion 选择执行方式：直接开始修复，或在 Superpowers 可用时使用 Superpowers 修复。
+12. 直接修复路线必须确认工作区策略：当前分支、新分支或 worktree。
+13. 输出最终执行计划并获得确认。
 
 飞书云文档或飞书多维表格读取失败时，如果没有来自本地 Markdown、已确认缓存或其他可信来源的已归一化问题上下文，必须停止在代码变更之前，只生成本地失败报告。无已归一化问题上下文时必须停止修复。
 
