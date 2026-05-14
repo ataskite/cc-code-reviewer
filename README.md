@@ -26,7 +26,7 @@ claude plugin install cc-code-reviewer
 - **4 种审查模式**：fast（快速扫雷）、standard（日常推荐）、deep（大版本上线）、security（安全专项）
 - **2 种审查类型**：增量审查（最近 N 次提交）、存量审查（全量/指定模块）
 - **2 种审查使用模式**：交互式（逐步引导）、快速启动（自动化/CI/CD）
-- **报告驱动修复**：基于本地 Markdown、飞书云文档或飞书多维表格中的确认问题清单，通过 Superpowers 执行修复
+- **报告驱动修复**：基于本地 Markdown、飞书云文档或飞书多维表格中的确认问题清单，支持直接修复；Superpowers 可选
 - **飞书集成**：审查报告上传云文档、问题清单录入多维表格（可选，依赖 lark-cli）
 - **Bash 脚本**：仅支持 macOS/Linux，无 Python 依赖
 
@@ -34,41 +34,9 @@ claude plugin install cc-code-reviewer
 
 ![cc-code-reviewer 架构总览](docs/assets/architecture-overview.png)
 
-```mermaid
-flowchart TD
-    User["用户 / Claude Code 会话"]
-    ReviewSkill["审查 Skill<br/>skills/cc-code-reviewer/SKILL.md"]
-    FixSkill["修复 Skill<br/>skills/cc-code-fixer/SKILL.md"]
-    ReviewAgent["审查 Agent<br/>agents/cc-code-reviewer.md"]
-    Reports["审查报告<br/>Markdown / 飞书云文档 / 飞书多维表格"]
-    FixReports["修复报告<br/>Markdown / 飞书云文档 / 多维表格回写"]
-    Lark["lark-cli<br/>lark-doc / lark-base"]
-    Superpowers["Superpowers 流程<br/>brainstorming / TDD / verification"]
-    SubAgentDriven["subagent-driven-development"]
+整体架构是 **skill 编排、脚本做环境探测、Scan Agent 审查、Fix Skill 报告驱动修复** 的结构。Scan Skill 负责模式判定、预检、用户确认和参数注入；Scan Agent 负责真正的 15 维审查，不再反问用户；Fix Skill 负责预检、收集确认问题清单、选择执行方式和输出目标，然后直接修复，或在检测到 Superpowers 完整可用时交给 `brainstorming` 与 `subagent-driven-development` 设计并执行修复。脚本保持可独立测试，并统一使用 Bash 维护。
 
-    subgraph ScanPhase["Scan 阶段：发现问题"]
-      ReviewSkill --> ScanScripts["phase1-5 脚本<br/>项目识别 / 分支 / 技术栈 / lark / 增量准备"]
-      ScanScripts --> ReviewAgent
-      ReviewAgent --> Reports
-    end
-
-    subgraph FixPhase["Fix 阶段：确认计划并修复"]
-      FixSkill --> FixScripts["phase6-8 脚本<br/>输入解析 / Superpowers 检测 / 工作区准备"]
-      Reports --> FixSkill
-      FixScripts --> Superpowers
-      Superpowers --> SubAgentDriven
-      SubAgentDriven --> FixReports
-    end
-
-    User --> ReviewSkill
-    User --> FixSkill
-    Reports -.可选上传/读取.-> Lark
-    FixReports -.可选创建/回写.-> Lark
-```
-
-整体是 **skill 编排、脚本做环境探测、Scan Agent 审查、Superpowers 执行修复** 的结构。Scan Skill 负责模式判定、预检、用户确认和参数注入；Scan Agent 负责真正的 15 维审查，不再反问用户；Fix Skill 只负责预检、收集确认问题清单和输出目标，然后交给 `brainstorming` 与 `subagent-driven-development` 设计并执行修复。脚本保持可独立测试，并统一使用 Bash 维护。
-
-Scan 阶段由 AI 产出候选问题报告；候选问题进入 Fix 阶段前，建议先经过人工审核与筛选，确认误报、补充企业内部上下文、选择修复范围，并形成真正要修复的 Fix TODO List。Fix 阶段只消费明确选择的问题，通过「问题清单位置」、修复范围、关键点和输出目标的逐步确认进入 Superpowers，再由 TDD、工作区隔离和完成前验证约束修复结果，最后输出修复报告或回写飞书。
+Scan 阶段由 AI 产出候选问题报告；候选问题进入 Fix 阶段前，建议先经过人工审核与筛选，确认误报、补充企业内部上下文、选择修复范围，并形成真正要修复的 Fix TODO List。Fix 阶段只消费明确选择的问题，通过「问题清单位置」、修复范围、关键点、输出目标和执行方式的逐步确认进入修复。直接开始修复时会继续确认当前分支、新分支或 worktree；使用 Superpowers 修复时才进入 brainstorming 和 subagent-driven-development。
 
 ## 安装
 
@@ -204,9 +172,9 @@ Scan 阶段支持两种使用模式：**交互式模式**（默认）和**快速
 /cc-code-reviewer:cc-code-fixer https://github.com/org/repo.git
 ```
 
-修复阶段第一步会通过 AskUserQuestion 要求用户先选择待修复问题确认清单来源，再填写「问题清单位置」。清单可以是人工确认过的本地 Markdown，也可以是 scan 阶段产出的飞书云文档或飞书多维表格链接。修复器解析后会先展示问题清单表格，要求用户确认哪些问题纳入修复，再确认修复关键点和输出目标。
+修复阶段第一步会通过 AskUserQuestion 要求用户先选择待修复问题确认清单来源，再填写「问题清单位置」。清单可以是人工确认过的本地 Markdown，也可以是 scan 阶段产出的飞书云文档或飞书多维表格链接。修复器解析后会先展示问题清单表格，要求用户确认哪些问题纳入修复，再确认修复关键点、输出目标和执行方式。
 
-工作区策略交给 Superpowers：确认执行后从 `brainstorming` 开始，由 Superpowers 结合待修复问题清单、项目预扫描结果和修复关键点决定隔离方式，再通过 `subagent-driven-development` 进入 worktree / 分支准备和 TDD 修复。
+执行方式有两条：`直接开始修复` 和 `使用 Superpowers 修复`。Superpowers 可选，只有检测到相关技能完整安装时才展示该选项。直接开始修复会继续询问工作区策略：当前分支修复、创建新分支修复或创建 worktree 修复；使用 Superpowers 修复时从 `brainstorming` 开始，再通过 `subagent-driven-development` 进入设计、隔离和 TDD 修复。
 
 修复完成后会生成 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`。如果配置飞书输出，可按需创建修复报告云文档，或更新原飞书多维表格中的修复状态、修复时间、修复分支和备注。
 
@@ -289,7 +257,7 @@ bash scripts/phase5-prepare-incremental.sh "/path/to/project" 5
 # 修复输入检测（本地 Markdown、飞书云文档、飞书多维表格或 base token）
 bash scripts/phase6-detect-fix-input.sh "/path/to/report.md"
 
-# Superpowers 能力检测
+# Superpowers 能力检测（可选执行路线）
 bash scripts/phase7-detect-superpowers.sh
 
 # 修复工作区准备（当前分支、新分支或 worktree）
@@ -314,9 +282,9 @@ bash tests/run_all.sh
 - `phase5-preview-recent-commits.sh`：最近 10 次提交的编号预览
 - `phase5-prepare-incremental.sh`：最近 N 次提交覆盖到首提交时的 diff 边界
 - `phase6-detect-fix-input.sh`：本地 Markdown、飞书云文档、飞书多维表格和 compact Base selector 检测
-- `phase7-detect-superpowers.sh`：Superpowers 必需技能发现
+- `phase7-detect-superpowers.sh`：Superpowers 可选执行路线的技能发现
 - `phase8-prepare-fix-workspace.sh`：当前分支、新分支和 worktree 策略，脏工作区保护
-- 文档契约：主 skill 参数完整性、报告文件持久化、飞书 Base 字段去重、Fix 阶段交互门禁、Superpowers 委派和测试入口说明
+- 文档契约：主 skill 参数完整性、报告文件持久化、飞书 Base 字段去重、Fix 阶段交互门禁、直接修复与 Superpowers 可选路线、测试入口说明
 
 `tests/run_all.sh` 会按文件名顺序执行 `tests/test_*.sh`，最后运行 `git diff --check` 检查空白问题。
 
@@ -362,6 +330,9 @@ flowchart TD
     Input["解析问题清单<br/>phase6"]
     Confirm["展示问题表格<br/>确认问题与关键点"]
     Output["确认输出目标"]
+    Route["选择执行方式<br/>直接修复 / Superpowers 可选"]
+    DirectWorkspace["直接修复工作区策略<br/>当前分支 / 新分支 / worktree"]
+    DirectFix["主 skill 直接执行<br/>测试优先 + 验证"]
     Brainstorm["brainstorming<br/>形成修复设计与隔离建议"]
     Workspace["按 Superpowers 建议准备工作区<br/>phase8"]
     SubAgentDriven["subagent-driven-development<br/>执行 TDD 修复"]
@@ -374,7 +345,11 @@ flowchart TD
     InputAsk --> Input
     Input --> Confirm
     Confirm --> Output
-    Output --> Brainstorm
+    Output --> Route
+    Route --> DirectWorkspace
+    DirectWorkspace --> DirectFix
+    DirectFix --> Verify
+    Route --> Brainstorm
     Brainstorm --> Workspace
     Workspace --> SubAgentDriven
     SubAgentDriven --> Verify
@@ -402,7 +377,7 @@ flowchart TD
 1. Fix 入口流程：编辑 `skills/cc-code-fixer/SKILL.md`
 2. Fix 输入、Superpowers 检测或工作区准备：编辑 `scripts/phase6-8*.sh`
 3. 修复报告格式和飞书读写：编辑 `references/fix-report-format.md` 与 `references/fix-feishu-integration.md`
-4. 同步示例、README 和 `tests/test_contract_docs.sh`，确保「问题清单位置」、Superpowers 委派和无专用 fixer agent 的契约一致
+4. 同步示例、README 和 `tests/test_contract_docs.sh`，确保「问题清单位置」、直接修复 / Superpowers 可选路线和无专用 fixer agent 的契约一致
 
 ## License
 

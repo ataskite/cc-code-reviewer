@@ -2,7 +2,7 @@
 
 本文件定义 `cc-code-fixer` 的修复阶段工作流。修复器只消费已有审查报告、飞书问题清单或人工整理后的 Fix TODO List，不重新执行完整代码审查。
 
-修复阶段的核心规则：**交互确认是硬门禁**。scan 可以自动化，fix 必须由用户确认待修复问题清单、修复关键点和输出目标后才能进入 Superpowers 与修复执行。
+修复阶段的核心规则：**交互确认是硬门禁**。scan 可以自动化，fix 必须由用户确认待修复问题清单、修复关键点、输出目标和执行方式后才能修改代码。Superpowers 可选：只有检测到相关技能完整安装时，才展示 Superpowers 修复路线；否则只进入直接修复路线。
 
 ---
 
@@ -21,6 +21,8 @@
 | `NORMALIZED_ISSUES` | 归一化后的完整问题清单 |
 | `CONFIRMED_ISSUE_IDS` | 用户确认纳入本轮修复的问题编号 |
 | `OUTPUT_TARGET` | `local-markdown`、`feishu-doc`、`feishu-base` 或组合输出 |
+| `EXECUTION_ROUTE` | `direct` 或 `superpowers` |
+| `WORKSPACE_STRATEGY` | 直接修复路线下为 `current`、`branch` 或 `worktree` |
 
 ### 本地 Markdown 报告
 
@@ -55,24 +57,56 @@
 7. 展示问题清单表格，获得用户对本轮修复问题集合的确认。
 8. 展示修复关键点，获得用户确认。
 9. 获得输出目标确认。
-10. 输出最终执行计划并获得确认。
+10. 通过 AskUserQuestion 选择执行方式：直接开始修复，或在 Superpowers 可用时使用 Superpowers 修复。
+11. 直接修复路线必须确认工作区策略：当前分支、新分支或 worktree。
+12. 输出最终执行计划并获得确认。
 
 飞书云文档或飞书多维表格读取失败时，如果没有来自本地 Markdown、已确认缓存或其他可信来源的已归一化问题上下文，必须停止在代码变更之前，只生成本地失败报告。无已归一化问题上下文时必须停止修复。
 
 ---
 
+## Execution Route Selection
+
+修复器必须在问题范围、修复关键点和输出目标都确认后，使用 AskUserQuestion 询问执行方式：
+
+- `直接开始修复`：由主 skill 执行修复、测试、验证和报告生成。
+- `使用 Superpowers 修复`：只有 `SUPERPOWERS_AVAILABLE=true` 时展示；进入 brainstorming 和 subagent-driven-development。
+- `取消`：停止，不修改任何文件。
+
+Superpowers 不完整安装时，不进入 degraded mode，也不展示 `使用 Superpowers 修复`。缺失项只出现在预检测摘要中，作为为什么没有该选项的说明。
+
+---
+
+## Direct Fix Flow
+
+直接修复路线由主 skill 执行，不能调用 Superpowers skill 或 dedicated fix sub-agent。直接修复路线必须确认工作区策略，并在代码变更前调用 `phase8-prepare-fix-workspace.sh`：
+
+1. `current`：在当前分支和当前工作区修复。
+2. `branch`：在当前仓库创建或切换修复分支。
+3. `worktree`：创建独立 worktree 和修复分支。
+
+选择 `branch` 或 `worktree` 时必须收集修复分支名。工作区准备失败时必须停止在代码变更之前。
+
+直接修复仍必须执行以下纪律：
+
+1. 先输出简短修复设计，说明修复意图、影响面、风险边界和验证命令。
+2. 优先补充或定位能暴露问题的测试；无法写测试时必须说明原因，并采用最小可验证命令替代。
+3. 只修复用户确认的问题，不扩大范围。
+4. 验证命令和 `git diff --check` 通过前，不得声称完成。
+5. 生成本地 Markdown 修复报告；如用户选择飞书输出，按飞书集成规则同步。
+
+---
+
 ## Superpowers Flow
 
-修复器执行代码变更前必须按 Superpowers 风格组织工作：
+Superpowers 路线仅在 `SUPERPOWERS_AVAILABLE=true` 且用户明确选择 `使用 Superpowers 修复` 时执行：
 
 1. 使用 `brainstorming` 梳理确认后的问题清单、修复关键点、影响面、风险边界、验证计划和隔离方式。
-2. 工作区策略交给 Superpowers：由 brainstorming 和后续工作区纪律决定当前分支、新分支或独立 worktree。`cc-code-fixer` 的 AskUserQuestion 不再单独选择工作区策略。
-3. 具体修复方案交给 Superpowers：不再由主 skill 预设档位。brainstorming 根据确认的问题集合形成本次修复设计。
+2. 由 brainstorming 和后续工作区纪律决定当前分支、新分支或独立 worktree。
+3. 具体修复方案交给 Superpowers：brainstorming 根据确认的问题集合形成本次修复设计。
 4. 使用 `test-driven-development` 优先补充或定位能暴露问题的测试；无法写测试时必须说明原因，并采用最小可验证命令替代。
 5. 使用 `verification-before-completion` 在报告、飞书更新和最终答复前执行完整验证命令。
 6. 使用 `subagent-driven-development` 执行 brainstorming 产出的修复计划。
-
-如果某个 Superpowers skill 不可用，修复器不得跳过相应纪律；必须在 degraded mode 中记录缺失项，并用等价的显式步骤完成：先提出修复思路，再写或定位验证，再运行验证命令。
 
 ---
 
@@ -81,7 +115,6 @@
 进入 degraded mode 的典型条件：
 
 - 飞书读取或更新失败
-- Superpowers skill 检测不完整
 - 项目依赖无法下载或测试环境不可用
 - 审查报告字段缺失，只能解析部分问题
 - 当前工作区存在用户修改且无法安全创建隔离分支
@@ -137,10 +170,10 @@ degraded mode 下必须继续保护用户代码：
 
 ## Workspace Rules
 
-工作区策略交给 Superpowers 后仍必须满足以下底线：
+直接修复路线必须由用户明确确认工作区策略。Superpowers 路线的工作区策略由 Superpowers 设计阶段决定，但仍必须满足以下底线：
 
 - `PROJECT_DIR` 必须存在并包含 Git 仓库
 - 当前分支名称、上游信息和工作区状态必须在执行计划中可见
 - 用户未确认前不得在当前分支直接修改
 - 推荐使用 `codex/fix-*` 分支或独立 worktree 执行修复
-- 如果工作区存在未提交修改，修复器只能在 Superpowers 设计明确处理隔离方式后继续；否则应停止并说明未修改任何文件
+- 如果工作区存在未提交修改，直接修复路线只能在用户明确选择当前分支修复后继续；新分支和 worktree 策略必须由 `phase8-prepare-fix-workspace.sh` 阻止脏工作区创建

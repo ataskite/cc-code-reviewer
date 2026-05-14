@@ -69,7 +69,8 @@ grep -q "worktree" "$README_FILE"
 grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$README_FILE"
 grep -q "待修复问题确认清单" "$README_FILE"
 grep -q "修复阶段必须交互确认" "$README_FILE"
-grep -q "工作区策略交给 Superpowers" "$README_FILE"
+grep -q "Superpowers 可选" "$README_FILE"
+grep -q "直接开始修复" "$README_FILE"
 grep -q "subagent-driven-development" "$README_FILE"
 grep -q "docs/assets/architecture-overview.png" "$README_FILE"
 if grep -qE "FixAgent|agents/cc-code-fixer|模型 / effort|MODEL_PREFERENCE|EFFORT_PREFERENCE" "$README_FILE"; then
@@ -101,6 +102,8 @@ grep -q "报告已保存到" "$EXAMPLES_FILE"
 grep -qx "# Fix Workflow" "$FIX_WORKFLOW_FILE"
 grep -qx "## Fix Input Normalization" "$FIX_WORKFLOW_FILE"
 grep -qx "## Preflight Sequence" "$FIX_WORKFLOW_FILE"
+grep -qx "## Execution Route Selection" "$FIX_WORKFLOW_FILE"
+grep -qx "## Direct Fix Flow" "$FIX_WORKFLOW_FILE"
 grep -qx "## Superpowers Flow" "$FIX_WORKFLOW_FILE"
 grep -qx "## Degraded Mode" "$FIX_WORKFLOW_FILE"
 grep -qx "## Fix Scope Rules" "$FIX_WORKFLOW_FILE"
@@ -109,7 +112,8 @@ grep -q "brainstorming" "$FIX_WORKFLOW_FILE"
 grep -q "test-driven-development" "$FIX_WORKFLOW_FILE"
 grep -q "verification-before-completion" "$FIX_WORKFLOW_FILE"
 grep -q "交互确认是硬门禁" "$FIX_WORKFLOW_FILE"
-grep -q "工作区策略交给 Superpowers" "$FIX_WORKFLOW_FILE"
+grep -q "Superpowers 可选" "$FIX_WORKFLOW_FILE"
+grep -q "直接修复路线必须确认工作区策略" "$FIX_WORKFLOW_FILE"
 grep -q "subagent-driven-development" "$FIX_WORKFLOW_FILE"
 grep -q "无已归一化问题上下文时必须停止修复" "$FIX_WORKFLOW_FILE" "$FIX_FEISHU_FILE"
 grep -q "Other/free-form 中粘贴" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
@@ -179,6 +183,13 @@ grep -qx "## 本地 Markdown 报告" "$FIX_EXAMPLES_FILE"
 grep -qx "## 飞书多维表格" "$FIX_EXAMPLES_FILE"
 grep -q "待修复问题确认清单" "$FIX_EXAMPLES_FILE"
 grep -q "问题清单位置" "$FIX_EXAMPLES_FILE"
+grep -q "| 问题ID | 严重级别 | 维度 | 问题摘要 | 修复建议 |" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
+grep -q "不要输出项目符号列表" "$FIX_SKILL_FILE"
+grep -q "问题摘要和修复建议必须压缩成终端可扫读的短句" "$FIX_SKILL_FILE"
+if grep -q "| 问题ID | 严重级别 | 维度 | 置信度 | 位置 | 问题摘要 | 修复建议 |" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"; then
+  echo "fix issue confirmation table must use compact terminal table columns, not the old wide table" >&2
+  exit 1
+fi
 if grep -q "快速启动" "$FIX_EXAMPLES_FILE"; then
   echo "fix examples must not document fast mode" >&2
   exit 1
@@ -192,12 +203,16 @@ grep -q "AskUserQuestion" "$FIX_SKILL_FILE"
 grep -q "待修复问题确认清单" "$FIX_SKILL_FILE"
 grep -q "问题清单位置" "$FIX_SKILL_FILE"
 grep -q "问题清单表格" "$FIX_SKILL_FILE"
-grep -q "工作区策略交给 Superpowers" "$FIX_SKILL_FILE"
+grep -q "执行方式" "$FIX_SKILL_FILE"
+grep -q "直接开始修复" "$FIX_SKILL_FILE"
+grep -q "使用 Superpowers 修复" "$FIX_SKILL_FILE"
+grep -q "SUPERPOWERS_AVAILABLE=true 时才展示" "$FIX_SKILL_FILE"
+grep -q "请选择直接修复使用的工作区策略" "$FIX_SKILL_FILE"
 grep -q "确认执行计划" "$FIX_SKILL_FILE"
 grep -q "brainstorming" "$FIX_SKILL_FILE"
 grep -q "subagent-driven-development" "$FIX_SKILL_FILE"
-if grep -qE 'FAST_MODE|FAST_PARAMS|快速启动|`--scope`|`--workspace`|`--strategy`|修复策略|请选择本次修复使用的工作区策略' "$FIX_SKILL_FILE"; then
-  echo "cc-code-fixer must not contain fast mode, workspace strategy, or repair strategy selection" >&2
+if grep -qE 'FAST_MODE|FAST_PARAMS|快速启动|`--scope`|`--workspace`|`--strategy`' "$FIX_SKILL_FILE"; then
+  echo "cc-code-fixer must not contain fast mode or fast-style parameters" >&2
   exit 1
 fi
 
