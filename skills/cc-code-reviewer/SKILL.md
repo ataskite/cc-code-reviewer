@@ -47,11 +47,12 @@ description: Java 代码审查 — 支持增量/存量审查、15维度评估、
 | `--scope` | `--scope 5`、`--scope full`、`--scope=user-service` | 审查范围 |
 | `--branch` | `--branch develop` 或 `--branch=develop` | 可选分支 |
 | `--upload` | `--upload no` 或 `--upload=doc` | 可选上传策略 |
+| `--concurrency` | `--concurrency 3` 或 `--concurrency=3` | 可选并发数，默认 `3` |
 
 解析要求：
 - 每个 `--key` 的值必须是紧随其后的非 `--` token；`--key=value` 按 `=` 后内容作为值
 - 如果某个参数出现多次，使用最后一次出现的值，并在校验失败/启动提示中展示最终采用值
-- 如果参数名不在 `mode/type/scope/branch/upload` 中，记录为非法参数，不得忽略
+- 如果参数名不在 `mode/type/scope/branch/upload/concurrency` 中，记录为非法参数，不得忽略
 - 如果 `--mode` 后缺值、值为空，或下一项也是 `--` 参数，记录为缺失值
 - 解析出的参数必须保留原始字符串，用于后续完整性校验和错误提示
 
@@ -125,6 +126,32 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 - 识别证据超过 80 字可截断，但不得截断技术栈名称、建议维度和专项规则
 - 摘要表最多展示 12 个技术栈；超过 12 个时追加 `另有 {N} 个技术栈未在摘要表中展示，完整结果已注入子 agent。`
 
+### 第三步之后：分批判定
+
+**时机**：交互式模式在步骤 2（选择审查类型）确定 REVIEW_TYPE 后、步骤 6 前执行判定。快速启动模式在参数校验时一并判定。
+
+**公式**：
+```
+estimated_tokens = REVIEW_FILE_COUNT × 500 + REVIEW_LINE_COUNT × 3
+BATCH_MODE = estimated_tokens > 100000 AND REVIEW_TYPE = 存量审查
+```
+
+**前提**：分批模式仅对存量审查生效。增量审查的变更文件数通常远低于阈值；即使超过阈值，batch agent 缺少增量上下文（GIT_LOG/CHANGED_FILES），无法判断问题是变更引入还是存量，因此不进入分批。
+
+**参数来源**：
+- `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 从 phase3-project-scan.sh 输出中解析（`Java文件总数` 和 `代码总行数`）
+- `500`：每个文件的工具调用 + agent 评估开销（token）
+- `3`：每行 Java 代码平均 token 数
+- `100000`：单批留给文件内容 + 开销的上限（200k 总上下文 - 25k 系统 prompt - 50k agent 输出 ≈ 125k，取 100k 留余量）
+
+**判定结果**：
+- `BATCH_MODE=false` → 走现有单 agent 流程，不做任何改动
+- `BATCH_MODE=true` → 进入分批模式
+
+**交互式模式**：分批判定延迟到步骤 2 确定审查类型后执行（因为公式依赖 REVIEW_TYPE）。
+
+**快速启动模式**：参数校验时一并计算 BATCH_MODE。BATCH_MODE 的判定不影响参数校验（`--concurrency` 参数在 BATCH_MODE=false 时被静默忽略）。
+
 ### 第四步：参数收集（根据模式选择分支）
 
 #### 分支 A：交互式模式（FAST_MODE=false）
@@ -152,12 +179,97 @@ test -r "$REPORT_FORMAT_PATH"
 
 ### 第五步：调用子 agent 执行代码审查
 
+**分支判断**：
+- BATCH_MODE=false → 执行「路径 A：单 agent 模式」（现有逻辑不变）
+- BATCH_MODE=true → 执行「路径 B：分批并行模式」（新增逻辑）
+
+#### 路径 A：单 agent 模式（BATCH_MODE=false）
+
 使用 Task 工具启动 `cc-code-reviewer` 子代理：
 - description: "执行 Java 代码审查"
 - prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据
 - subagent_type: "cc-code-reviewer:cc-code-reviewer"
 
 详细参数注入格式见下方「子 agent 调用规范」章节。
+
+#### 路径 B：分批并行模式（BATCH_MODE=true）
+
+使用 Agent 工具启动多个 `cc-code-reviewer` 子代理，按轮次并发执行。
+
+**编排逻辑**：
+
+以 CONCURRENCY=3、BATCH_COUNT=9 为例：
+
+```
+轮次 1：同时启动 Agent(batch-1) + Agent(batch-2) + Agent(batch-3)
+  → 等待全部完成
+轮次 2：同时启动 Agent(batch-4) + Agent(batch-5) + Agent(batch-6)
+  → 等待全部完成
+轮次 3：同时启动 Agent(batch-7) + Agent(batch-8) + Agent(batch-9)
+  → 等待全部完成
+```
+
+每轮同时发出 CONCURRENCY 个 Agent 工具调用。当前轮所有 agent 返回后，开始下一轮。CONCURRENCY=1 时退化为串行。
+
+**每个 batch agent 的调用参数**：
+
+- description: "Batch {BATCH_INDEX}/{BATCH_COUNT} 代码审查"
+- subagent_type: "cc-code-reviewer:cc-code-reviewer"
+- prompt: 见下方「Batch Agent Prompt 注入格式」
+
+**Batch Agent Prompt 注入格式**：
+
+每个 batch agent 的 prompt 与现有格式一致，但额外注入以下参数并做以下调整：
+
+```
+## 审查任务参数（外部注入，请直接使用，无需再次确认）
+
+| 参数 | 值 |
+|------|-----|
+| 项目路径 | {PROJECT_DIR} |
+| 项目名称 | {PROJECT_NAME} |
+| 项目类型 | {PROJECT_TYPE} |
+| 审查类型 | {REVIEW_TYPE} |
+| 审查范围 | {REVIEW_SCOPE} |
+| 审查模式 | {REVIEW_MODE} |
+| 飞书上传选项 | 飞书上传不可用 |
+| 审查文件数量 | {BATCH_FILE_COUNT} |
+| 审查代码行数 | {BATCH_LINE_COUNT} |
+| 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
+| 报告格式路径 | {REPORT_FORMAT_PATH} |
+| 批次编号 | {BATCH_INDEX}/{BATCH_COUNT} |
+| 审查输出模式 | 仅发现清单 |
+
+### 本批审查文件列表（外部注入，直接使用，不要重新扫描）
+{逐行列出文件绝对路径}
+
+### 项目概况（预扫描结果）
+{PROJECT_SCAN_RESULT}
+
+请基于以上审查参数，立即开始执行代码审查。不要进行任何用户交互或询问，直接从代码审查开始执行。
+```
+
+**关键差异**（对比路径 A 单 agent 调用）：
+
+| 字段 | 单 agent（路径 A） | Batch agent（路径 B） |
+|------|----------|-------------|
+| 审查文件数量 | REVIEW_FILE_COUNT（总量） | BATCH_FILE_COUNT（本批） |
+| 审查代码行数 | REVIEW_LINE_COUNT（总量） | BATCH_LINE_COUNT（本批） |
+| 飞书上传选项 | 用户选择的值 | 固定"飞书上传不可用" |
+| 批次编号 | 无 | BATCH_INDEX/BATCH_COUNT |
+| 审查输出模式 | 无（默认完整报告） | "仅发现清单" |
+| 文件列表来源 | agent 自行 Glob | 外部注入，agent 不扫描 |
+| 增量数据 | 注入 GIT_LOG 等 | 不注入（分批仅支持存量审查） |
+
+**飞书上传**：batch agent 不执行飞书上传。飞书上传由主 skill 在合并完成后统一处理。
+
+**错误处理**：
+
+| 场景 | 处理方式 |
+|------|----------|
+| 某个 batch agent 超时/失败 | 该批次标记为"未完成"，其余批次继续。合并时标注该批次未覆盖 |
+| 所有 batch 均失败 | 输出失败报告，提示用户重试 |
+| 合并时某 batch 文件不存在 | 跳过该批次，报告中标注缺失 |
 
 ---
 
@@ -300,7 +412,46 @@ test -r "$REPORT_FORMAT_PATH"
     description: "同时上传云文档和多维表格，聊天中显示精简摘要"
 - multiSelect: false
 
-### 步骤 6：确认执行计划
+### 步骤 6：选择并发数（条件步骤）
+
+**触发条件**：BATCH_MODE=true。不满足时跳过此步骤。
+
+**前置计算**：触发此步骤前，必须先完成分批计算（见「分批计算」章节），得到 BATCH_COUNT。
+
+在调用 AskUserQuestion 之前，先输出分批信息：
+```
+📊 大仓库分批扫描
+
+本次审查范围较大，将采用分批并行扫描：
+- 文件总数：{REVIEW_FILE_COUNT} 个
+- 代码行数：{REVIEW_LINE_COUNT} 行
+- 预计分批：{BATCH_COUNT} 批
+```
+
+**必须调用 AskUserQuestion 工具，参数如下**：
+- question: "请选择并发扫描策略"
+- header: "并发数"
+- options:
+  - label: "串行执行"
+    description: "逐批扫描，最稳定但最慢，约 {total_min} 分钟"
+  - label: "3 路并发（推荐）"
+    description: "同时扫描 3 批，约 {total_min} 分钟"
+  - label: "5 路并发"
+    description: "同时扫描 5 批，需要较好硬件，约 {total_min} 分钟"
+- multiSelect: false
+
+**耗时预估公式**：
+```
+每批耗时 = 根据现有模式×规模估算表（见步骤 7 中的预估时间参考表）
+total_min = ceil(BATCH_COUNT / CONCURRENCY) × 每批耗时
+```
+
+**用户响应后变量赋值**：
+- 串行执行 → CONCURRENCY=1
+- 3 路并发 → CONCURRENCY=3
+- 5 路并发 → CONCURRENCY=5
+
+### 步骤 7：确认执行计划
 
 先输出完整执行计划：
 
@@ -314,6 +465,8 @@ test -r "$REPORT_FORMAT_PATH"
 - 审查模式：{REVIEW_MODE}
 - 启用维度：{根据模式 × 维度矩阵列出具体维度名称}
 - 飞书上传：{FEISHU_UPLOAD_OPTION}
+- 扫描策略：分批并行扫描（{BATCH_COUNT} 批 / {CONCURRENCY} 路并发）  ← 仅 BATCH_MODE=true 时显示
+- 预计耗时：约 {total_min} 分钟  ← 仅 BATCH_MODE=true 时显示
 ```
 
 **必须调用 AskUserQuestion 工具，参数如下**：
@@ -328,12 +481,30 @@ test -r "$REPORT_FORMAT_PATH"
 
 **用户确认后的启动提示**：
 
+**BATCH_MODE=false 时**（与现有设计一致）：
+
 ```
 🚀 正在启动独立代码审查子代理...
 
 📋 任务配置：{REVIEW_MODE} 模式 · {REVIEW_TYPE} · {REVIEW_SCOPE}
 ⏱️ 预估耗时：{预估时间}
 📌 子代理将独立执行完整审查流程，完成后自动返回结果。
+
+{飞书上传时追加}
+📤 审查完成后将自动上传到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
+
+💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
+```
+
+**BATCH_MODE=true 时**：
+
+```
+🚀 正在启动分批并行代码审查...
+
+📋 任务配置：{REVIEW_MODE} 模式 · {REVIEW_TYPE} · {REVIEW_SCOPE}
+📊 扫描策略：{BATCH_COUNT} 批 / {CONCURRENCY} 路并发
+⏱️ 预估耗时：约 {total_min} 分钟
+📌 共 {BATCH_COUNT} 批次将按 {CONCURRENCY} 路并发执行，全部完成后自动合并结果。
 
 {飞书上传时追加}
 📤 审查完成后将自动上传到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
@@ -352,6 +523,54 @@ test -r "$REPORT_FORMAT_PATH"
 
 ---
 
+## 分批计算
+
+当 BATCH_MODE=true 时，主 skill 在 prompt 中执行以下步骤（不使用脚本）：
+
+### 文件收集与排序
+
+1. **收集文件路径和行数**：用 Bash 执行以下命令获取每个文件的路径和行数：
+   ```bash
+   find "$PROJECT_DIR" -name '*.java' -not -path '*/target/*' -not -path '*/build/*' -not -path '*/.git/*' -exec wc -l {} + 2>/dev/null | sort -rn
+   ```
+   增量审查时不执行此步（已由触发条件排除）
+
+2. **风险排序**：按文件名模式排序，高风险优先。通过 Bash 按文件名后缀分组实现：
+   - P0 热点：`*Controller.java`、`*Service.java`、`*Security*.java`、`*Filter.java`、`*Interceptor.java`
+   - P1 重点：`*Client.java`、`*Pool.java`、`*Scheduler.java`、`*Handler.java`、`*Consumer.java`、`*Producer.java`
+   - P2 常规：其余文件（`*DTO.java`、`*VO.java`、`*Entity.java`、`*Util*.java` 等）
+
+   实现方式：对 find 结果按文件名后缀排序，P0 关键词匹配的文件排前，P1 次之，P2 最后
+
+### Token 预算打包
+
+```
+batch_token_budget = 100000
+current_batch_tokens = 0
+current_batch_files = []
+
+for each file in sorted_list:
+    file_tokens = file_line_count × 3 + 500
+    if current_batch_tokens + file_tokens > batch_token_budget:
+        封装 current_batch 为一个批次
+        开始新批次
+        current_batch_tokens = 0
+        current_batch_files = []
+    current_batch_files.append(file)
+    current_batch_tokens += file_tokens
+
+封装最后一批
+```
+
+### 输出
+
+得到 `BATCH_COUNT`、`CONCURRENCY` 和每个批次的文件列表。每个批次记录：
+- 文件路径列表
+- 文件数（BATCH_FILE_COUNT）
+- 行数（BATCH_LINE_COUNT）
+
+---
+
 ## 快速启动模式参数规范
 
 适用于定时任务、自动化脚本、CI/CD 集成等无需人工交互的场景。
@@ -365,6 +584,7 @@ test -r "$REPORT_FORMAT_PATH"
 | `--scope` | 条件必填 | 见下方规则 | 审查范围 |
 | `--branch` | 可选 | 任意分支名 | 审查分支，默认当前分支 |
 | `--upload` | 可选 | `no` / `doc` / `bitable` / `both` | 飞书上传选项，默认 `no` |
+| `--concurrency` | 可选 | `1` / `3` / `5` | 并发数，默认 `3`；BATCH_MODE=false 时被忽略 |
 
 **`--scope` 条件必填规则**：
 
@@ -389,6 +609,9 @@ test -r "$REPORT_FORMAT_PATH"
 | `--upload doc` | `FEISHU_UPLOAD_OPTION=上传到云文档` | 转换为中文 |
 | `--upload bitable` | `FEISHU_UPLOAD_OPTION=上传到多维表格` | 转换为中文 |
 | `--upload both` | `FEISHU_UPLOAD_OPTION=同时上传两者` | 转换为中文 |
+| `--concurrency 1` | `CONCURRENCY=1` | 直接使用 |
+| `--concurrency 3` 或未提供 | `CONCURRENCY=3` | 默认值 |
+| `--concurrency 5` | `CONCURRENCY=5` | 直接使用 |
 
 ### 校验规则
 
@@ -398,6 +621,8 @@ test -r "$REPORT_FORMAT_PATH"
 4. `--branch` 指定的分支不存在时报错并列出可用分支
 5. `--scope` 为具体模块名时校验模块是否存在于预扫描结果中
 6. `--upload` 不是 `no` 但 LARK_PLUGIN_INSTALLED=false 时，警告并降级为 `仅显示报告`
+7. `--concurrency` 不在 `1` / `3` / `5` 时报错，但不影响其他参数校验
+8. BATCH_MODE=false 时 `--concurrency` 被静默忽略（不报错）
 
 **完整性校验要求**：
 - 快速启动模式必须保证参数完整性：所有必填项和条件必填项都明确后，才能执行分支切换、增量预处理或启动子 agent
@@ -420,6 +645,7 @@ test -r "$REPORT_FORMAT_PATH"
 - `--scope` 在 `incremental` 下不是正整数
 - `--scope` 在 `stock` 下既不是 `full`，也不是预扫描 `MODULE:` 行中的有效模块路径列表
 - `--upload` 不在 `no` / `doc` / `bitable` / `both`
+- `--concurrency` 不在 `1` / `3` / `5`
 - 出现未知参数名，例如 `--review-mode`、`--types`
 
 ### 快速启动分支处理
@@ -464,6 +690,8 @@ test -r "$REPORT_FORMAT_PATH"
 
 ### 快速启动校验通过后的启动提示
 
+**BATCH_MODE=false 时**（与现有提示一致）：
+
 ```
 🚀 快速启动模式 — 正在启动独立代码审查子代理...
 
@@ -472,6 +700,19 @@ test -r "$REPORT_FORMAT_PATH"
 📤 飞书上传：{FEISHU_UPLOAD_OPTION}
 ⏱️ 预估耗时：{预估时间}
 📌 子代理将独立执行完整审查流程，完成后自动返回结果。
+```
+
+**BATCH_MODE=true 时**：
+
+```
+🚀 快速启动模式 — 正在启动分批并行代码审查...
+
+📋 任务配置：{REVIEW_MODE} 模式 · {REVIEW_TYPE} · {REVIEW_SCOPE}
+📊 扫描策略：{BATCH_COUNT} 批 / {CONCURRENCY} 路并发
+🌿 审查分支：{TARGET_BRANCH 或 CURRENT_BRANCH}
+📤 飞书上传：{FEISHU_UPLOAD_OPTION}
+⏱️ 预估耗时：约 {total_min} 分钟
+📌 每批子代理独立执行审查，全部完成后自动合并结果。
 ```
 
 ### 快速启动调用示例
@@ -570,7 +811,88 @@ test -r "$REPORT_FORMAT_PATH"
 
 **异常处理**：如果 CHANGED_FILES_OUTPUT 为空，告知用户没有变更文件，询问是否调整提交次数或切换到存量审查，不调用子 agent。
 
+### 第五步之后：报告合并（仅 BATCH_MODE=true 时执行）
+
+所有 batch agent 完成后，主 skill 执行合并（不启动额外 agent）。
+
+#### 合并步骤
+
+1. **读取所有 batch 文件**：逐个 Read `/tmp/review-batch-{i}-{PROJECT_NAME}.md`（i = 1..BATCH_COUNT）
+2. **提取所有问题**：从每个 batch 的发现列表中解析出结构化问题（严重级别、维度、标题、位置、证据、建议）
+3. **跨批去重**：同一文件 + 同一行 + 同一维度的问题只保留一条，取更高严重级别
+4. **聚合同类问题**：相同根因的多处出现合并为一条，标注总数和代表位置
+5. **按严重程度排序**：P0 → P1 → P2 → P3 → 待确认
+6. **汇总覆盖率**：
+   ```
+   总扫描文件数 = Σ 各批 BATCH_FILE_COUNT
+   总扫描行数 = Σ 各批 BATCH_LINE_COUNT
+   文件覆盖率 = 总扫描文件数 / REVIEW_FILE_COUNT × 100%
+   行覆盖率 = 总扫描行数 / REVIEW_LINE_COUNT × 100%
+   综合覆盖率 = (文件覆盖率 + 行覆盖率) / 2
+   ```
+7. **按完整报告格式输出**：复用 `references/report-format.md` 格式，生成最终报告
+
+#### 合并后输出
+
+使用 Write 工具将合并后的报告保存到 `{PROJECT_DIR}/code-review-report-{PROJECT_NAME}-{timestamp}.md`（与单 agent 模式一致的命名和路径）。
+
+#### 合并后飞书上传
+
+复用现有飞书上传逻辑：根据 FEISHU_UPLOAD_OPTION 执行上传，上传合并后的报告文件。
+
+#### 合并后结果展示
+
+**已上传飞书时**：
+
+```
+✅ 代码审查已完成！⏱️ 耗时 {X} 分 {Y} 秒
+
+📊 扫描策略：分批并行扫描（{BATCH_COUNT} 批 / {CONCURRENCY} 路并发）
+📊 审查覆盖：{总扫描文件数}/{REVIEW_FILE_COUNT} 文件（{总扫描行数}/{REVIEW_LINE_COUNT} 行），覆盖率 {综合覆盖率}%
+📊 审查结果：{问题总数} 个问题（P0: {n} / P1: {n} / P2: {n} / P3: {n} / 待确认: {n}）
+
+🔥 最高风险项：
+  - P0-1: {问题一句话描述} — {位置}
+  （最多列 5 条）
+
+📄 审查报告：{链接}
+📋 问题清单：{链接}
+
+💡 建议：{一句话关键建议}
+👉 详细报告请点击上方飞书链接查看。
+```
+
+**未上传飞书时**：
+
+```
+📄 报告已保存到本地文件：
+   {PROJECT_DIR}/code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
+
+{合并后的完整报告内容}
+
+---
+
+✅ 代码审查已完成！⏱️ 耗时 {X} 分 {Y} 秒
+
+📊 扫描策略：分批并行扫描（{BATCH_COUNT} 批 / {CONCURRENCY} 路并发）
+📊 审查覆盖：{总扫描文件数}/{REVIEW_FILE_COUNT} 文件（{总扫描行数}/{REVIEW_LINE_COUNT} 行），覆盖率 {综合覆盖率}%
+📊 审查结果：{问题总数} 个问题（P0: {n} / P1: {n} / P2: {n} / P3: {n} / 待确认: {n}）
+💡 建议：{一句话关键建议}
+```
+
+#### 上下文保护
+
+- 每个 batch 文件约 2-5k token（只含发现清单，不含代码原文）
+- 30 个 batch 的合并读取总量约 60-150k token
+- 合并操作在主 skill 上下文中执行，通过压缩上下文可容纳
+
 ### 子 agent 返回结果处理
+
+**BATCH_MODE=false 时**：直接使用子 agent 返回的结果，按下方现有逻辑处理（已上传飞书 / 未上传飞书 / 上传失败降级）。
+
+**BATCH_MODE=true 时**：子 agent 返回结果仅用于进度确认。实际合并和输出由「第五步之后：报告合并」章节处理。每个 batch agent 完成后输出 `✅ Batch {BATCH_INDEX}/{BATCH_COUNT} 完成`，全部完成后进入合并流程。
+
+---
 
 **已上传飞书时**：
 
