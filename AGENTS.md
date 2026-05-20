@@ -6,7 +6,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 This is a **claudecode plugin skill** for enterprise-grade Java code review and report-driven fixing. It provides 15-dimension comprehensive analysis with 4 review modes (fast/standard/deep/security), supports incremental and stock review types, and can use review reports as input for a controlled fix stage.
 
-**Important**: This repository intentionally uses **skill-only entry points** plus dedicated sub-agents. Claude Code can invoke the skills explicitly via `/cc-code-reviewer:cc-code-reviewer` for scan and `/cc-code-reviewer:cc-code-fixer` for fix.
+**Important**: This repository intentionally uses **skill-only entry points** plus dedicated sub-agents. Claude Code can invoke the skills explicitly via `/cc-code-reviewer:cc-code-reviewer` for scan, `/cc-code-reviewer:cc-code-ignore` for scan ignore-rule maintenance, and `/cc-code-reviewer:cc-code-fixer` for fix.
 
 ## Architecture
 
@@ -16,6 +16,8 @@ This is a **claudecode plugin skill** for enterprise-grade Java code review and 
 flowchart TD
     User["User / Claude Code session"]
     ReviewSkill["Scan Skill<br/>skills/cc-code-reviewer/SKILL.md"]
+    IgnoreSkill["Ignore Skill<br/>skills/cc-code-ignore/SKILL.md"]
+    IgnoreRules["Project ignore rules<br/>.cc-code-reviewer/ignore/issues.yml"]
     FixSkill["Fix Skill<br/>skills/cc-code-fixer/SKILL.md"]
     ReviewAgent["Scan Agent<br/>agents/cc-code-reviewer.md"]
     Reports["Review reports<br/>Markdown / Feishu Doc / Feishu Base"]
@@ -26,12 +28,18 @@ flowchart TD
 
     subgraph ScanPhase["Scan phase"]
       ReviewSkill --> ScanScripts["phase1-5 scripts<br/>project / branches / stack / lark / incremental diff"]
+      IgnoreRules -.read.-> ReviewSkill
       ScanScripts -->|"small repo"| ReviewAgent
       ReviewAgent --> Reports
       BatchMerge["Batch merge<br/>dedup + aggregate"]
       ReviewSkill -->|"large repo"| BatchAgents["Batch Agents<br/>parallel scan"]
       BatchAgents --> BatchMerge
       BatchMerge --> Reports
+    end
+
+    subgraph IgnorePhase["Ignore maintenance"]
+      Reports --> IgnoreSkill
+      IgnoreSkill --> IgnoreRules
     end
 
     subgraph FixPhase["Fix phase"]
@@ -43,6 +51,7 @@ flowchart TD
     end
 
     User --> ReviewSkill
+    User --> IgnoreSkill
     User --> FixSkill
     Reports -.optional upload/read.-> Lark
     FixReports -.optional create/writeback.-> Lark
@@ -52,6 +61,7 @@ flowchart TD
 
 **Main Skill (`skills/cc-code-reviewer/SKILL.md`)**:
 - Pre-scan: project detection → branch detection → project scan → lark-cli detection
+- Reads `.cc-code-reviewer/ignore/issues.yml` after pre-scan and injects AI-readable skip rules into the scan agent
 - Interactive mode: Collect user config via AskUserQuestion (up to 7 steps; step 6 concurrency selection only when BATCH_MODE=true)
 - Fast mode: Validate parameters and launch sub-agent directly
 - Batch mode: Auto-triggered for large stock reviews; splits files into batches, dispatches parallel sub-agents, merges results
@@ -59,9 +69,16 @@ flowchart TD
 
 **Review Agent (`agents/cc-code-reviewer.md`)**:
 - Execute actual code review with injected parameters
+- Apply project ignore rules before generating the final issue list, and disclose matched rules / filtered issue counts
 - Generate structured report
 - Upload to Feishu (if requested)
 - **Never** interact with user via AskUserQuestion
+
+**Ignore Skill (`skills/cc-code-ignore/SKILL.md`)**:
+- Read a scan issue list from Feishu Base or local Markdown
+- Let the user specify issue numbers only as temporary selectors
+- Write representative AI instruction rules to `.cc-code-reviewer/ignore/issues.yml`
+- **Never** store transient report issue numbers in the ignore file
 
 **Fix Skill (`skills/cc-code-fixer/SKILL.md`)**:
 - Normalize fix input from local Markdown, Feishu Doc, or Feishu Base
@@ -82,17 +99,20 @@ These rules **must** be strictly followed:
 6. **Never skip summary**: Even if all parameters provided, always show pre-scan summary
 7. **Fix stage honors confirmed scope**: `cc-code-fixer` must only repair the confirmed issue set
 8. **Fix stage delegates to Superpowers**: brainstorming produces spec + plan, subagent-driven-development executes; no dedicated fix sub-agent
+9. **Ignore stores problem classes**: `cc-code-ignore` writes AI-readable same-kind skip rules, not report issue numbers
 
 ## File Structure
 
 ```
 skills/cc-code-reviewer/SKILL.md    # Main skill definition (entry point)
+skills/cc-code-ignore/SKILL.md      # Scan ignore-rule maintenance skill
 skills/cc-code-fixer/SKILL.md       # Fix-stage skill definition
 agents/cc-code-reviewer.md          # Sub agent for review execution
 references/
   ├── review-framework.md             # 15 dimensions definition + mode matrix
   ├── report-format.md                # Report output format specification
   ├── feishu-integration.md           # Feishu upload operation reference
+  ├── ignore-workflow.md              # Project-level ignore rule format and workflow
   ├── fix-workflow.md                 # Fix-stage workflow contract
   ├── fix-report-format.md            # Fix report output format
   ├── fix-feishu-integration.md       # Fix-stage Feishu read/write contract

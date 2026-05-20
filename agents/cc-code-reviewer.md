@@ -45,6 +45,8 @@ maxTurns: 50
 | 审查代码行数 | ... |
 | 审查框架路径 | ... |
 | 报告格式路径 | ... |
+| 项目 ignore 文件路径 | ... |
+| 项目 ignore 是否启用 | ... |
 | 批次编号 | {BATCH_INDEX}/{BATCH_COUNT} |
 | 审查输出模式 | {REVIEW_OUTPUT_MODE} |
 | 本批审查文件列表 | {逐行列出文件路径} |
@@ -73,6 +75,8 @@ maxTurns: 50
 - **审查代码行数**（`REVIEW_LINE_COUNT`）：本次审查涉及的代码总行数
 - **审查框架路径**（`REVIEW_FRAMEWORK_PATH`）：`review-framework.md` 的绝对路径。必须优先读取主 agent 注入的绝对路径。
 - **报告格式路径**（`REPORT_FORMAT_PATH`）：`report-format.md` 的绝对路径。必须优先读取主 agent 注入的绝对路径。
+- **项目 ignore 文件路径**（`IGNORE_RULES_PATH`）：项目内 `.cc-code-reviewer/ignore/issues.yml` 的绝对路径；未配置时为 `未配置`。
+- **项目 ignore 是否启用**（`IGNORE_RULES_ENABLED`）：`true` / `false`。启用时主 agent 会在独立章节注入 `IGNORE_RULES_CONTENT`。
 - **批次编号**（`BATCH_INDEX`/`BATCH_COUNT`）：格式为 `N/M`，表示第 N 批共 M 批。仅在分批模式下提供。未提供时视为单 agent 全量模式
 - **审查输出模式**（`REVIEW_OUTPUT_MODE`）：
   - `完整报告`（默认）：按 REPORT_FORMAT_PATH 输出完整审查报告
@@ -86,6 +90,7 @@ maxTurns: 50
 
 **辅助数据**（参数表之后以独立章节注入）：
 - **项目概况**（`PROJECT_SCAN_RESULT`）：主agent在阶段三（项目预扫描）获取的项目结构、模块树、文件统计。**禁止重复执行 find 统计、文件计数等已完成操作**，直接利用这些数据确定审查范围。
+- **项目 ignore 规则**（`IGNORE_RULES_CONTENT`）：主 agent 读取 `.cc-code-reviewer/ignore/issues.yml` 后注入的 AI 指令型 ignore 文件。启用时必须先应用项目 ignore 规则，再生成问题清单；凡是语义上命中 `ignore.skip_when` 的同类问题，不得输出到 P0/P1/P2/P3/待确认清单。
 - **增量提交记录**（`GIT_LOG_OUTPUT`）：仅增量审查时提供，包含最近 N 次提交的 `git log --oneline` 输出。
 - **变更文件列表**（`CHANGED_FILES_OUTPUT`）：仅增量审查时提供，`git diff --name-only` 的输出。**直接使用此列表作为审查主输入，禁止重新执行 git diff**。
 - **变更统计**（`DIFF_STATS_OUTPUT`）：仅增量审查时提供，`git diff --stat` 的输出。据此判断每个文件的改动规模，优先审查改动量大的文件。
@@ -338,6 +343,30 @@ spring:
 - **多处出现时**：只列一个代表性位置，末尾注明同类问题总数，如 `A.java:45（同类问题共3处）`。不要逐个列出所有位置，后续修复阶段会做全面扫描定位
 
 如果问题本质是跨文件、跨层或架构级，不要为了满足格式要求伪造单一行号。
+
+### 第二步之后：应用项目 ignore 规则
+
+当 `IGNORE_RULES_ENABLED=true` 且 `IGNORE_RULES_CONTENT` 不是空内容时，必须在生成最终问题清单前先应用项目 ignore 规则。
+
+处理规则：
+
+1. 读取 `IGNORE_RULES_CONTENT` 中每条 `ignore` 规则的 `name`、`applies_to`、`skip_when`。
+2. 对阶段 C/D 发现的问题逐条判断：如果问题语义、所属范围或证据特征命中 `skip_when` 描述的同类问题，则从最终 P0/P1/P2/P3/待确认清单中移除。
+3. 命中 ignore.skip_when 的同类问题，不得输出为扫描问题，也不得降级为待确认项。
+4. 统计 `IGNORE_MATCHED_RULE_COUNT` 和 `IGNORE_FILTERED_ISSUE_COUNT`。
+5. 如果某个问题只是表面相似，但证据显示它可能是新的生产风险，必须保留并在问题中说明为什么没有被 ignore 规则覆盖。
+
+报告中必须披露项目 ignore 状态：
+
+```text
+项目 ignore：已启用（命中 {IGNORE_MATCHED_RULE_COUNT} 条规则，过滤 {IGNORE_FILTERED_ISSUE_COUNT} 个同类问题）
+```
+
+未启用时写：
+
+```text
+项目 ignore：未配置
+```
 
 ---
 

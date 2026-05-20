@@ -77,6 +77,22 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 
 > ⚠️ 4 个脚本必须全部执行完成后才能继续。此阶段禁止调用 AskUserQuestion，禁止输出任何交互式提问。
 
+### 第二步之后：读取项目级 ignore 规则
+
+4 个预扫描脚本完成后，在输出预扫描摘要前，检查项目内是否存在 AI 指令型 ignore 文件：
+
+```bash
+IGNORE_RULES_PATH="$PROJECT_DIR/.cc-code-reviewer/ignore/issues.yml"
+```
+
+读取规则：
+- 文件存在且可读：读取完整内容到 `IGNORE_RULES_CONTENT`，设置 `IGNORE_RULES_ENABLED=true`
+- 文件不存在：设置 `IGNORE_RULES_ENABLED=false`、`IGNORE_RULES_CONTENT=""`
+- 文件存在但不可读：设置 `IGNORE_RULES_ENABLED=false`，在预扫描摘要中提示不可读原因，但不得阻塞扫描
+- 不解析 YAML，不做脚本级过滤；过滤由 scan agent 基于 `skip_when` 语义执行
+
+ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI 指令型 ignore 文件，不存报告编号，只描述同类问题的跳过规则。
+
 ### 第三步：输出预扫描摘要（不允许跳过）
 
 4 个脚本全部完成后，必须输出以下格式的摘要（这是预扫描阶段的唯一输出）：
@@ -116,6 +132,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 - 未识别专项技术栈，仅启用通用 Java 审查规则。
 
 🔌 lark-cli：{LARK_PLUGIN_INSTALLED=true 时显示 "✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书上传" / false 时显示 "⚠️ 飞书上传不可用：{LARK_PLUGIN_REASON}，报告将保存到本地文件"}
+
+🧩 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "✅ 已启用：.cc-code-reviewer/ignore/issues.yml" / false 且文件不存在时显示 "未配置" / false 且不可读时显示 "⚠️ 文件存在但不可读：{原因}"}
 ```
 
 **技术栈扫描展示规则**：
@@ -237,6 +255,8 @@ test -r "$REPORT_FORMAT_PATH"
 | 审查代码行数 | {BATCH_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
 | 报告格式路径 | {REPORT_FORMAT_PATH} |
+| 项目 ignore 文件路径 | {IGNORE_RULES_PATH 或 未配置} |
+| 项目 ignore 是否启用 | {IGNORE_RULES_ENABLED} |
 | 批次编号 | {BATCH_INDEX}/{BATCH_COUNT} |
 | 审查输出模式 | 仅发现清单 |
 
@@ -245,6 +265,9 @@ test -r "$REPORT_FORMAT_PATH"
 
 ### 项目概况（预扫描结果）
 {PROJECT_SCAN_RESULT}
+
+### 项目 ignore 规则（外部注入，直接使用）
+{IGNORE_RULES_CONTENT；未启用时写 "未配置"}
 
 请基于以上审查参数，立即开始执行代码审查。不要进行任何用户交互或询问，直接从代码审查开始执行。
 ```
@@ -464,6 +487,7 @@ total_min = ceil(BATCH_COUNT / CONCURRENCY) × 每批耗时
 - 审查范围：{REVIEW_SCOPE}
 - 审查模式：{REVIEW_MODE}
 - 启用维度：{根据模式 × 维度矩阵列出具体维度名称}
+- 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "已启用 .cc-code-reviewer/ignore/issues.yml"；否则显示 "未配置"}
 - 飞书上传：{FEISHU_UPLOAD_OPTION}
 - 扫描策略：分批并行扫描（{BATCH_COUNT} 批 / {CONCURRENCY} 路并发）  ← 仅 BATCH_MODE=true 时显示
 - 预计耗时：约 {total_min} 分钟  ← 仅 BATCH_MODE=true 时显示
@@ -762,9 +786,14 @@ for each file in sorted_list:
 | 审查代码行数 | {REVIEW_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
 | 报告格式路径 | {REPORT_FORMAT_PATH} |
+| 项目 ignore 文件路径 | {IGNORE_RULES_PATH 或 未配置} |
+| 项目 ignore 是否启用 | {IGNORE_RULES_ENABLED} |
 
 ### 项目概况（预扫描结果）
 {PROJECT_SCAN_RESULT}
+
+### 项目 ignore 规则（外部注入，直接使用）
+{IGNORE_RULES_CONTENT；未启用时写 "未配置"}
 
 ### 增量提交记录（仅增量审查时提供）
 {GIT_LOG_OUTPUT}

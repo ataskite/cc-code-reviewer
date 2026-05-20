@@ -58,6 +58,29 @@ detect_gradle_dependency() {
   fi
 }
 
+_MVN_DEP_TREE_CACHE=""
+
+cache_mvn_dependency_tree() {
+  if [ -n "$_MVN_DEP_TREE_CACHE" ]; then
+    return 0
+  fi
+  command -v mvn &>/dev/null || return 1
+  local output
+  output=$(cd "$PROJECT_DIR" && mvn dependency:tree 2>/dev/null || true)
+  [ -z "$output" ] && return 1
+  # Verify output contains resolved dependency coordinates (groupId:artifactId:type)
+  echo "$output" | grep -qE '[a-zA-Z0-9_.-]+:[a-zA-Z0-9_.-]+:[a-z]+' || return 1
+  _MVN_DEP_TREE_CACHE="$output"
+}
+
+detect_mvn_tree_dependency() {
+  local pattern="$1"
+  cache_mvn_dependency_tree || return 1
+  local match
+  match=$(echo "$_MVN_DEP_TREE_CACHE" | grep -Eo "$pattern" | head -1 || true)
+  [ -n "$match" ] && echo "$match"
+}
+
 emit_tech_stack() {
   local name="$1"
   local detector="$2"
@@ -198,7 +221,13 @@ if [ -f "$PROJECT_DIR/pom.xml" ]; then
     fi
   done < <(find "$PROJECT_DIR" -maxdepth 3 -name 'pom.xml' -not -path '*/target/*' -print0)
 
-  scan_dependency_tech_stack "detect_maven_dependency" "未从 pom.xml 依赖识别出专项技术栈，仅启用通用 Java 审查规则"
+  echo "  正在解析 Maven 依赖树..."
+  if cache_mvn_dependency_tree; then
+    scan_dependency_tech_stack "detect_mvn_tree_dependency" "未从 Maven 依赖树识别出专项技术栈，仅启用通用 Java 审查规则"
+  else
+    echo "  依赖树解析失败，回退至 pom.xml 解析"
+    scan_dependency_tech_stack "detect_maven_dependency" "未从 pom.xml 依赖识别出专项技术栈，仅启用通用 Java 审查规则"
+  fi
 
 elif [ -f "$PROJECT_DIR/build.gradle" ] || [ -f "$PROJECT_DIR/build.gradle.kts" ]; then
   # Gradle项目扫描

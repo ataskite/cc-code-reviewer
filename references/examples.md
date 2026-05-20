@@ -39,6 +39,8 @@
 
    🔌 lark-cli：✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书上传
 
+   🧩 项目 ignore：✅ 已启用：.cc-code-reviewer/ignore/issues.yml
+
    → AskUserQuestion: "请选择审查类型" [增量审查 | 存量审查]
    → 用户选择: 存量审查
 
@@ -88,6 +90,7 @@
 我：✅ 代码审查已完成！⏱️ 耗时 12 分 35 秒
 
    📊 审查结果：8 个问题（P0: 1 / P1: 3 / P2: 4）
+   🧩 项目 ignore 命中 2 条规则，过滤 5 个同类问题
    🔥 最高风险项：...
    📄 审查报告：https://...
    📋 问题清单：https://...
