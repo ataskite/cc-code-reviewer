@@ -56,7 +56,7 @@
    → AskUserQuestion: "检测到飞书上传能力可用，请选择审查结果的处理方式" [仅显示报告 | 上传到云文档 | 上传到多维表格 | 同时上传两者]
    → 用户选择: 同时上传两者
 
-[第4次回复：处理步骤5 + 步骤6确认]
+[第4次回复：处理步骤5 + 步骤7确认]
 我：✅ 已选择：同时上传两者
 
    📋 执行计划：
@@ -69,7 +69,7 @@
    - 启用维度：正确性、代码质量、Spring Boot 规范、数据库/数据访问、安全、性能、资源管理、日志/可观测性、测试质量(核心缺失)、技术债、架构、缓存(基础)、API设计(RESTful+错误处理+分页)
    - 飞书上传：同时上传两者
 
-   → AskUserQuestion: "确认执行计划" [确认执行 | 取消]
+   → AskUserQuestion: "确认执行计划（步骤7）" [确认执行 | 取消]
    → 用户选择: 确认执行
 
 [第5次回复：启动子agent]
@@ -154,7 +154,7 @@
    → AskUserQuestion: "请选择审查模式" [fast | standard | deep | security]
    → 用户选择: deep
 
-[第5次回复：步骤5（跳过）+ 步骤6确认]
+[第5次回复：步骤5（跳过）+ 步骤7确认]
 我：✅ 已选择：deep
 
    飞书上传不可用，跳过飞书上传选项。
@@ -364,5 +364,142 @@
    📄 审查报告：https://...
    📋 问题清单：https://...
    💡 建议：P0 问题需立即修复后再上线，SQL 注入和数据一致性风险较高。
+   👉 详细报告请点击上方飞书链接查看。
+```
+
+---
+
+## 示例6：大仓库分批扫描（交互式模式）
+
+**注意**：当审查范围较大时（预估 token > 100,000 且为存量审查），自动触发分批扫描，多一个并发数选择步骤。
+
+```
+用户：帮我审查这个项目 /Users/jiangkun/Documents/github-kb/large-enterprise-app
+
+[第1次回复：预扫描 + 步骤2（审查类型）]
+我：🔍 预扫描完成
+
+   📂 项目：large-enterprise-app
+   - 来源：本地路径
+   - 路径：/Users/jiangkun/Documents/github-kb/large-enterprise-app
+   - 类型：Maven 多模块
+
+   🌿 Git：
+   - 当前分支：main
+   - 可用分支：1 个（自动使用）
+
+   📊 规模：
+   - Java 文件：1,250 个
+   - 代码行数：185,000 行
+   - 模块数量：6 个
+   - 模块列表：user-service(320类), order-service(280类), payment-service(210类), inventory-service(190类), notification-service(150类), common-utils(100类)
+
+   🧩 技术栈扫描：
+   - 识别数量：7
+   - 启用专项规则：是
+
+   | 技术栈 | 识别证据 | 建议维度 | 专项规则 |
+   |--------|----------|----------|----------|
+   | Spring Boot | spring-boot-starter-web | 3,5,8 | 启用 Spring Boot 规范审查 |
+   | MyBatis Plus | mybatis-plus-boot-starter | 4,5,6 | 启用 Wrapper、分页、批量操作审查 |
+   | Redis/Cache | spring-boot-starter-data-redis | 6,7,12,14 | 启用缓存穿透/一致性审查 |
+   | Kafka | spring-kafka | 12,13 | 启用消息可靠性审查 |
+   | Spring Security | spring-boot-starter-security | 3,5,8,15 | 启用认证授权审查 |
+   | Docker | 文件:Dockerfile | 3,5,7,8,12 | 启用镜像安全审查 |
+   | Kubernetes | 文件:k8s/deployment.yaml | 3,5,7,8,12 | 启用探针、资源限制审查 |
+
+   🔌 lark-cli：✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书上传
+
+   → AskUserQuestion: "请选择审查类型" [增量审查 | 存量审查]
+   → 用户选择: 存量审查
+
+[第2次回复：步骤3（多模块）]
+我：✅ 已选择：存量审查
+
+   📊 项目模块概览：
+   large-enterprise-app/
+   ├── user-service/        320 类 · 48,000 行
+   ├── order-service/       280 类 · 42,000 行
+   ├── payment-service/     210 类 · 31,500 行
+   ├── inventory-service/   190 类 · 28,500 行
+   ├── notification-service/ 150 类 · 22,500 行
+   └── common-utils/        100 类 · 12,500 行
+
+   合计：1,250 类 · 185,000 行
+
+   → AskUserQuestion: "请选择要审查的模块（可多选）" [全量代码 | user-service | order-service | ...]
+   → 用户选择: 全量代码
+
+[第3次回复：步骤4（审查模式）]
+我：✅ 已选择：全量代码
+
+   → AskUserQuestion: "请选择审查模式" [fast | standard | deep | security]
+   → 用户选择: standard
+
+[第4次回复：步骤5（飞书上传）]
+我：✅ 已选择：standard
+
+   → AskUserQuestion: "检测到飞书上传能力可用，请选择审查结果的处理方式" [仅显示报告 | 上传到云文档 | 上传到多维表格 | 同时上传两者]
+   → 用户选择: 上传到云文档
+
+[第5次回复：步骤6（并发数选择 — BATCH_MODE=true 自动触发）]
+我：✅ 已选择：上传到云文档
+
+   📊 大仓库分批扫描
+
+   本次审查范围较大，将采用分批并行扫描：
+   - 文件总数：1,250 个
+   - 代码行数：185,000 行
+   - 预计分批：8 批
+
+   → AskUserQuestion: "请选择并发扫描策略" [串行执行 | 3 路并发（推荐） | 5 路并发]
+   → 用户选择: 3 路并发（推荐）
+
+[第6次回复：步骤7（确认执行计划）]
+我：✅ 已选择：3 路并发
+
+   📋 执行计划：
+   - 项目路径：/Users/jiangkun/Documents/github-kb/large-enterprise-app
+   - 项目类型：maven-multi
+   - 审查分支：main
+   - 审查类型：存量审查
+   - 审查范围：全量代码
+   - 审查模式：standard
+   - 启用维度：正确性、代码质量、Spring Boot 规范、数据库/数据访问、安全、性能、资源管理、日志/可观测性、测试质量(核心缺失)、技术债、架构、缓存(基础)、API设计(RESTful+错误处理+分页)
+   - 飞书上传：上传到云文档
+   - 扫描策略：分批并行扫描（8 批 / 3 路并发）
+   - 预计耗时：约 45 分钟
+
+   → AskUserQuestion: "确认执行计划" [确认执行 | 取消]
+   → 用户选择: 确认执行
+
+[第7次回复：启动分批并行扫描]
+我：🚀 正在启动分批并行代码审查...
+
+   📋 任务配置：standard 模式 · 存量审查 · 全量代码
+   📊 扫描策略：8 批 / 3 路并发
+   ⏱️ 预估耗时：约 45 分钟
+   📌 共 8 批次将按 3 路并发执行，全部完成后自动合并结果。
+   📤 审查完成后将自动上传到飞书（上传到云文档），无需手动操作。
+   💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
+
+   → 轮次1：Agent(batch-1) + Agent(batch-2) + Agent(batch-3) 并行
+   → 轮次2：Agent(batch-4) + Agent(batch-5) + Agent(batch-6) 并行
+   → 轮次3：Agent(batch-7) + Agent(batch-8) 并行
+   → 读取 8 个 batch 文件 → 跨批去重 → 聚合同类问题 → 生成统一报告 → 上传飞书
+
+[全部完成后]
+我：✅ 代码审查已完成！⏱️ 耗时 38 分 12 秒
+
+   📊 扫描策略：分批并行扫描（8 批 / 3 路并发）
+   📊 审查覆盖：1,250/1,250 文件（185,000/185,000 行），覆盖率 100%
+   📊 审查结果：23 个问题（P0: 2 / P1: 7 / P2: 10 / P3: 4 / 待确认: 0）
+
+   🔥 最高风险项：
+     - P0-1: SQL 注入风险 — OrderMapper.xml:45
+     - P0-2: 分布式事务未正确回滚 — PaymentServiceImpl.java:128
+
+   📄 审查报告：https://...
+   💡 建议：P0 问题需立即修复后再上线，SQL 注入和分布式事务风险较高。
    👉 详细报告请点击上方飞书链接查看。
 ```

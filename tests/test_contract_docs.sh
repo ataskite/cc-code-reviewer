@@ -309,7 +309,7 @@ MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 
 MARKETPLACE_PLUGIN_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | sed -n '2p' | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_VERSION" ]
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_PLUGIN_VERSION" ]
-[ "$PLUGIN_VERSION" = "1.1.8" ]
+[ "$PLUGIN_VERSION" = "1.2.0" ]
 grep -q "code-fixer" "$PLUGIN_FILE"
 grep -q '"code-fix"' "$PLUGIN_FILE"
 grep -q '"code-fix"' "$MARKETPLACE_FILE"

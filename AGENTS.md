@@ -26,8 +26,12 @@ flowchart TD
 
     subgraph ScanPhase["Scan phase"]
       ReviewSkill --> ScanScripts["phase1-5 scripts<br/>project / branches / stack / lark / incremental diff"]
-      ScanScripts --> ReviewAgent
+      ScanScripts -->|"small repo"| ReviewAgent
       ReviewAgent --> Reports
+      BatchMerge["Batch merge<br/>dedup + aggregate"]
+      ReviewSkill -->|"large repo"| BatchAgents["Batch Agents<br/>parallel scan"]
+      BatchAgents --> BatchMerge
+      BatchMerge --> Reports
     end
 
     subgraph FixPhase["Fix phase"]
@@ -48,8 +52,9 @@ flowchart TD
 
 **Main Skill (`skills/cc-code-reviewer/SKILL.md`)**:
 - Pre-scan: project detection → branch detection → project scan → lark-cli detection
-- Interactive mode: Collect user config via AskUserQuestion (6 steps)
+- Interactive mode: Collect user config via AskUserQuestion (up to 7 steps; step 6 concurrency selection only when BATCH_MODE=true)
 - Fast mode: Validate parameters and launch sub-agent directly
+- Batch mode: Auto-triggered for large stock reviews; splits files into batches, dispatches parallel sub-agents, merges results
 - **Never** execute code review itself
 
 **Review Agent (`agents/cc-code-reviewer.md`)**:
@@ -174,7 +179,7 @@ Verify installation by triggering the skill with a Java review request such as `
 
 ### Scan Mode Detection
 
-- **Interactive mode**: No `--mode` parameter → 6-step AskUserQuestion flow
+- **Interactive mode**: No `--mode` parameter → up to 7-step AskUserQuestion flow (step 6 concurrency only when BATCH_MODE=true)
 - **Fast mode**: Has `--mode` parameter → Validate and execute directly
 
 ### Fix Mode Detection
@@ -198,6 +203,7 @@ Sub agent receives parameters via prompt injection, including:
 - Project path, type, scope, mode
 - Pre-scan results (project structure, modules)
 - Incremental data (git log, changed files, diff stats)
+- Batch parameters when BATCH_MODE=true: file list per batch, batch index, output mode
 
 **Sub agent must**: Use these parameters directly, never re-ask user.
 
