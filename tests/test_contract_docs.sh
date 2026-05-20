@@ -314,3 +314,51 @@ grep -q "code-fixer" "$PLUGIN_FILE"
 grep -q '"code-fix"' "$PLUGIN_FILE"
 grep -q '"code-fix"' "$MARKETPLACE_FILE"
 grep -q "report-driven fixing" "$MARKETPLACE_FILE"
+
+# === Batch scanning contracts ===
+
+# Agent must support batch output mode
+grep -q "审查输出模式" "$AGENT_FILE"
+grep -q "仅发现清单" "$AGENT_FILE"
+grep -q "完整报告" "$AGENT_FILE"
+grep -q "批次编号" "$AGENT_FILE"
+grep -q "BATCH_INDEX" "$AGENT_FILE"
+grep -q "BATCH_FILE_LIST" "$AGENT_FILE"
+grep -q "review-batch-" "$AGENT_FILE"
+
+# Agent must skip stages in batch mode
+grep -q "阶段 A.*跳过" "$AGENT_FILE"
+grep -q "阶段 B.*跳过" "$AGENT_FILE"
+
+# Skill must have batch trigger formula
+grep -q "BATCH_MODE" "$SKILL_FILE"
+grep -q "estimated_tokens" "$SKILL_FILE"
+grep -q "100000" "$SKILL_FILE"
+
+# Skill must have concurrency step
+grep -q "选择并发数" "$SKILL_FILE"
+grep -q "CONCURRENCY" "$SKILL_FILE"
+grep -q "串行执行" "$SKILL_FILE"
+grep -q "3 路并发" "$SKILL_FILE"
+grep -q "5 路并发" "$SKILL_FILE"
+
+# Skill must have batch agent orchestration
+grep -q "分批并行模式" "$SKILL_FILE"
+grep -q "BATCH_FILE_COUNT" "$SKILL_FILE"
+grep -q "BATCH_LINE_COUNT" "$SKILL_FILE"
+grep -q "飞书上传不可用" "$SKILL_FILE"
+
+# Skill must have report merging
+grep -q "报告合并" "$SKILL_FILE"
+grep -q "跨批去重" "$SKILL_FILE"
+grep -q "聚合同类问题" "$SKILL_FILE"
+
+# Skill must have --concurrency fast mode parameter
+grep -q "\-\-concurrency" "$SKILL_FILE"
+
+# Skill batch mode only for stock review
+grep -q "仅对存量审查生效" "$SKILL_FILE"
+
+# Skill must show batch info in step 7 execution plan
+grep -q "扫描策略" "$SKILL_FILE"
+grep -q "分批并行扫描" "$SKILL_FILE"
