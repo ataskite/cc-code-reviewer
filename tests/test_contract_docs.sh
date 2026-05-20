@@ -105,7 +105,7 @@ grep -q "入口层：User / Claude Code" "$README_FILE"
 grep -q "Scan Harness：发现候选问题" "$README_FILE"
 grep -q "人工确认层：从候选问题到 Fix TODO List" "$README_FILE"
 grep -q "Fix Harness：确认后分支执行" "$README_FILE"
-grep -q "修复执行层：直接修复 / Superpowers 修复" "$README_FILE"
+grep -q "修复执行层：直接修复 / 可选 Superpowers 修复" "$README_FILE"
 grep -q "Integration 层：lark-cli 可选平台读写能力" "$README_FILE"
 grep -q "Harness 边界" "$README_FILE"
 grep -q "phase9-collect-fix-metadata" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
@@ -360,8 +360,14 @@ grep -q "100000" "$SKILL_FILE"
 grep -q "选择并发数" "$SKILL_FILE"
 grep -q "CONCURRENCY" "$SKILL_FILE"
 grep -q "串行执行" "$SKILL_FILE"
+grep -q "2 路并发" "$SKILL_FILE"
 grep -q "3 路并发" "$SKILL_FILE"
-grep -q "5 路并发" "$SKILL_FILE"
+grep -q '默认 `2`' "$SKILL_FILE"
+grep -q '1.*2.*3' "$SKILL_FILE"
+if grep -q "5 路并发" "$SKILL_FILE"; then
+  echo "batch concurrency options must be 1/2/3, not 1/3/5" >&2
+  exit 1
+fi
 
 # Skill must have batch agent orchestration
 grep -q "分批并行模式" "$SKILL_FILE"

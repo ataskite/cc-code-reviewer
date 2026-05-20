@@ -23,8 +23,8 @@ flowchart TD
     Reports["Review reports<br/>Markdown / Feishu Doc / Feishu Base"]
     FixReports["Fix reports<br/>Markdown / Feishu Doc / Base writeback"]
     Lark["lark-cli<br/>lark-doc / lark-base"]
-    Superpowers["Superpowers<br/>brainstorming / TDD / verification"]
-    SubAgentDriven["subagent-driven-development"]
+    DirectFix["Direct fix route<br/>repair / test / verify"]
+    OptionalSuperpowers["Optional Superpowers route<br/>brainstorming / subagent-driven-development"]
 
     subgraph ScanPhase["Scan phase"]
       ReviewSkill --> ScanScripts["phase1-5 scripts<br/>project / branches / stack / lark / incremental diff"]
@@ -44,10 +44,11 @@ flowchart TD
 
     subgraph FixPhase["Fix phase"]
       Reports --> FixSkill
-      FixSkill --> FixScripts["phase6-8 scripts<br/>input / superpowers / workspace"]
-      FixScripts --> Superpowers
-      Superpowers --> SubAgentDriven
-      SubAgentDriven --> FixReports
+      FixSkill --> FixScripts["phase6-9 scripts<br/>local input / capabilities / workspace / metadata"]
+      FixScripts --> DirectFix
+      FixScripts -.available + selected.-> OptionalSuperpowers
+      DirectFix --> FixReports
+      OptionalSuperpowers --> FixReports
     end
 
     User --> ReviewSkill
@@ -82,10 +83,10 @@ flowchart TD
 
 **Fix Skill (`skills/cc-code-fixer/SKILL.md`)**:
 - Normalize fix input from local Markdown, Feishu Doc, or Feishu Base
-- Preflight: project detection → branch detection → project scan → lark-cli detection → Superpowers detection
+- Preflight: project detection → branch detection → project scan → lark-cli detection → optional Superpowers capability detection
 - Collect confirmed issue scope and output target via AskUserQuestion
-- Hand off to Superpowers: brainstorming produces spec + plan, then subagent-driven-development executes
-- **Never** execute repairs itself
+- Execute the default direct-fix route itself after user confirmation
+- Show the Superpowers route only when the required skills are installed and the user selects it
 
 ### Execution Contract (Highest Priority)
 
@@ -98,7 +99,7 @@ These rules **must** be strictly followed:
 5. **No text replacement**: Never use plain text questions to replace AskUserQuestion steps
 6. **Never skip summary**: Even if all parameters provided, always show pre-scan summary
 7. **Fix stage honors confirmed scope**: `cc-code-fixer` must only repair the confirmed issue set
-8. **Fix stage delegates to Superpowers**: brainstorming produces spec + plan, subagent-driven-development executes; no dedicated fix sub-agent
+8. **Fix stage defaults to direct repair**: Superpowers is optional and only appears when installed; no dedicated fix sub-agent is used
 9. **Ignore stores problem classes**: `cc-code-ignore` writes AI-readable same-kind skip rules, not report issue numbers
 
 ## File Structure
@@ -124,8 +125,8 @@ scripts/
   ├── phase3-project-scan.sh          # Project structure scan
   ├── phase4-detect-lark-plugin.sh    # lark-cli detection
   ├── phase5-prepare-incremental.sh   # Incremental review preparation
-  ├── phase6-detect-fix-input.sh      # Fix input detection
-  ├── phase7-detect-superpowers.sh    # Superpowers workflow detection
+  ├── phase6-detect-fix-input.sh      # Local Markdown fix input path validation
+  ├── phase7-detect-superpowers.sh    # Optional Superpowers capability detection
   ├── phase8-prepare-fix-workspace.sh # Fix branch/worktree preparation
   └── phase9-collect-fix-metadata.sh  # Fix completion time, branch, and git user
 ```
@@ -146,8 +147,8 @@ The suite runs every `tests/test_*.sh` file and then `git diff --check`. It cove
 - `phase3-project-scan.sh`: Maven multi-module scans, module paths with spaces, unknown-project line counts
 - `phase4-detect-lark-plugin.sh`: lark-cli detection output contract
 - `phase5-prepare-incremental.sh`: incremental diff ranges that include the root commit
-- `phase6-detect-fix-input.sh`: local Markdown, Feishu Doc, Feishu Base, and compact Base selectors
-- `phase7-detect-superpowers.sh`: required Superpowers skill discovery
+- `phase6-detect-fix-input.sh`: local Markdown path validation only; Feishu Doc/Base inputs are read through `lark-doc` / `lark-base`
+- `phase7-detect-superpowers.sh`: optional Superpowers route capability detection
 - `phase8-prepare-fix-workspace.sh`: current/branch/worktree strategies and dirty workspace protection
 - Documentation contracts for fast-mode parameter validation, report persistence, Feishu Base fields, fix-stage contracts, and test instructions
 
@@ -180,7 +181,7 @@ bash scripts/phase9-collect-fix-metadata.sh "/path/to/project"
 ### Modifying Fix Logic
 
 1. **Fix flow**: Edit `skills/cc-code-fixer/SKILL.md`
-2. **Input/workspace scripts**: Edit phase6-8 Bash scripts together
+2. **Input/workspace scripts**: Edit phase6-9 Bash scripts together when the fix contract changes
 3. **Fix report or Feishu contracts**: Edit `references/fix-report-format.md` and `references/fix-feishu-integration.md`
 
 **Critical**: Keep fix statuses, report filename conventions, and Feishu field names consistent across skill, references, and tests.

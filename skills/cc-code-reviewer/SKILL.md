@@ -47,7 +47,7 @@ description: Java 代码审查 — 支持增量/存量审查、15维度评估、
 | `--scope` | `--scope 5`、`--scope full`、`--scope=user-service` | 审查范围 |
 | `--branch` | `--branch develop` 或 `--branch=develop` | 可选分支 |
 | `--upload` | `--upload no` 或 `--upload=doc` | 可选上传策略 |
-| `--concurrency` | `--concurrency 3` 或 `--concurrency=3` | 可选并发数，默认 `3` |
+| `--concurrency` | `--concurrency 2` 或 `--concurrency=2` | 可选并发数，默认 `2` |
 
 解析要求：
 - 每个 `--key` 的值必须是紧随其后的非 `--` token；`--key=value` 按 `=` 后内容作为值
@@ -216,14 +216,14 @@ test -r "$REPORT_FORMAT_PATH"
 
 **编排逻辑**：
 
-以 CONCURRENCY=3、BATCH_COUNT=9 为例：
+以 CONCURRENCY=2、BATCH_COUNT=6 为例：
 
 ```
-轮次 1：同时启动 Agent(batch-1) + Agent(batch-2) + Agent(batch-3)
+轮次 1：同时启动 Agent(batch-1) + Agent(batch-2)
   → 等待全部完成
-轮次 2：同时启动 Agent(batch-4) + Agent(batch-5) + Agent(batch-6)
+轮次 2：同时启动 Agent(batch-3) + Agent(batch-4)
   → 等待全部完成
-轮次 3：同时启动 Agent(batch-7) + Agent(batch-8) + Agent(batch-9)
+轮次 3：同时启动 Agent(batch-5) + Agent(batch-6)
   → 等待全部完成
 ```
 
@@ -457,10 +457,10 @@ test -r "$REPORT_FORMAT_PATH"
 - options:
   - label: "串行执行"
     description: "逐批扫描，最稳定但最慢，约 {total_min} 分钟"
-  - label: "3 路并发（推荐）"
-    description: "同时扫描 3 批，约 {total_min} 分钟"
-  - label: "5 路并发"
-    description: "同时扫描 5 批，需要较好硬件，约 {total_min} 分钟"
+  - label: "2 路并发（推荐）"
+    description: "同时扫描 2 批，速度与稳定性更均衡，约 {total_min} 分钟"
+  - label: "3 路并发"
+    description: "同时扫描 3 批，需要较好硬件，约 {total_min} 分钟"
 - multiSelect: false
 
 **耗时预估公式**：
@@ -471,8 +471,8 @@ total_min = ceil(BATCH_COUNT / CONCURRENCY) × 每批耗时
 
 **用户响应后变量赋值**：
 - 串行执行 → CONCURRENCY=1
+- 2 路并发 → CONCURRENCY=2
 - 3 路并发 → CONCURRENCY=3
-- 5 路并发 → CONCURRENCY=5
 
 ### 步骤 7：确认执行计划
 
@@ -608,7 +608,7 @@ for each file in sorted_list:
 | `--scope` | 条件必填 | 见下方规则 | 审查范围 |
 | `--branch` | 可选 | 任意分支名 | 审查分支，默认当前分支 |
 | `--upload` | 可选 | `no` / `doc` / `bitable` / `both` | 飞书上传选项，默认 `no` |
-| `--concurrency` | 可选 | `1` / `3` / `5` | 并发数，默认 `3`；BATCH_MODE=false 时被忽略 |
+| `--concurrency` | 可选 | `1` / `2` / `3` | 并发数，默认 `2`；BATCH_MODE=false 时被忽略 |
 
 **`--scope` 条件必填规则**：
 
@@ -634,8 +634,8 @@ for each file in sorted_list:
 | `--upload bitable` | `FEISHU_UPLOAD_OPTION=上传到多维表格` | 转换为中文 |
 | `--upload both` | `FEISHU_UPLOAD_OPTION=同时上传两者` | 转换为中文 |
 | `--concurrency 1` | `CONCURRENCY=1` | 直接使用 |
-| `--concurrency 3` 或未提供 | `CONCURRENCY=3` | 默认值 |
-| `--concurrency 5` | `CONCURRENCY=5` | 直接使用 |
+| `--concurrency 2` 或未提供 | `CONCURRENCY=2` | 默认值 |
+| `--concurrency 3` | `CONCURRENCY=3` | 直接使用 |
 
 ### 校验规则
 
@@ -645,7 +645,7 @@ for each file in sorted_list:
 4. `--branch` 指定的分支不存在时报错并列出可用分支
 5. `--scope` 为具体模块名时校验模块是否存在于预扫描结果中
 6. `--upload` 不是 `no` 但 LARK_PLUGIN_INSTALLED=false 时，警告并降级为 `仅显示报告`
-7. `--concurrency` 不在 `1` / `3` / `5` 时报错，但不影响其他参数校验
+7. `--concurrency` 不在 `1` / `2` / `3` 时报错，但不影响其他参数校验
 8. BATCH_MODE=false 时 `--concurrency` 被静默忽略（不报错）
 
 **完整性校验要求**：

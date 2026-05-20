@@ -30,7 +30,7 @@ Scan 和 Fix 是并列阶段，而不是一个阶段里的两个按钮。Scan �
 - **多种审查范围**：支持增量审查、存量审查和指定模块审查。
 - **多种输出形态**：支持本地 Markdown，也可选输出到飞书云文档或飞书多维表格。
 - **报告驱动 Fix**：严格基于人工确认的问题清单，不把候选问题直接改进代码。
-- **两条修复路线**：支持主 Skill 直接修复，也支持 Superpowers 的设计、隔离和 TDD 修复路线。
+- **修复路线可控**：默认由主 Skill 直接修复；检测到 Superpowers 完整可用且用户选择时，才启用 Superpowers 辅助路线。
 - **修复结果可追踪**：支持写回原始来源，并自动采集修复时间、修复分支和修复人。
 
 ## 端到端工作流
@@ -86,7 +86,7 @@ flowchart TD
     Start["用户触发 cc-code-fixer"]
     Source["输入问题清单位置<br/>动态识别类型"]
     Confirm["确认问题范围<br/>修复关键点<br/>输出目标"]
-    Route["选择执行方式<br/>直接修复 / Superpowers 修复"]
+    Route["选择执行方式<br/>直接修复 / 可选 Superpowers 修复"]
     Workspace["确认工作区策略<br/>当前分支 / 新分支 / worktree"]
     Repair["执行修复<br/>测试优先 + 验证"]
     Metadata["采集修复元数据<br/>时间 / 分支 / Git 用户"]
@@ -260,7 +260,7 @@ Scan 阶段用于发现问题和形成候选问题清单，适合：
 | `--scope` | 条件必填 | 正整数 / `full` / 模块名 | 增量时为提交次数；存量多模块时为模块名；存量单模块可省略 |
 | `--branch` | 可选 | 分支名 | 审查分支，默认当前分支 |
 | `--upload` | 可选 | `no` / `doc` / `bitable` / `both` | 飞书上传，默认 `no` |
-| `--concurrency` | 可选 | `1` / `3` / `5` | 并发扫描路数，默认 `3`；仅大仓库存量审查时生效 |
+| `--concurrency` | 可选 | `1` / `2` / `3` | 并发扫描路数，默认 `2`；仅大仓库存量审查时生效 |
 
 示例：
 
@@ -269,7 +269,7 @@ Scan 阶段用于发现问题和形成候选问题清单，适合：
 帮我审查 /path/to/project --mode standard --type stock --scope full --upload doc
 帮我审查 /path/to/project --mode deep --type stock --scope user-service,order-service --upload both
 帮我审查 https://github.com/org/repo.git --mode standard --type incremental --scope 3 --branch develop --upload bitable
-帮我审查 /path/to/large-project --mode standard --type stock --scope full --concurrency 5
+帮我审查 /path/to/large-project --mode standard --type stock --scope full --concurrency 3
 ```
 
 ### 审查模式
@@ -292,7 +292,7 @@ Scan 阶段用于发现问题和形成候选问题清单，适合：
 当审查范围的预估 token 超过阈值（`文件数 × 500 + 行数 × 3 > 100,000`）且审查类型为存量审查时，自动触发分批扫描模式：
 
 - 文件按风险优先级排序后，按 token 预算分为多个批次
-- 多个批次按用户选择的并发数（1/3/5 路）并行扫描
+- 多个批次按用户选择的并发数（1/2/3 路，默认 2 路）并行扫描
 - 全部批次完成后自动合并去重，输出一份统一审查报告
 - 交互式模式会多一步并发数选择；快速启动模式可通过 `--concurrency` 指定
 
@@ -395,7 +395,7 @@ Fix 阶段只让用户输入一次问题清单位置，不再先选择来源类�
 
 ### 执行方式
 
-Fix 阶段支持两条执行方式：
+Fix 阶段支持默认直接修复，并在 Superpowers 完整可用时额外提供辅助路线：
 
 - **直接修复**：由 Fix Skill 按确认范围直接执行修复、测试、验证和报告生成。
 - **使用 Superpowers 修复**：在检测到 Superpowers 完整可用时，从 `brainstorming` 开始，再由 `subagent-driven-development` 执行修复计划。
@@ -459,9 +459,9 @@ fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
 
 对应图里的 `4. Fix 阶段`。Fix Skill 负责项目预检、问题清单位置、确认范围、修复关键点、动态输出目标和执行方式选择。
 
-### 修复执行层：直接修复 / Superpowers 修复
+### 修复执行层：直接修复 / 可选 Superpowers 修复
 
-对应图右侧两条路线。简单少量问题可以走主 Skill 直接修复；大量复杂问题可以走 Superpowers 路线，由 `brainstorming` 形成设计，再通过 TDD、verification 和 `subagent-driven-development` 执行。
+对应图右侧执行路线。默认路线是主 Skill 直接修复、测试、验证和报告生成；当 Superpowers 技能完整可用且用户明确选择时，可以走辅助路线，由 `brainstorming` 形成设计，再通过 TDD、verification 和 `subagent-driven-development` 执行。
 
 ### Integration 层：lark-cli 可选平台读写能力
 
