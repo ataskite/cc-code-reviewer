@@ -45,6 +45,18 @@ exit 0
 SH
 chmod +x "$FAKE_BIN/jdtls"
 
+MISSING_PLUGIN_ROOT="$TMP_DIR/not-installed-jdtls-lsp"
+OUTPUT="$(CLAUDE_CODE_PLUGIN_ROOTS="$MISSING_PLUGIN_ROOT" PATH="$FAKE_BIN:/usr/bin:/bin" HOME="$TMP_DIR/home-no-plugin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR")"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=false"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PLUGIN_INSTALLED=false"
+
+if ! OUTPUT="$(env -u HOME PATH="$FAKE_BIN:/usr/bin:/bin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR")"; then
+  echo "missing HOME should not make detection fail" >&2
+  exit 1
+fi
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=false"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PLUGIN_INSTALLED=false"
+
 OUTPUT="$(CLAUDE_CODE_PLUGIN_ROOTS="$FAKE_PLUGIN_ROOT" PATH="$FAKE_BIN:/usr/bin:/bin" HOME="$TMP_DIR/home-no-plugin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR")"
 printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=true"
 printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PROVIDER=jdtls-lsp"

@@ -29,20 +29,23 @@ is_java_project() {
 plugin_installed() {
   local roots="${CLAUDE_CODE_PLUGIN_ROOTS:-}"
   local root
+  local home_dir="${HOME:-}"
 
   if [ -n "$roots" ]; then
     IFS=':' read -r -a root_array <<< "$roots"
     for root in "${root_array[@]}"; do
       [ -z "$root" ] && continue
       case "$root" in
-        *jdtls-lsp* | *claude-plugins-official/jdtls-lsp*) return 0 ;;
+        *jdtls-lsp* | *claude-plugins-official/jdtls-lsp*)
+          [ -d "$root" ] && return 0
+          ;;
       esac
       [ -d "$root/jdtls-lsp" ] && return 0
       [ -d "$root/claude-plugins-official/jdtls-lsp" ] && return 0
     done
   fi
 
-  [ -d "$HOME/.claude/plugins/data/jdtls-lsp-claude-plugins-official" ]
+  [ -n "$home_dir" ] && [ -d "$home_dir/.claude/plugins/data/jdtls-lsp-claude-plugins-official" ]
 }
 
 if [ ! -d "$PROJECT_DIR" ]; then
