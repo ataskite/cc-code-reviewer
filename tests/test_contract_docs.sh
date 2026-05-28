@@ -343,6 +343,44 @@ grep -q "report-driven fixing" "$MARKETPLACE_FILE"
 
 # === Batch scanning contracts ===
 
+# === Maven large repository batching contracts ===
+
+grep -q "phase10-detect-code-intelligence.sh" "$SKILL_FILE"
+grep -q "phase11-plan-large-batches.sh" "$SKILL_FILE"
+grep -q "phase12-merge-large-batches.sh" "$SKILL_FILE"
+grep -q "phase13-show-large-batch-status.sh" "$SKILL_FILE"
+
+grep -q "Maven 多模块" "$SKILL_FILE"
+grep -q "存量审查" "$SKILL_FILE"
+grep -q "全量代码" "$SKILL_FILE"
+grep -q "TOTAL_JAVA_LOC >= 120000" "$SKILL_FILE"
+
+grep -q "TARGET_BATCH_LOC = 25000" "$SKILL_FILE"
+grep -q "SOFT_MIN_BATCH_LOC = 15000" "$SKILL_FILE"
+grep -q "SOFT_MAX_BATCH_LOC = 30000" "$SKILL_FILE"
+grep -q "HARD_MAX_BATCH_LOC = 35000" "$SKILL_FILE"
+
+grep -q "pending.*待执行" "$SKILL_FILE"
+grep -q "running.*执行中" "$SKILL_FILE"
+grep -q "completed.*已完成" "$SKILL_FILE"
+grep -q "failed.*失败待重试" "$SKILL_FILE"
+if grep -qE "partial|stale|skipped|部分完成|中断待确认|已跳过|reviewed_java_files|remaining_files" "$SKILL_FILE" "$AGENT_FILE"; then
+  echo "large repo v1 must keep atomic batch states only: pending/running/completed/failed" >&2
+  exit 1
+fi
+
+grep -q "scan_roots" "$SKILL_FILE"
+grep -q "正式问题.*scan_roots" "$SKILL_FILE"
+grep -q "jdtls.*跨目录" "$SKILL_FILE"
+grep -q "跨批依赖待复核" "$SKILL_FILE"
+
+grep -q "BATCH_PLAN_PATH" "$AGENT_FILE"
+grep -q "BATCH_STATUS_PATH" "$AGENT_FILE"
+grep -q "BATCH_RESULT_PATH" "$AGENT_FILE"
+grep -q "scan_roots" "$AGENT_FILE"
+grep -q "正式问题.*scan_roots" "$AGENT_FILE"
+grep -q "跨批依赖待复核" "$AGENT_FILE"
+
 # Agent must support batch output mode
 grep -q "审查输出模式" "$AGENT_FILE"
 grep -q "仅发现清单" "$AGENT_FILE"
