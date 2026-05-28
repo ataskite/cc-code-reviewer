@@ -26,18 +26,37 @@ branch_slug() {
 
 module_loc() {
   local dir="$1"
-  find "$dir" -name '*.java' -not -path '*/target/*' -print0 2>/dev/null |
-    xargs -0 wc -l 2>/dev/null |
-    awk 'END {print $1 + 0}'
+  local total=0
+  local file lines
+  while IFS= read -r -d '' file; do
+    lines="$(wc -l < "$file" | tr -d ' ')"
+    total=$((total + lines))
+  done < <(find "$dir" -name '*.java' -not -path '*/target/*' -print0 2>/dev/null)
+  printf '%s\n' "$total"
 }
 
 module_files() {
   local dir="$1"
-  find "$dir" -name '*.java' -not -path '*/target/*' 2>/dev/null | wc -l | tr -d ' '
+  local total=0
+  local file
+  while IFS= read -r -d '' file; do
+    total=$((total + 1))
+  done < <(find "$dir" -name '*.java' -not -path '*/target/*' -print0 2>/dev/null)
+  printf '%s\n' "$total"
 }
 
 extract_modules() {
-  perl -0ne 'while (/<module>\s*([^<]+?)\s*<\/module>/g) { print "$1\n" }' "$PROJECT_DIR/pom.xml"
+  perl -0ne '
+    while (/<module>\s*([^<]+?)\s*<\/module>/g) {
+      my $module = $1;
+      $module =~ s/&amp;/&/g;
+      $module =~ s/&lt;/</g;
+      $module =~ s/&gt;/>/g;
+      $module =~ s/&quot;/"/g;
+      $module =~ s/&apos;/'\''/g;
+      print "$module\n";
+    }
+  ' "$PROJECT_DIR/pom.xml"
 }
 
 artifact_id_for_pom() {
@@ -286,6 +305,12 @@ while IFS= read -r module; do
   files="$(module_files "$module_dir")"
   printf '%s\t%s\t%s\t%s\t%s\t0\n' "$module" "$module" "$artifact" "$loc" "$files" >> "$MODULES_TSV"
 done < <(extract_modules)
+
+if [ ! -s "$MODULES_TSV" ]; then
+  echo "NO_MAVEN_MODULES=$PROJECT_DIR" >&2
+  rm -f "$MODULES_TSV" "$EDGES_TSV"
+  exit 1
+fi
 
 while IFS="$(printf '\t')" read -r module _path artifact _loc _files _risk; do
   pom_path="$PROJECT_DIR/$module/pom.xml"
