@@ -1,0 +1,43 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/phase10.XXXXXX")"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+PROJECT_DIR="$TMP_DIR/demo"
+mkdir -p "$PROJECT_DIR/src/main/java/com/example"
+printf 'public class Demo {}\n' > "$PROJECT_DIR/src/main/java/com/example/Demo.java"
+
+OUTPUT="$(PATH="/usr/bin:/bin" HOME="$TMP_DIR/home-no-plugin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR")"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=false"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_LANGUAGE=java"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PROVIDER=none"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_REASON="
+
+NON_JAVA="$TMP_DIR/non-java"
+mkdir -p "$NON_JAVA"
+OUTPUT="$(PATH="/usr/bin:/bin" HOME="$TMP_DIR/home-no-plugin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$NON_JAVA")"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=false"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_REASON=未识别Java项目"
+
+FAKE_BIN="$TMP_DIR/bin"
+FAKE_PLUGIN_ROOT="$TMP_DIR/plugins"
+mkdir -p "$FAKE_BIN" "$FAKE_PLUGIN_ROOT/claude-plugins-official/jdtls-lsp"
+cat > "$FAKE_BIN/jdtls" <<'SH'
+#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo "jdtls fake"
+  exit 0
+fi
+exit 0
+SH
+chmod +x "$FAKE_BIN/jdtls"
+
+OUTPUT="$(CLAUDE_CODE_PLUGIN_ROOTS="$FAKE_PLUGIN_ROOT" PATH="$FAKE_BIN:/usr/bin:/bin" HOME="$TMP_DIR/home-no-plugin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR")"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=true"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PROVIDER=jdtls-lsp"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_JDTLS_READY=true"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PLUGIN_INSTALLED=true"
+
+echo "PASS"
