@@ -21,6 +21,17 @@ OUTPUT="$(PATH="/usr/bin:/bin" HOME="$TMP_DIR/home-no-plugin" bash "$ROOT_DIR/sc
 printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=false"
 printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_REASON=未识别Java项目"
 
+CUSTOM_GRADLE="$TMP_DIR/custom-gradle"
+mkdir -p "$CUSTOM_GRADLE"
+printf 'plugins { id "java" }\n' > "$CUSTOM_GRADLE/build.gradle.custom"
+OUTPUT="$(PATH="/usr/bin:/bin" HOME="$TMP_DIR/home-no-plugin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$CUSTOM_GRADLE")"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=false"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_LANGUAGE=java"
+if printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_REASON=未识别Java项目"; then
+  echo "build.gradle* project should be treated as a Java project" >&2
+  exit 1
+fi
+
 FAKE_BIN="$TMP_DIR/bin"
 FAKE_PLUGIN_ROOT="$TMP_DIR/plugins"
 mkdir -p "$FAKE_BIN" "$FAKE_PLUGIN_ROOT/claude-plugins-official/jdtls-lsp"

@@ -20,8 +20,7 @@ emit_unavailable() {
 
 is_java_project() {
   [ -f "$PROJECT_DIR/pom.xml" ] ||
-    [ -f "$PROJECT_DIR/build.gradle" ] ||
-    [ -f "$PROJECT_DIR/build.gradle.kts" ] ||
+    find "$PROJECT_DIR" -maxdepth 1 -name 'build.gradle*' -type f -print -quit 2>/dev/null | grep -q . ||
     find "$PROJECT_DIR" \
       \( -path '*/target/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune -o \
       -name '*.java' -print -quit 2>/dev/null | grep -q .
