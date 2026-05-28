@@ -64,7 +64,6 @@ flowchart TD
 - Pre-scan: project detection → branch detection → project scan → lark-cli detection
 - Reads `.cc-code-reviewer/ignore/issues.yml` after pre-scan and injects AI-readable skip rules into the scan agent
 - Interactive mode: Collect user config via AskUserQuestion (up to 7 steps; step 6 concurrency selection only when BATCH_MODE=true)
-- Fast mode: Validate parameters and launch sub-agent directly
 - Batch mode: Auto-triggered for large stock reviews; splits files into batches, dispatches parallel sub-agents, merges results
 - **Never** execute code review itself
 
@@ -95,7 +94,7 @@ These rules **must** be strictly followed:
 1. **Pre-scan before interaction**: Execute scan/fix preflight scripts first, collect environment data
 2. **Summary before questions**: Output a preflight summary once, only after the required scripts complete
 3. **Structured interaction**: In interactive mode, use AskUserQuestion for each step separately
-4. **Fast mode no interaction**: For scan, `--mode` triggers fast mode. Fix stage is always interactive.
+4. **Scan stays interactive**: Scan and Fix stages both require structured human confirmation.
 5. **No text replacement**: Never use plain text questions to replace AskUserQuestion steps
 6. **Never skip summary**: Even if all parameters provided, always show pre-scan summary
 7. **Fix stage honors confirmed scope**: `cc-code-fixer` must only repair the confirmed issue set
@@ -150,7 +149,7 @@ The suite runs every `tests/test_*.sh` file and then `git diff --check`. It cove
 - `phase6-detect-fix-input.sh`: local Markdown path validation only; Feishu Doc/Base inputs are read through `lark-doc` / `lark-base`
 - `phase7-detect-superpowers.sh`: optional Superpowers route capability detection
 - `phase8-prepare-fix-workspace.sh`: current/branch/worktree strategies and dirty workspace protection
-- Documentation contracts for fast-mode parameter validation, report persistence, Feishu Base fields, fix-stage contracts, and test instructions
+- Documentation contracts for interactive scan flow, report persistence, Feishu Base fields, fix-stage contracts, and test instructions
 
 The plugin only supports macOS and Linux. Keep script changes in Bash and verify them through the local Bash suite.
 
@@ -198,14 +197,15 @@ Verify installation by triggering the skill with a Java review request such as `
 
 ## Important Notes
 
-### Scan Mode Detection
+### Scan Interaction Contract
 
-- **Interactive mode**: No `--mode` parameter → up to 7-step AskUserQuestion flow (step 6 concurrency only when BATCH_MODE=true)
-- **Fast mode**: Has `--mode` parameter → Validate and execute directly
+- Scan always runs the AskUserQuestion flow after pre-scan.
+- The flow has up to 7 steps; step 6 concurrency selection only appears when BATCH_MODE=true.
+- Do not preserve command-line compatibility that bypasses interaction.
 
 ### Fix Mode Detection
 
-- **Fixed interactive mode**: `cc-code-fixer` always requires interactive confirmation. No fast mode or `--mode` parameter.
+- **Fixed interactive mode**: `cc-code-fixer` always requires interactive confirmation. No command-line bypass parameters.
 - User provides project path only; all fix planning is collected through AskUserQuestion steps.
 
 ### AskUserQuestion Usage

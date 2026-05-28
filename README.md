@@ -24,7 +24,7 @@ Scan 和 Fix 是并列阶段，而不是一个阶段里的两个按钮。Scan �
 - **端到端闭环**：覆盖 Scan → 人工确认 → Fix → 验证 → 报告/写回。
 - **技术栈感知审查**：先识别项目技术栈，再动态匹配审查维度和专项规则。
 - **15 个基础维度**：覆盖正确性、代码质量、安全、性能、架构、缓存、消息队列、API 设计等方向。
-- **多种 Scan 模式**：支持交互式 Scan，也支持适合自动化场景的快速启动 Scan。
+- **交互式 Scan**：预扫描后逐步确认分支、范围、模式、输出和执行计划。
 - **大仓库分批扫描**：自动将大仓库拆分为多批次并行扫描，合并去重后输出统一报告。
 - **项目级 ignore**：把反复出现的误报或项目特有设计沉淀到本地 ignore 文件，后续 Scan 自动跳过同类问题。
 - **多种审查范围**：支持增量审查、存量审查和指定模块审查。
@@ -58,15 +58,13 @@ flowchart LR
 ```mermaid
 flowchart TD
     Start["用户触发 cc-code-reviewer"]
-    Mode["模式判定<br/>交互式 / 快速启动"]
     Prescan["项目/技术栈扫描<br/>项目、分支、模块、依赖、飞书能力"]
-    Confirm["交互式确认<br/>或快速启动参数校验"]
+    Confirm["交互式确认<br/>分支、范围、模式、输出"]
     Agent["Scan Agent<br/>执行审查"]
     Report["生成 Markdown 审查报告"]
     Upload["可选同步飞书<br/>云文档 / 多维表格"]
 
-    Start --> Mode
-    Mode --> Prescan
+    Start --> Prescan
     Prescan --> Confirm
     Confirm --> Agent
     Agent --> Report
@@ -101,7 +99,7 @@ flowchart TD
     Metadata --> Output
 ```
 
-修复阶段必须交互确认，不支持快速启动。它只修复用户确认的问题，不扩大范围；修复完成后自动采集修复时间、实际修复分支和当前 Git 用户，并写入报告或原始问题清单。
+修复阶段必须交互确认。它只修复用户确认的问题，不扩大范围；修复完成后自动采集修复时间、实际修复分支和当前 Git 用户，并写入报告或原始问题清单。
 
 ### 输出闭环：修复报告与可选飞书写回
 
@@ -177,11 +175,16 @@ Fix 阶段会要求你输入待修复问题确认清单的本地路径或飞书�
 
 当扫描清单中出现项目特有设计或误报时，可以把代表性问题沉淀为本地 ignore 规则：
 
+1. 先运行 Scan，生成本地 Markdown 报告、飞书云文档或飞书多维表格问题清单。
+2. 再运行 ignore 技能，并传入项目路径：
+
 ```text
 /cc-code-reviewer:cc-code-ignore /path/to/project
 ```
 
-`cc-code-ignore` 会读取飞书 Base 或本地 Markdown 问题清单，用户指定问题编号后，技能生成同类问题跳过规则并写入：
+3. 按交互提示提供问题清单位置。支持飞书 Base 链接或本地 Markdown 路径；如果直接粘贴到 Other/free-form，技能会动态识别来源。
+4. 从展示的问题摘要中选择一个或多个代表性问题编号，例如 `P1-2`、`P2-4` 或 `待确认-1`。这些编号只用于本次定位代表问题，不会写入 ignore 文件。
+5. 检查技能生成的 YAML 片段，确认后写入：
 
 ```text
 {PROJECT_DIR}/.cc-code-reviewer/ignore/issues.yml
@@ -203,7 +206,7 @@ ignore:
       后续扫描不要再把这类问题列为扫描问题。
 ```
 
-后续 Scan 会读取该文件，并在报告中披露项目 ignore 命中统计。
+后续 Scan 会在预扫描后自动读取该文件，并把规则注入 scan agent。语义命中 `skip_when` 的同类问题不会进入扫描问题清单；报告中会披露项目 ignore 是否启用、命中规则数和过滤问题数。
 
 ### 更新插件
 
@@ -229,9 +232,9 @@ Scan 阶段用于发现问题和形成候选问题清单，适合：
 - 安全专项检查
 - 存量项目质量摸底
 
-### 交互式模式
+### 交互式流程
 
-交互式模式适合日常使用。触发后插件会先自动完成预扫描，再通过选择按钮逐步确认：
+Scan 阶段只保留交互式流程。触发后插件会先自动完成预扫描，再通过选择按钮逐步确认：
 
 1. 分支选择：仅多分支 Git 仓库时询问
 2. 审查类型：增量审查或存量审查
@@ -240,37 +243,6 @@ Scan 阶段用于发现问题和形成候选问题清单，适合：
 5. 飞书上传选项：仅 lark-cli 可用时询问
 6. 并发数选择：仅大仓库存量审查时询问（BATCH_MODE=true）
 7. 最终执行计划确认
-
-### 快速启动模式
-
-快速启动适合 CI/CD 或参数已经明确的场景。通过 `--mode` 参数进入快速启动，跳过所有交互。
-
-```text
-帮我审查 /path/to/project --mode standard --type incremental --scope 5
-```
-
-快速启动支持 `--key value` 和 `--key=value` 两种参数写法。若同一参数重复出现，使用最后一次取值；未知参数、缺少参数值、非法取值会在预扫描摘要后直接报错，不会降级为交互式模式。
-
-### 参数说明
-
-| 参数 | 必填 | 取值 | 说明 |
-|------|------|------|------|
-| `--mode` | 必填 | `fast` / `standard` / `deep` / `security` | 审查模式 |
-| `--type` | 必填 | `incremental` / `stock` | 增量审查 / 存量审查 |
-| `--scope` | 条件必填 | 正整数 / `full` / 模块名 | 增量时为提交次数；存量多模块时为模块名；存量单模块可省略 |
-| `--branch` | 可选 | 分支名 | 审查分支，默认当前分支 |
-| `--upload` | 可选 | `no` / `doc` / `bitable` / `both` | 飞书上传，默认 `no` |
-| `--concurrency` | 可选 | `1` / `2` / `3` | 并发扫描路数，默认 `2`；仅大仓库存量审查时生效 |
-
-示例：
-
-```text
-帮我审查 /path/to/project --mode fast --type incremental --scope 5
-帮我审查 /path/to/project --mode standard --type stock --scope full --upload doc
-帮我审查 /path/to/project --mode deep --type stock --scope user-service,order-service --upload both
-帮我审查 https://github.com/org/repo.git --mode standard --type incremental --scope 3 --branch develop --upload bitable
-帮我审查 /path/to/large-project --mode standard --type stock --scope full --concurrency 3
-```
 
 ### 审查模式
 
@@ -294,7 +266,7 @@ Scan 阶段用于发现问题和形成候选问题清单，适合：
 - 文件按风险优先级排序后，按 token 预算分为多个批次
 - 多个批次按用户选择的并发数（1/2/3 路，默认 2 路）并行扫描
 - 全部批次完成后自动合并去重，输出一份统一审查报告
-- 交互式模式会多一步并发数选择；快速启动模式可通过 `--concurrency` 指定
+- 大仓库会多一步并发数选择，由用户确认 1/2/3 路执行策略
 
 ### 技术栈识别与审查维度动态匹配
 
@@ -448,7 +420,7 @@ fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
 
 对应图里的 `2. Scan 阶段`，由 Scan Skill 和 Scan Agent 组成。
 
-- **Scan Skill**：负责预检、交互式确认或快速启动参数校验、参数注入。
+- **Scan Skill**：负责预检、交互式确认和参数注入。
 - **Scan Agent**：负责执行审查并生成候选问题报告，不再反问用户。
 
 ### 人工确认层：从候选问题到 Fix TODO List

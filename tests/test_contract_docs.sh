@@ -6,6 +6,8 @@ AGENT_FILE="$ROOT_DIR/agents/cc-code-reviewer.md"
 FEISHU_FILE="$ROOT_DIR/references/feishu-integration.md"
 SKILL_FILE="$ROOT_DIR/skills/cc-code-reviewer/SKILL.md"
 README_FILE="$ROOT_DIR/README.md"
+AGENTS_FILE="$ROOT_DIR/AGENTS.md"
+CLAUDE_FILE="$ROOT_DIR/CLAUDE.md"
 EXAMPLES_FILE="$ROOT_DIR/references/examples.md"
 FIX_WORKFLOW_FILE="$ROOT_DIR/references/fix-workflow.md"
 FIX_SKILL_FILE="$ROOT_DIR/skills/cc-code-fixer/SKILL.md"
@@ -18,6 +20,12 @@ ARCHITECTURE_PNG="$ROOT_DIR/docs/assets/architecture-overview.png"
 ARCHITECTURE_SVG="$ROOT_DIR/docs/assets/architecture-overview.svg"
 MARKETPLACE_FILE="$ROOT_DIR/.claude-plugin/marketplace.json"
 PLUGIN_FILE="$ROOT_DIR/.claude-plugin/plugin.json"
+DD="--"
+MODE_BYPASS_TOKEN="FAST_""MODE"
+PARAMS_BYPASS_TOKEN="FAST_""PARAMS"
+QUICK_START_CN="快速""启动"
+BYPASS_PHRASES_CN="无需人工""交互|跳过所有""交互|参数校验""失败|禁止降级为交互式""模式"
+SCAN_BYPASS_PATTERN="${MODE_BYPASS_TOKEN}|${PARAMS_BYPASS_TOKEN}|${QUICK_START_CN}|${BYPASS_PHRASES_CN}|${DD}type|${DD}scope|${DD}upload|${DD}branch|${DD}concurrency"
 
 grep -q "### 第三步之后：持久化报告文件" "$AGENT_FILE"
 grep -q "REPORT_FILENAME" "$AGENT_FILE"
@@ -36,12 +44,15 @@ if grep -q "负责人" "$FEISHU_FILE" "$README_FILE"; then
   exit 1
 fi
 
-grep -q "### 第一步之后：提取项目路径与快速启动参数" "$SKILL_FILE"
+grep -q "### 第一步：提取项目路径" "$SKILL_FILE"
 grep -q "优先提取 Git URL" "$SKILL_FILE"
-grep -q "必须一次性解析完整参数表" "$SKILL_FILE"
-grep -q "缺少必填参数" "$SKILL_FILE"
-grep -q "非法参数值" "$SKILL_FILE"
-grep -q "禁止降级为交互式模式" "$SKILL_FILE"
+
+for scan_contract_file in "$SKILL_FILE" "$README_FILE" "$EXAMPLES_FILE" "$AGENTS_FILE" "$CLAUDE_FILE"; do
+  if grep -qE "$SCAN_BYPASS_PATTERN" "$scan_contract_file"; then
+    echo "scan contract must be interaction-only; remove command-parameter bypass compatibility from $scan_contract_file" >&2
+    exit 1
+  fi
+done
 
 grep -q "🧩 技术栈扫描" "$SKILL_FILE"
 grep -q "识别数量" "$SKILL_FILE"
@@ -76,7 +87,6 @@ grep -q "扫描 → 人工确认 → 修复 → 验证 → 报告/写回" "$READ
 grep -q "## 产品定位" "$README_FILE"
 grep -q "## 核心能力" "$README_FILE"
 grep -q "端到端闭环" "$README_FILE"
-grep -q "快速启动支持.*--key=value" "$README_FILE"
 grep -q "code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$README_FILE"
 grep -q "/cc-code-reviewer:cc-code-fixer" "$README_FILE"
 grep -q "修复阶段" "$README_FILE"
@@ -126,12 +136,8 @@ if grep -q "创建飞书云文档或回写多维表格" "$README_FILE"; then
   echo "README fix flow must describe dynamic output targets, not the old cloud-doc/base-only output" >&2
   exit 1
 fi
-if grep -q "/cc-code-reviewer:cc-code-fixer .*--scope" "$README_FILE"; then
-  echo "README fixer examples must not use --scope fast-style parameters" >&2
-  exit 1
-fi
-if grep -q "/cc-code-reviewer:cc-code-fixer .*--mode" "$README_FILE"; then
-  echo "README fixer examples must not use unsupported --mode" >&2
+if grep -q "/cc-code-reviewer:cc-code-fixer .*${DD}" "$README_FILE"; then
+  echo "README fixer examples must not use command-parameter bypass syntax" >&2
   exit 1
 fi
 test -f "$ARCHITECTURE_PNG"
@@ -142,7 +148,6 @@ fi
 
 grep -q "🧩 技术栈扫描" "$EXAMPLES_FILE"
 grep -q "飞书上传不可用" "$EXAMPLES_FILE"
-grep -q "已识别参数" "$EXAMPLES_FILE"
 grep -q "报告已保存到" "$EXAMPLES_FILE"
 grep -q "项目 ignore 命中" "$EXAMPLES_FILE"
 
@@ -218,8 +223,8 @@ if grep -qE "模型 / effort|MODEL_PREFERENCE|EFFORT_PREFERENCE" "$FIX_WORKFLOW_
   echo "fix workflow must not require model/effort confirmation" >&2
   exit 1
 fi
-if grep -q "快速启动" "$FIX_WORKFLOW_FILE"; then
-  echo "fix workflow must not mention fast mode" >&2
+if grep -q "$QUICK_START_CN" "$FIX_WORKFLOW_FILE"; then
+  echo "fix workflow must not mention command-parameter bypass flow" >&2
   exit 1
 fi
 
@@ -290,8 +295,8 @@ if grep -q "| 问题ID | 严重级别 | 维度 | 置信度 | 位置 | 问题摘�
   echo "fix issue confirmation table must use compact terminal table columns, not the old wide table" >&2
   exit 1
 fi
-if grep -q "快速启动" "$FIX_EXAMPLES_FILE"; then
-  echo "fix examples must not document fast mode" >&2
+if grep -q "$QUICK_START_CN" "$FIX_EXAMPLES_FILE"; then
+  echo "fix examples must not document command-parameter bypass flow" >&2
   exit 1
 fi
 
@@ -311,8 +316,8 @@ grep -q "请选择直接修复使用的工作区策略" "$FIX_SKILL_FILE"
 grep -q "确认执行计划" "$FIX_SKILL_FILE"
 grep -q "brainstorming" "$FIX_SKILL_FILE"
 grep -q "subagent-driven-development" "$FIX_SKILL_FILE"
-if grep -qE 'FAST_MODE|FAST_PARAMS|快速启动|`--scope`|`--workspace`|`--strategy`' "$FIX_SKILL_FILE"; then
-  echo "cc-code-fixer must not contain fast mode or fast-style parameters" >&2
+if grep -qE "${MODE_BYPASS_TOKEN}|${PARAMS_BYPASS_TOKEN}|${QUICK_START_CN}|\`${DD}scope\`|\`${DD}workspace\`|\`${DD}strategy\`" "$FIX_SKILL_FILE"; then
+  echo "cc-code-fixer must not contain command-parameter bypass syntax" >&2
   exit 1
 fi
 
@@ -330,7 +335,7 @@ MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 
 MARKETPLACE_PLUGIN_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | sed -n '2p' | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_VERSION" ]
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_PLUGIN_VERSION" ]
-[ "$PLUGIN_VERSION" = "1.2.0" ]
+[ "$PLUGIN_VERSION" = "1.2.2" ]
 grep -q "code-fixer" "$PLUGIN_FILE"
 grep -q '"code-fix"' "$PLUGIN_FILE"
 grep -q '"code-fix"' "$MARKETPLACE_FILE"
@@ -379,9 +384,6 @@ grep -q "飞书上传不可用" "$SKILL_FILE"
 grep -q "报告合并" "$SKILL_FILE"
 grep -q "跨批去重" "$SKILL_FILE"
 grep -q "聚合同类问题" "$SKILL_FILE"
-
-# Skill must have --concurrency fast mode parameter
-grep -q "\-\-concurrency" "$SKILL_FILE"
 
 # Skill batch mode only for stock review
 grep -q "仅对存量审查生效" "$SKILL_FILE"

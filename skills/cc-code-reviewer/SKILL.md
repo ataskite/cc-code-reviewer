@@ -6,15 +6,9 @@ description: Java 代码审查 — 支持增量/存量审查、15维度评估、
 
 以下是你必须遵循的执行顺序。不允许跳过、合并、重新排序或即兴发挥。
 
-### 第一步：模式判定（最先执行）
+### 第一步：提取项目路径（最先执行）
 
-检测用户输入中是否包含 `--mode` 参数：
-- **包含 `--mode`** → 快速启动模式（FAST_MODE=true），执行预扫描 → 参数校验 → 必要时切换分支 → 直接启动子agent
-- **不包含 `--mode`** → 交互式模式（FAST_MODE=false），执行预扫描 → 逐步 AskUserQuestion → 启动子agent
-
-### 第一步之后：提取项目路径与快速启动参数
-
-模式判定完成后，必须先从用户输入中提取 `PROJECT_INPUT` 和 `FAST_PARAMS`，再进入预扫描。此步骤只是解析输入，不得调用 AskUserQuestion。
+必须先从用户输入中提取 `PROJECT_INPUT`，再进入预扫描。此步骤只是解析输入，不得调用 AskUserQuestion。
 
 #### 项目路径提取规则
 
@@ -24,7 +18,7 @@ description: Java 代码审查 — 支持增量/存量审查、15维度评估、
 2. 其次提取本地路径 token：
    - Unix/macOS 绝对路径：`/path/to/project`
    - 相对路径：`.`、`..`、`./project`、`../project`、`project/subdir`
-3. 路径可以出现在自然语言中，例如 `帮我审查 /path/to/project --mode fast ...`，不得把 `帮我审查`、`这个项目` 等自然语言词当作路径
+3. 路径可以出现在自然语言中，例如 `帮我审查 /path/to/project`，不得把 `帮我审查`、`这个项目` 等自然语言词当作路径
 4. 路径包含空格时，应使用用户输入中带引号的完整路径；传给脚本时必须整体加引号
 5. 如果无法提取项目路径，立即输出：
    ```text
@@ -32,29 +26,9 @@ description: Java 代码审查 — 支持增量/存量审查、15维度评估、
 
    请提供本地项目路径或 Git 仓库地址，例如：
      /cc-code-reviewer:cc-code-reviewer /path/to/project
-     /cc-code-reviewer:cc-code-reviewer https://github.com/org/repo.git --mode fast --type incremental --scope 5
+     /cc-code-reviewer:cc-code-reviewer https://github.com/org/repo.git
    ```
    然后终止，不进入预扫描。
-
-#### 快速启动参数提取规则
-
-当 FAST_MODE=true 时，必须一次性解析完整参数表 `FAST_PARAMS`：
-
-| 参数 | 支持写法 | 说明 |
-|------|----------|------|
-| `--mode` | `--mode fast` 或 `--mode=fast` | 审查模式 |
-| `--type` | `--type incremental` 或 `--type=incremental` | 审查类型 |
-| `--scope` | `--scope 5`、`--scope full`、`--scope=user-service` | 审查范围 |
-| `--branch` | `--branch develop` 或 `--branch=develop` | 可选分支 |
-| `--upload` | `--upload no` 或 `--upload=doc` | 可选上传策略 |
-| `--concurrency` | `--concurrency 2` 或 `--concurrency=2` | 可选并发数，默认 `2` |
-
-解析要求：
-- 每个 `--key` 的值必须是紧随其后的非 `--` token；`--key=value` 按 `=` 后内容作为值
-- 如果某个参数出现多次，使用最后一次出现的值，并在校验失败/启动提示中展示最终采用值
-- 如果参数名不在 `mode/type/scope/branch/upload/concurrency` 中，记录为非法参数，不得忽略
-- 如果 `--mode` 后缺值、值为空，或下一项也是 `--` 参数，记录为缺失值
-- 解析出的参数必须保留原始字符串，用于后续完整性校验和错误提示
 
 ### 第二步：预扫描（4 个脚本按顺序执行，此阶段禁止任何用户交互）
 
@@ -146,7 +120,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 
 ### 第三步之后：分批判定
 
-**时机**：交互式模式在步骤 2（选择审查类型）确定 REVIEW_TYPE 后、步骤 6 前执行判定。快速启动模式在参数校验时一并判定。
+**时机**：在步骤 2（选择审查类型）确定 REVIEW_TYPE 后、步骤 6 前执行判定。
 
 **公式**：
 ```
@@ -166,25 +140,17 @@ BATCH_MODE = estimated_tokens > 100000 AND REVIEW_TYPE = 存量审查
 - `BATCH_MODE=false` → 走现有单 agent 流程，不做任何改动
 - `BATCH_MODE=true` → 进入分批模式
 
-**交互式模式**：分批判定延迟到步骤 2 确定审查类型后执行（因为公式依赖 REVIEW_TYPE）。
+**执行要求**：分批判定延迟到步骤 2 确定审查类型后执行（因为公式依赖 REVIEW_TYPE）。
 
-**快速启动模式**：参数校验时一并计算 BATCH_MODE。BATCH_MODE 的判定不影响参数校验（`--concurrency` 参数在 BATCH_MODE=false 时被静默忽略）。
-
-### 第四步：参数收集（根据模式选择分支）
-
-#### 分支 A：交互式模式（FAST_MODE=false）
+### 第四步：交互式参数收集
 
 按以下步骤逐个调用 **AskUserQuestion 工具**（禁止用纯文本输出替代）。每个步骤必须单独调用 AskUserQuestion 并等待用户响应后才能进入下一步。**禁止在一次回复中合并多个交互步骤。**
 
 详细步骤定义见下方「交互式确认步骤定义」章节。
 
-#### 分支 B：快速启动模式（FAST_MODE=true）
-
-使用第一步之后解析出的 `FAST_PARAMS` 校验用户提供的所有参数；如提供 `--branch` 且不同于当前分支，必须先执行分支切换；全部通过后进入第五步。详细校验规则见下方「快速启动模式参数规范」章节。
-
 ### 第五步之前：准备审查参考文件路径
 
-无论交互式模式还是快速启动模式，在调用子 agent 之前，都必须基于插件根目录生成参考文件绝对路径，并校验文件可读：
+在调用子 agent 之前，必须基于插件根目录生成参考文件绝对路径，并校验文件可读：
 
 ```bash
 REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/review-framework.md"
@@ -296,7 +262,7 @@ test -r "$REPORT_FORMAT_PATH"
 
 ---
 
-## 交互式确认步骤定义（仅 FAST_MODE=false 时执行）
+## 交互式确认步骤定义
 
 > **强制规则**：
 > - 每个步骤必须调用 AskUserQuestion 工具，**禁止用纯文本提问替代**
@@ -473,6 +439,7 @@ total_min = ceil(BATCH_COUNT / CONCURRENCY) × 每批耗时
 - 串行执行 → CONCURRENCY=1
 - 2 路并发 → CONCURRENCY=2
 - 3 路并发 → CONCURRENCY=3
+- 并发数仅允许 1 / 2 / 3，默认 `2`
 
 ### 步骤 7：确认执行计划
 
@@ -595,168 +562,6 @@ for each file in sorted_list:
 
 ---
 
-## 快速启动模式参数规范
-
-适用于定时任务、自动化脚本、CI/CD 集成等无需人工交互的场景。
-
-### 参数规范
-
-| 参数 | 是否必填 | 取值范围 | 说明 |
-|------|----------|----------|------|
-| `--mode` | **必填** | `fast` / `standard` / `deep` / `security` | 审查模式 |
-| `--type` | **必填** | `incremental` / `stock` | 审查类型 |
-| `--scope` | 条件必填 | 见下方规则 | 审查范围 |
-| `--branch` | 可选 | 任意分支名 | 审查分支，默认当前分支 |
-| `--upload` | 可选 | `no` / `doc` / `bitable` / `both` | 飞书上传选项，默认 `no` |
-| `--concurrency` | 可选 | `1` / `2` / `3` | 并发数，默认 `2`；BATCH_MODE=false 时被忽略 |
-
-**`--scope` 条件必填规则**：
-
-| `--type` 值 | `--scope` 是否必填 | 合法值 | 默认值 |
-|-------------|-------------------|--------|--------|
-| `incremental` | **必填** | 正整数（提交次数） | 无，缺则报错 |
-| `stock` + 多模块 | **必填** | `full` 或逗号分隔模块名 | 无，缺则报错 |
-| `stock` + 单模块 | 可选 | `full` | 自动设为 `full` |
-
-### 参数映射
-
-| 快速启动参数 | 映射变量 | 值转换 |
-|-------------|----------|--------|
-| `--mode fast` | `REVIEW_MODE=fast` | 直接使用 |
-| `--type incremental` | `REVIEW_TYPE=增量审查` | 转换为中文 |
-| `--type stock` | `REVIEW_TYPE=存量审查` | 转换为中文 |
-| `--scope 5`（incremental） | `REVIEW_SCOPE=最近5次提交` | 转换为中文 |
-| `--scope full`（stock） | `REVIEW_SCOPE=全量代码` | 转换为中文 |
-| `--scope user-service,order-service` | `REVIEW_SCOPE=user-service,order-service` | 直接使用 |
-| `--branch develop` | `TARGET_BRANCH=develop` | 直接使用 |
-| `--upload no` / 未提供 | `FEISHU_UPLOAD_OPTION=仅显示报告` | 转换为中文 |
-| `--upload doc` | `FEISHU_UPLOAD_OPTION=上传到云文档` | 转换为中文 |
-| `--upload bitable` | `FEISHU_UPLOAD_OPTION=上传到多维表格` | 转换为中文 |
-| `--upload both` | `FEISHU_UPLOAD_OPTION=同时上传两者` | 转换为中文 |
-| `--concurrency 1` | `CONCURRENCY=1` | 直接使用 |
-| `--concurrency 2` 或未提供 | `CONCURRENCY=2` | 默认值 |
-| `--concurrency 3` | `CONCURRENCY=3` | 直接使用 |
-
-### 校验规则
-
-1. `--mode` 和 `--type` 必须同时存在，缺失任何一个立即报错终止
-2. 每个参数值必须在合法取值范围内
-3. 根据 `--type` 的值校验 `--scope` 是否缺失
-4. `--branch` 指定的分支不存在时报错并列出可用分支
-5. `--scope` 为具体模块名时校验模块是否存在于预扫描结果中
-6. `--upload` 不是 `no` 但 LARK_PLUGIN_INSTALLED=false 时，警告并降级为 `仅显示报告`
-7. `--concurrency` 不在 `1` / `2` / `3` 时报错，但不影响其他参数校验
-8. BATCH_MODE=false 时 `--concurrency` 被静默忽略（不报错）
-
-**完整性校验要求**：
-- 快速启动模式必须保证参数完整性：所有必填项和条件必填项都明确后，才能执行分支切换、增量预处理或启动子 agent
-- 参数校验必须在预扫描摘要输出之后、任何正式审查动作之前执行
-- 校验失败时必须提示用户补齐或修正参数，并立即终止；禁止降级为交互式模式，禁止继续调用 AskUserQuestion
-- 校验失败时必须展示已经识别到的参数值，方便用户确认解析是否正确
-
-**缺少必填参数判定**：
-- 缺 `--mode`：只有在 FAST_MODE=true 的异常输入中可能出现，如 `--mode` 无值，按缺失处理
-- 缺 `--type`：FAST_MODE=true 时必定报错
-- 缺 `--scope`：
-  - `--type incremental` 时必定报错
-  - `--type stock` 且 `PROJECT_TYPE` 为 `maven-multi` / `gradle-multi` 时必定报错
-  - `--type stock` 且 `PROJECT_TYPE` 为 `*-single` 时允许缺省，自动设为 `full`
-- 缺参数值：如 `--mode --type incremental`、`--scope --upload doc`，视为对应参数缺失值
-
-**非法参数值判定**：
-- `--mode` 不在 `fast` / `standard` / `deep` / `security`
-- `--type` 不在 `incremental` / `stock`
-- `--scope` 在 `incremental` 下不是正整数
-- `--scope` 在 `stock` 下既不是 `full`，也不是预扫描 `MODULE:` 行中的有效模块路径列表
-- `--upload` 不在 `no` / `doc` / `bitable` / `both`
-- `--concurrency` 不在 `1` / `3` / `5`
-- 出现未知参数名，例如 `--review-mode`、`--types`
-
-### 快速启动分支处理
-
-参数校验通过后、启动子 agent 前：
-
-1. 未提供 `--branch`：TARGET_BRANCH=CURRENT_BRANCH
-2. 提供 `--branch` 且等于 CURRENT_BRANCH：无需切换
-3. 提供 `--branch` 且不同于 CURRENT_BRANCH：必须执行 `bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-switch-branch.sh" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
-4. 快速启动模式下，如果显式分支切换失败，必须终止本次审查并说明原因，不得静默回退到当前分支继续审查
-5. 切换成功后，重新记录 CURRENT_BRANCH/TARGET_BRANCH，用切换后的分支生成增量数据和调用子 agent
-
-**校验失败输出格式**：
-
-```
-❌ 快速启动参数校验失败
-
-缺少必填参数：
-  - --type: 审查类型（incremental/stock）
-  - --scope: 增量审查必须提供提交次数，例如 --scope 5
-
-非法参数值：
-  - --mode turbo: 仅支持 fast/standard/deep/security
-  - --upload feishu: 仅支持 no/doc/bitable/both
-
-已识别参数：
-  - 项目路径：{PROJECT_INPUT}
-  - --mode: {值或未提供}
-  - --type: {值或未提供}
-  - --scope: {值或未提供}
-  - --branch: {值或未提供}
-  - --upload: {值或未提供，默认 no}
-
-正确格式示例：
-  帮我审查 /path/to/project --mode fast --type incremental --scope 5
-  帮我审查 /path/to/project --mode standard --type stock --scope full --upload doc
-
-请补充缺失参数或修正非法参数后重新调用。
-```
-
-如果没有缺失项或没有非法项，对应小节写 `无`，但仍需展示"已识别参数"。
-
-### 快速启动校验通过后的启动提示
-
-**BATCH_MODE=false 时**（与现有提示一致）：
-
-```
-🚀 快速启动模式 — 正在启动独立代码审查子代理...
-
-📋 任务配置：{REVIEW_MODE} 模式 · {REVIEW_TYPE} · {REVIEW_SCOPE}
-🌿 审查分支：{TARGET_BRANCH 或 CURRENT_BRANCH}
-📤 飞书上传：{FEISHU_UPLOAD_OPTION}
-⏱️ 预估耗时：{预估时间}
-📌 子代理将独立执行完整审查流程，完成后自动返回结果。
-```
-
-**BATCH_MODE=true 时**：
-
-```
-🚀 快速启动模式 — 正在启动分批并行代码审查...
-
-📋 任务配置：{REVIEW_MODE} 模式 · {REVIEW_TYPE} · {REVIEW_SCOPE}
-📊 扫描策略：{BATCH_COUNT} 批 / {CONCURRENCY} 路并发
-🌿 审查分支：{TARGET_BRANCH 或 CURRENT_BRANCH}
-📤 飞书上传：{FEISHU_UPLOAD_OPTION}
-⏱️ 预估耗时：约 {total_min} 分钟
-📌 每批子代理独立执行审查，全部完成后自动合并结果。
-```
-
-### 快速启动调用示例
-
-```
-# 增量审查 — 最近5次提交
-帮我审查 /path/to/project --mode fast --type incremental --scope 5
-
-# 存量审查 — 全量代码，上传飞书云文档
-帮我审查 /path/to/project --mode standard --type stock --scope full --upload doc
-
-# 存量审查 — 指定模块，深度模式
-帮我审查 /path/to/project --mode deep --type stock --scope user-service,order-service --upload both
-
-# 指定分支 + 增量审查
-帮我审查 https://github.com/org/repo.git --mode standard --type incremental --scope 3 --branch develop --upload bitable
-```
-
----
-
 ## 子 agent 调用规范
 
 ### 调用方式
@@ -815,10 +620,10 @@ for each file in sorted_list:
 | `PROJECT_SOURCE` | phase1 脚本输出 | `local` / `git-cache` |
 | `PROJECT_NAME` | `basename "$PROJECT_DIR"` | `spring-ai-agent-utils` |
 | `PROJECT_TYPE` | phase3 脚本输出 | `maven-single` 等 |
-| `REVIEW_TYPE` | 交互步骤2 / 快速启动 `--type` | `增量审查` / `存量审查` |
-| `REVIEW_SCOPE` | 交互步骤3 / 快速启动 `--scope` | `最近5次提交` / `全量代码` |
-| `REVIEW_MODE` | 交互步骤4 / 快速启动 `--mode` | `fast` / `standard` 等 |
-| `FEISHU_UPLOAD_OPTION` | 交互步骤5 / 快速启动 `--upload` | `仅显示报告` 等 |
+| `REVIEW_TYPE` | 交互步骤2 | `增量审查` / `存量审查` |
+| `REVIEW_SCOPE` | 交互步骤3 | `最近5次提交` / `全量代码` |
+| `REVIEW_MODE` | 交互步骤4 | `fast` / `standard` 等 |
+| `FEISHU_UPLOAD_OPTION` | 交互步骤5 | `仅显示报告` 等 |
 | `PROJECT_SCAN_RESULT` | phase3 完整输出 | 项目概况、模块结构 |
 | `DETECTED_TECH_STACK` | 从 `PROJECT_SCAN_RESULT` 的 `TECH_STACK:` 行解析，来源为 Maven/Gradle 依赖指纹 | `Spring Boot, MyBatis, Redis/Cache` |
 | `REVIEW_FILE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `76` |
@@ -964,11 +769,10 @@ for each file in sorted_list:
 ## 重要规则
 
 1. **输入校验**：用户自定义输入必须与当前问题相关且合理，无效输入需提示重新选择，每步最多重试 3 次
-2. **执行前强制确认**：交互式模式下必须展示执行计划并等待用户确认（快速启动模式豁免）
+2. **执行前强制确认**：必须展示执行计划并等待用户确认
 3. **三个核心选项必须全部明确**：审查类型 + 审查范围 + 审查模式，缺一不可
 4. **强制中文输出**：所有交互和报告都必须使用中文
 5. **最终确认前零深度审查动作**：在用户最终确认前，不得启动子 agent 或执行正式代码审查；但允许执行预扫描脚本
-6. **快速启动参数完整性**：`--mode` 和 `--type` 必须同时存在，缺少必填参数立即报错终止，不允许降级为交互式模式
 
 ### 条件步骤规则
 
