@@ -364,12 +364,13 @@ grep -q "pending.*待执行" "$SKILL_FILE"
 grep -q "running.*执行中" "$SKILL_FILE"
 grep -q "completed.*已完成" "$SKILL_FILE"
 grep -q "failed.*失败待重试" "$SKILL_FILE"
-if grep -qE 'status[^[:alnum:]_]{0,40}(partial|stale|skipped)|"status"[[:space:]]*:[[:space:]]*"(partial|stale|skipped)"|状态[^[:alnum:]_]{0,40}(partial|stale|skipped|部分完成|中断待确认|已跳过)|(partial|stale|skipped)[^[:alnum:]_]{0,40}(部分完成|中断待确认|已跳过)' "$SKILL_FILE" "$AGENT_FILE"; then
+FORBIDDEN_BATCH_STATE_DECL_PATTERN='("status"[[:space:]]*:[[:space:]]*"(partial|stale|skipped)")|((status[[:space:]_-]*(enum|state|list|value)|batch[[:space:]_-]*status|state[[:space:]_-]*(enum|list|value)|状态(枚举|列表|值)|批次状态)[^[:cntrl:]]{0,80}(partial|stale|skipped|部分完成|中断待确认|已跳过))|((partial|stale|skipped|部分完成|中断待确认|已跳过)[^[:cntrl:]]{0,80}(status[[:space:]_-]*(enum|state|list|value)|batch[[:space:]_-]*status|state[[:space:]_-]*(enum|list|value)|状态(枚举|列表|值)|批次状态))'
+if grep -qE "$FORBIDDEN_BATCH_STATE_DECL_PATTERN" "$SKILL_FILE" "$AGENT_FILE"; then
   echo "large repo v1 status enum must only use pending/running/completed/failed" >&2
   exit 1
 fi
 if awk '
-  /pending|running|completed|failed|BATCH_STATUS_PATH|batch status|status\.json|批次状态|状态文件/ {
+  /pending|running|completed|failed|BATCH_STATUS_PATH|batch status|large repo status|large repository status|large repo v1|status\.json|批次状态|大仓状态|大型仓库状态|状态文件/ {
     for (i = NR - 6; i <= NR + 6; i++) {
       if (i > 0) {
         near_status[i] = 1
