@@ -50,6 +50,11 @@ OUTPUT="$(CLAUDE_CODE_PLUGIN_ROOTS="$MISSING_PLUGIN_ROOT" PATH="$FAKE_BIN:/usr/b
 printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=false"
 printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PLUGIN_INSTALLED=false"
 
+mkdir -p "$MISSING_PLUGIN_ROOT"
+OUTPUT="$(CLAUDE_CODE_PLUGIN_ROOTS="$MISSING_PLUGIN_ROOT" PATH="$FAKE_BIN:/usr/bin:/bin" HOME="$TMP_DIR/home-no-plugin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR")"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=false"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PLUGIN_INSTALLED=false"
+
 if ! OUTPUT="$(env -u HOME PATH="$FAKE_BIN:/usr/bin:/bin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR")"; then
   echo "missing HOME should not make detection fail" >&2
   exit 1

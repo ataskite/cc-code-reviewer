@@ -35,11 +35,6 @@ plugin_installed() {
     IFS=':' read -r -a root_array <<< "$roots"
     for root in "${root_array[@]}"; do
       [ -z "$root" ] && continue
-      case "$root" in
-        *jdtls-lsp* | *claude-plugins-official/jdtls-lsp*)
-          [ -d "$root" ] && return 0
-          ;;
-      esac
       [ -d "$root/jdtls-lsp" ] && return 0
       [ -d "$root/claude-plugins-official/jdtls-lsp" ] && return 0
     done
