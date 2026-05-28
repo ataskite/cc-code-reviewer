@@ -364,8 +364,28 @@ grep -q "pending.*待执行" "$SKILL_FILE"
 grep -q "running.*执行中" "$SKILL_FILE"
 grep -q "completed.*已完成" "$SKILL_FILE"
 grep -q "failed.*失败待重试" "$SKILL_FILE"
-if grep -qE "partial|stale|skipped|部分完成|中断待确认|已跳过|reviewed_java_files|remaining_files" "$SKILL_FILE" "$AGENT_FILE"; then
-  echo "large repo v1 must keep atomic batch states only: pending/running/completed/failed" >&2
+if grep -qE 'status[^[:alnum:]_]{0,40}(partial|stale|skipped)|"status"[[:space:]]*:[[:space:]]*"(partial|stale|skipped)"|状态[^[:alnum:]_]{0,40}(partial|stale|skipped|部分完成|中断待确认|已跳过)|(partial|stale|skipped)[^[:alnum:]_]{0,40}(部分完成|中断待确认|已跳过)' "$SKILL_FILE" "$AGENT_FILE"; then
+  echo "large repo v1 status enum must only use pending/running/completed/failed" >&2
+  exit 1
+fi
+if awk '
+  /pending|running|completed|failed|BATCH_STATUS_PATH|batch status|status\.json|批次状态|状态文件/ {
+    for (i = NR - 6; i <= NR + 6; i++) {
+      if (i > 0) {
+        near_status[i] = 1
+      }
+    }
+  }
+  { lines[NR] = $0 }
+  END {
+    for (i = 1; i <= NR; i++) {
+      if (near_status[i]) {
+        print lines[i]
+      }
+    }
+  }
+' "$SKILL_FILE" "$AGENT_FILE" | grep -qE "reviewed_java_files|remaining_files"; then
+  echo "large repo v1 batch status contract must not use file-level reviewed manifests" >&2
   exit 1
 fi
 
