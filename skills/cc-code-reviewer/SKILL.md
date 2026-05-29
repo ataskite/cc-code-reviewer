@@ -30,9 +30,9 @@ description: Java 代码审查 — 支持增量/存量审查、15维度评估、
    ```
    然后终止，不进入预扫描。
 
-### 第二步：预扫描（4 个脚本按顺序执行，此阶段禁止任何用户交互）
+### 第二步：预扫描（5 个脚本按顺序执行，此阶段禁止任何用户交互）
 
-使用第一步之后提取出的 `PROJECT_INPUT`，然后按以下顺序执行 4 个脚本。
+使用第一步之后提取出的 `PROJECT_INPUT`，然后按以下顺序执行 5 个脚本。
 
 仅支持 macOS / Linux（Bash）：
 ```bash
@@ -45,15 +45,18 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-detect-branches.sh" "$PROJECT_DIR"
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase3-project-scan.sh" "$PROJECT_DIR"
 # 输出：PROJECT_TYPE=maven-single|maven-multi|... MODULE:模块名|相对路径|Java文件数|代码行数 TECH_STACK:技术栈|dependency:命中依赖|dimensions:建议维度|rules:专项规则
 
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR"
+# 输出：CODE_INTELLIGENCE_AVAILABLE=true|false CODE_INTELLIGENCE_PROVIDER=jdtls-lsp|none CODE_INTELLIGENCE_REASON=...
+
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 # 输出：LARK_PLUGIN_INSTALLED=true|false，失败时附带 LARK_PLUGIN_REASON
 ```
 
-> ⚠️ 4 个脚本必须全部执行完成后才能继续。此阶段禁止调用 AskUserQuestion，禁止输出任何交互式提问。
+> ⚠️ 5 个脚本必须全部执行完成后才能继续。此阶段禁止调用 AskUserQuestion，禁止输出任何交互式提问。
 
 ### 第二步之后：读取项目级 ignore 规则
 
-4 个预扫描脚本完成后，在输出预扫描摘要前，检查项目内是否存在 AI 指令型 ignore 文件：
+5 个预扫描脚本完成后，在输出预扫描摘要前，检查项目内是否存在 AI 指令型 ignore 文件：
 
 ```bash
 IGNORE_RULES_PATH="$PROJECT_DIR/.cc-code-reviewer/ignore/issues.yml"
@@ -69,7 +72,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 
 ### 第三步：输出预扫描摘要（不允许跳过）
 
-4 个脚本全部完成后，必须输出以下格式的摘要（这是预扫描阶段的唯一输出）：
+5 个脚本全部完成后，必须输出以下格式的摘要（这是预扫描阶段的唯一输出）：
 
 ```
 🔍 预扫描完成
@@ -107,6 +110,8 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 
 🔌 lark-cli：{LARK_PLUGIN_INSTALLED=true 时显示 "✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书上传" / false 时显示 "⚠️ 飞书上传不可用：{LARK_PLUGIN_REASON}，报告将保存到本地文件"}
 
+🧠 代码智能：{CODE_INTELLIGENCE_AVAILABLE=true 时显示 "✅ jdtls-lsp 可用，可用于跨目录调用链理解" / false 时显示 "⚠️ 未启用 jdtls-lsp，将使用 Maven 静态依赖分批；建议安装 jdtls 并启用 jdtls-lsp 提升跨模块理解质量"}
+
 🧩 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "✅ 已启用：.cc-code-reviewer/ignore/issues.yml" / false 且文件不存在时显示 "未配置" / false 且不可读时显示 "⚠️ 文件存在但不可读：{原因}"}
 ```
 
@@ -141,6 +146,50 @@ BATCH_MODE = estimated_tokens > 100000 AND REVIEW_TYPE = 存量审查
 - `BATCH_MODE=true` → 进入分批模式
 
 **执行要求**：分批判定延迟到步骤 2 确定审查类型后执行（因为公式依赖 REVIEW_TYPE）。
+
+### Maven 大仓库模式判定
+
+仅当以下条件全部满足时进入 Maven 大仓库模式：
+- `PROJECT_TYPE=maven-multi`（Maven 多模块）
+- `REVIEW_TYPE=存量审查`
+- `REVIEW_SCOPE=全量代码`
+- `TOTAL_JAVA_LOC >= 120000`
+
+判定公式：
+```text
+TOTAL_JAVA_LOC >= 120000
+TARGET_BATCH_LOC = 25000
+SOFT_MIN_BATCH_LOC = 15000
+SOFT_MAX_BATCH_LOC = 30000
+HARD_MAX_BATCH_LOC = 35000
+```
+
+Maven 大仓库模式仍然只对存量审查生效。增量审查、Gradle 项目、单模块项目、局部模块审查继续走现有流程。
+
+批次状态值固定为：
+```text
+pending 待执行
+running 执行中
+completed 已完成
+failed 失败待重试
+```
+
+如果发现兼容的未完成 `RUN_DIR`，必须先读取 `plan.json` 并展示状态表。恢复时：
+- `completed` 批次默认跳过，不重跑
+- `running` 批次一律转为 `failed`，错误写为"上次执行中断，需要整批重跑"
+- `pending` 和 `failed` 批次按用户本轮执行批次数调度
+- 重新规划必须由用户明确选择，并创建新的 `RUN_DIR`
+
+规划命令：
+```bash
+SEMANTIC_LEVEL="maven-static"
+if [ "$CODE_INTELLIGENCE_AVAILABLE" = "true" ]; then
+  SEMANTIC_LEVEL="jdtls-lsp"
+fi
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "$SEMANTIC_LEVEL"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR"
+```
 
 ### 第四步：交互式参数收集
 
@@ -223,11 +272,17 @@ test -r "$REPORT_FORMAT_PATH"
 | 报告格式路径 | {REPORT_FORMAT_PATH} |
 | 项目 ignore 文件路径 | {IGNORE_RULES_PATH 或 未配置} |
 | 项目 ignore 是否启用 | {IGNORE_RULES_ENABLED} |
+| 运行目录 | {RUN_DIR} |
+| 批次计划文件 | {BATCH_PLAN_PATH} |
+| 批次状态文件 | {BATCH_STATUS_PATH} |
+| 批次结果文件 | {BATCH_RESULT_PATH} |
 | 批次编号 | {BATCH_INDEX}/{BATCH_COUNT} |
 | 审查输出模式 | 仅发现清单 |
 
-### 本批审查文件列表（外部注入，直接使用，不要重新扫描）
-{逐行列出文件绝对路径}
+### 本批审查边界
+请读取 `BATCH_PLAN_PATH`，以其中 `scan_roots` 作为正式审查边界。
+允许使用 jdtls 跨目录理解调用链，但正式问题必须位于 `scan_roots` 内。
+如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」。
 
 ### 项目概况（预扫描结果）
 {PROJECT_SCAN_RESULT}
@@ -441,6 +496,35 @@ total_min = ceil(BATCH_COUNT / CONCURRENCY) × 每批耗时
 - 3 路并发 → CONCURRENCY=3
 - 并发数仅允许 1 / 2 / 3，默认 `2`
 
+### 步骤 6B：选择本轮执行批次（Maven 大仓库模式）
+
+**触发条件**：满足「Maven 大仓库模式判定」。不满足时跳过此步骤。
+
+在调用 AskUserQuestion 之前，必须先展示当前 run 状态：
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR"
+```
+
+**必须调用 AskUserQuestion 工具，参数如下**：
+- question: "请选择本轮执行批次"
+- header: "执行批次"
+- options:
+  - label: "执行 3 批"
+    description: "适合额度紧张或先试跑"
+  - label: "执行 5 批（推荐）"
+    description: "适合大多数 50 万行级项目，便于跨天继续"
+  - label: "执行 10 批"
+    description: "适合当前额度充足时加速推进"
+  - label: "执行全部未完成批次"
+    description: "一次性执行所有待执行和失败待重试批次"
+- multiSelect: false
+
+**用户响应后**：
+- 设置 `CURRENT_RUN_BATCH_LIMIT=3|5|10|all`
+- 从 `RUN_DIR/batches/*.json` 中选择状态为 `pending` 或 `failed` 的批次
+- `completed` 批次必须跳过
+- 只调度本轮选择数量内的批次；未调度批次保持 `pending`
+
 ### 步骤 7：确认执行计划
 
 先输出完整执行计划：
@@ -648,6 +732,13 @@ for each file in sorted_list:
 ### 第五步之后：报告合并（仅 BATCH_MODE=true 时执行）
 
 所有 batch agent 完成后，主 skill 执行合并（不启动额外 agent）。
+
+Maven 大仓库模式必须通过确定性脚本合并，只读取 `RUN_DIR` 下状态为 `completed` 的批次：
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merge-large-batches.sh" "$RUN_DIR"
+```
+
+该脚本会生成 `summary.json` 和 `final/code-review-report-*`。当并非所有批次都完成时，报告必须标记为 `[阶段性]`；只有所有批次均为 `completed` 时才称为完整报告。
 
 #### 合并步骤
 
