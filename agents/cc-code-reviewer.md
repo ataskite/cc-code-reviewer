@@ -50,6 +50,10 @@ maxTurns: 50
 | 批次编号 | {BATCH_INDEX}/{BATCH_COUNT} |
 | 审查输出模式 | {REVIEW_OUTPUT_MODE} |
 | 本批审查文件列表 | {逐行列出文件路径} |
+| 运行目录 | {RUN_DIR} |
+| 批次计划文件 | {BATCH_PLAN_PATH} |
+| 批次状态文件 | {BATCH_STATUS_PATH} |
+| 批次结果文件 | {BATCH_RESULT_PATH} |
 ```
 
 **你必须**：
@@ -82,6 +86,10 @@ maxTurns: 50
   - `完整报告`（默认）：按 REPORT_FORMAT_PATH 输出完整审查报告
   - `仅发现清单`：只输出结构化发现列表，不生成完整报告，不执行飞书上传。用于分批审查时的单批输出
 - **本批审查文件列表**（`BATCH_FILE_LIST`）：分批模式下外部注入的文件路径列表，每行一个绝对路径。提供此参数时，阶段 A（文件收集）和阶段 B（风险排序）跳过，直接使用注入的文件列表从阶段 C 开始执行
+- **运行目录**（`RUN_DIR`）：Maven 大仓库分批任务的持久化目录，仅大型仓库批次模式提供
+- **批次计划文件**（`BATCH_PLAN_PATH`）：本批 `batch-XXX.json` 的绝对路径，仅大型仓库批次模式提供
+- **批次状态文件**（`BATCH_STATUS_PATH`）：本批 `batch-XXX.status.json` 的绝对路径，仅大型仓库批次模式提供
+- **批次结果文件**（`BATCH_RESULT_PATH`）：本批局部审查报告的绝对路径，仅大型仓库批次模式提供
 
 **参考文件读取规则**：
 - 在执行审查前，先读取 `REVIEW_FRAMEWORK_PATH` 和 `REPORT_FORMAT_PATH`。
@@ -123,6 +131,50 @@ maxTurns: 50
 > 你的第一步不是扫描项目结构，而是根据已有数据确定审查范围，然后按「逐文件单次读取，多维度同时评估」策略（阶段 A → B → C → D）执行审查。核心原则：**每个文件只读一次，读完立即评估所有启用维度，禁止为不同维度重复读取同一文件**。
 
 **审查输出模式分支**：
+
+### 大型仓库批次模式
+
+当参数中包含 `BATCH_PLAN_PATH`、`BATCH_STATUS_PATH`、`BATCH_RESULT_PATH` 时，进入大型仓库批次模式。
+
+执行规则：
+- 必须先读取 `BATCH_PLAN_PATH`，以其中的 `scan_roots` 作为本批正式审查边界。
+- 正式问题的位置必须位于 `scan_roots` 内。
+- 允许使用 jdtls 跨目录查询 definition、references、implementations、call hierarchy 来理解调用链。
+- `scan_roots` 外的代码只能作为外部依赖上下文，不得作为本批正式问题位置。
+- 如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」，不计入正式问题数量。
+- 批次是原子的；不要写其他运行状态，也不要写文件级 reviewed 状态。
+- 完整写入 `BATCH_RESULT_PATH` 后，才能把 `BATCH_STATUS_PATH` 写为 `completed`。
+- 无法完整完成时，把 `BATCH_STATUS_PATH` 写为 `failed`，并写明错误原因。
+
+状态文件写为完成时使用以下结构：
+
+```json
+{
+  "schema_version": 1,
+  "batch_id": "batch-001",
+  "status": "completed",
+  "planned_java_loc": 24800,
+  "planned_java_file_count": 186,
+  "finding_count": 12,
+  "result_path": "results/batch-001.md",
+  "error": null
+}
+```
+
+状态文件写为失败时使用以下结构：
+
+```json
+{
+  "schema_version": 1,
+  "batch_id": "batch-001",
+  "status": "failed",
+  "planned_java_loc": 24800,
+  "planned_java_file_count": 186,
+  "finding_count": 0,
+  "result_path": null,
+  "error": "上次执行中断，需要整批重跑"
+}
+```
 
 当 `REVIEW_OUTPUT_MODE=仅发现清单` 时，执行流程调整如下：
 - **阶段 A（文件收集）跳过**：直接使用 `BATCH_FILE_LIST` 注入的文件列表
