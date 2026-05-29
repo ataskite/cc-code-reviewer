@@ -329,3 +329,93 @@
    💡 建议：P0 问题需立即修复后再上线，SQL 注入和分布式事务风险较高。
    👉 详细报告请点击上方飞书链接查看。
 ```
+
+## 示例4：Maven 大仓库可恢复分批审查
+
+适用场景：Maven 多模块、存量审查、全量代码、Java 代码行数超过 `TOTAL_JAVA_LOC >= 120000`。
+
+```text
+用户：帮我审查 /repo/large-maven
+
+[预扫描完成]
+我：
+🔍 预扫描完成
+
+📂 项目：large-maven
+- 类型：Maven 多模块
+
+📊 规模：
+- Java 文件：4,000 个
+- 代码行数：500,000 行
+- 模块数量：42 个
+
+🧠 代码智能：✅ jdtls-lsp 可用，可用于跨目录调用链理解
+
+→ AskUserQuestion: "请选择审查类型" [增量审查 | 存量审查]
+→ 用户选择：存量审查
+
+→ AskUserQuestion: "请选择要审查的模块" [全量代码 | ...]
+→ 用户选择：全量代码
+
+→ AskUserQuestion: "请选择审查模式" [fast | standard | deep | security]
+→ 用户选择：standard
+
+[进入 Maven 大仓库模式]
+我：
+📦 大仓库审查任务
+
+Run ID: 20260528-143000-main-standard-full-large-maven
+项目: large-maven
+模式: standard
+范围: 全量代码
+语义增强: jdtls-lsp
+总规模: 500,000 行
+批次: 20
+完成: 0 / 20
+Java 行覆盖: 0 / 500,000 (0%)
+
+批次 状态 行数 文件 模块
+batch-001 待执行 24,800 186 user-api,user-service
+batch-002 待执行 26,100 201 order-core,order-dao
+batch-003 待执行 21,700 144 payment
+
+→ AskUserQuestion: "请选择本轮执行批次"
+   [执行 3 批 | 执行 5 批（推荐） | 执行 10 批 | 执行全部未完成批次]
+→ 用户选择：执行 5 批（推荐）
+
+[本轮执行]
+我：
+🚀 正在启动 Maven 大仓库分批审查...
+- 本轮执行：5 批
+- 已完成批次会自动跳过
+- 每批完成后写入 results/batch-XXX.md 和 results/batch-XXX.status.json
+
+[本轮结束]
+我：
+📄 阶段性报告已生成：
+/repo/large-maven/.cc-code-reviewer/runs/20260528-143000-main-standard-full-large-maven/final/code-review-report-large-maven-20260528-180000.md
+
+📊 当前进度：
+- 已完成：5 / 20 批
+- Java 行覆盖：124,600 / 500,000（24%）
+- 未完成批次不会进入正式问题结论
+
+[第二天继续]
+用户：继续审查 /repo/large-maven
+
+我：
+📦 大仓库审查任务
+- 读取已有 RUN_DIR
+- 跳过已完成批次：batch-001 ~ batch-005
+- 继续待执行或失败待重试批次
+
+→ AskUserQuestion: "请选择本轮执行批次"
+→ 用户选择：执行 5 批（推荐）
+
+[全部批次完成后]
+我：
+✅ Maven 大仓库审查已完成
+- 已完成：20 / 20 批
+- Java 行覆盖：500,000 / 500,000（100%）
+- 完整报告已生成并按用户选择上传飞书或保存本地
+```

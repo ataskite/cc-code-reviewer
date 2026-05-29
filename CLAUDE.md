@@ -61,10 +61,11 @@ flowchart TD
 ### Key Responsibilities
 
 **Main Skill (`skills/cc-code-reviewer/SKILL.md`)**:
-- Pre-scan: project detection → branch detection → project scan → lark-cli detection
+- Pre-scan: project detection → branch detection → project scan → jdtls/code-intelligence detection → lark-cli detection
 - Reads `.cc-code-reviewer/ignore/issues.yml` after pre-scan and injects AI-readable skip rules into the scan agent
 - Interactive mode: Collect user config via AskUserQuestion (up to 7 steps; step 6 concurrency selection only when BATCH_MODE=true)
 - Batch mode: Auto-triggered for large stock reviews; splits files into batches, dispatches parallel sub-agents, merges results
+- Maven large-repo mode: for Maven multi-module stock full-code reviews above `TOTAL_JAVA_LOC >= 120000`, creates `.cc-code-reviewer/runs/{RUN_ID}` with atomic module/directory batches, status files, resumable execution, and staged/full merge reports
 - **Never** execute code review itself
 
 **Review Agent (`agents/cc-code-reviewer.md`)**:
@@ -224,7 +225,8 @@ Sub agent receives parameters via prompt injection, including:
 - Project path, type, scope, mode
 - Pre-scan results (project structure, modules)
 - Incremental data (git log, changed files, diff stats)
-- Batch parameters when BATCH_MODE=true: file list per batch, batch index, output mode
+- Legacy batch parameters when BATCH_MODE=true: file list per batch, batch index, output mode
+- Maven large-repo batch parameters: `RUN_DIR`, `BATCH_PLAN_PATH`, `BATCH_STATUS_PATH`, `BATCH_RESULT_PATH`, and `scan_roots`; formal findings must stay inside `scan_roots`, while jdtls may be used across directories for call-chain understanding
 
 **Sub agent must**: Use these parameters directly, never re-ask user.
 
