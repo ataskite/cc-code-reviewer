@@ -2,81 +2,72 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a resumable Maven multi-module full-stock review mode that plans module-aware batches, runs a bounded number of atomic batch reviews per invocation, and merges completed batch reports.
+**Goal:** Upgrade Maven large-repository planning from top-level module batching to semantic-cost batching that recursively splits oversized modules, avoids tiny orphan batches, bounds context roots, and preserves Java-file coverage semantics.
 
-**Architecture:** Keep the existing scan skill as the orchestrator, add focused Bash scripts for jdtls detection, Maven batch planning, status display, and deterministic merge. Batch plans are directory-level (`scan_roots`), batch execution is atomic, and completed batch reports are persisted under `.cc-code-reviewer/runs/{RUN_ID}` so later sessions can continue without rerunning finished work.
+**Architecture:** Keep the existing scan skill and run-directory contract, but make `scripts/phase11-plan-large-batches.sh` produce work units before batch packing. The planner remains deterministic Bash/Perl and does not require jdtls; jdtls only adds optional affinity metadata. Existing phase12/phase13 consumers are updated to read the new `units`, `context_roots`, `planned_review_cost`, and `affinity_edges` fields while keeping compatibility with old `modules` fields during migration.
 
-**Tech Stack:** Bash, POSIX tools available on macOS/Linux, Perl for lightweight XML/JSON-safe parsing, existing Claude Code skill/agent Markdown contracts, existing `tests/run_all.sh` Bash test suite.
+**Tech Stack:** Bash, Perl, jq in tests where already used, macOS/Linux POSIX tools, existing Markdown skill/agent contracts, existing `tests/run_all.sh` Bash suite.
 
 ---
 
 ## File Structure
 
-- Create `scripts/phase10-detect-code-intelligence.sh`: detects whether `jdtls` and the Claude Code `jdtls-lsp` plugin appear available. It never blocks review; it emits `CODE_INTELLIGENCE_AVAILABLE=true|false`.
-- Create `scripts/phase11-plan-large-batches.sh`: parses Maven reactor modules, computes module LOC, builds reactor-local dependency edges, creates `.cc-code-reviewer/runs/{RUN_ID}`, writes `plan.json`, `batches/batch-XXX.json`, initial `results/batch-XXX.status.json`, and `progress.jsonl`.
-- Create `scripts/phase12-merge-large-batches.sh`: reads a run directory, reconciles statuses, merges only completed batch reports, writes `summary.json` and `final/code-review-report-*`.
-- Create `scripts/phase13-show-large-batch-status.sh`: prints the latest compatible run status with Chinese labels.
-- Modify `skills/cc-code-reviewer/SKILL.md`: adds the Maven large-repo flow, user confirmations, per-run execution count, resume behavior, batch agent orchestration, and final merge/upload rules.
-- Modify `agents/cc-code-reviewer.md`: adds atomic batch mode contract based on `BATCH_PLAN_PATH`, `BATCH_STATUS_PATH`, `BATCH_RESULT_PATH`, `scan_roots`, and jdtls semantic lookup rules.
-- Modify `references/examples.md`: adds one large Maven stock review example showing planning, status table, bounded execution, resume, and final merge.
-- Modify `references/report-format.md`: documents the large-repo execution summary section for staged and full reports.
-- Modify `AGENTS.md`, `CLAUDE.md`, `README.md` only if contract text needs to reflect the new scripts and user-visible workflow.
-- Create `tests/test_phase10_detect_code_intelligence.sh`.
-- Create `tests/test_phase11_plan_large_batches.sh`.
-- Create `tests/test_phase12_merge_large_batches.sh`.
-- Create `tests/test_phase13_show_large_batch_status.sh`.
-- Modify `tests/test_contract_docs.sh`.
+- Modify `scripts/phase11-plan-large-batches.sh`: turn the current top-level module greedy planner into a semantic-cost planner with work-unit generation, recursive oversized splitting, affinity packing, bounded context roots, and tail rebalancing.
+- Modify `scripts/phase13-show-large-batch-status.sh`: show review cost, split reasons, and unit labels while continuing to support old `modules` fields.
+- Modify `scripts/phase12-merge-large-batches.sh`: keep Java-file coverage as the only coverage metric and tolerate new batch plan fields.
+- Modify `skills/cc-code-reviewer/SKILL.md`: update the large-repo contract from module batching to semantic-cost batching, including oversize split and tail rebalance guarantees.
+- Modify `agents/cc-code-reviewer.md`: tell batch agents to treat `units[].scan_roots` as formal review roots and `context_roots` as read-only context.
+- Modify `references/examples.md`: refresh the large Maven example so it no longer shows 90k+ giant batches or 151-line orphan batches.
+- Modify `tests/test_phase11_plan_large_batches.sh`: keep current base coverage and add semantic-cost regression cases.
+- Modify `tests/test_phase13_show_large_batch_status.sh`: assert the status table remains readable with new schema fields.
+- Modify `tests/test_contract_docs.sh`: lock the refined planning contract.
 
 ---
 
-### Task 1: Lock The Contract In Tests
+### Task 1: Lock The Refined Contract
 
 **Files:**
 - Modify: `tests/test_contract_docs.sh`
 - Test: `tests/test_contract_docs.sh`
 
-- [ ] **Step 1: Add failing contract checks**
+- [ ] **Step 1: Add contract assertions**
 
-Append this block near the existing batch scanning contract section in `tests/test_contract_docs.sh`:
+Add this block near the existing Maven large repository batching contract checks:
 
 ```bash
-# === Maven large repository batching contracts ===
+require_literal "$SKILL_FILE" "semantic-cost batching" "large repo strategy must be semantic-cost batching"
+require_literal "$SKILL_FILE" "review_cost = java_loc + java_file_count * 25" "review cost formula must be documented"
+require_literal "$SKILL_FILE" "TARGET_BATCH_COST = 32000" "target review cost must be documented"
+require_literal "$SKILL_FILE" "HARD_MAX_BATCH_COST = 45000" "hard review cost must be documented"
+require_literal "$SKILL_FILE" "context_roots" "large repo plan must include bounded context roots"
+require_literal "$SKILL_FILE" "context cost" "large repo context cost must be bounded"
+require_literal "$SKILL_FILE" "work units" "large repo planner must use work units"
+require_literal "$SKILL_FILE" "oversized modules are split before plan emission" "oversized modules must be split, not only marked"
+require_literal "$SKILL_FILE" "tiny tail batches" "tiny tail batches must be rebalanced"
 
-grep -q "phase10-detect-code-intelligence.sh" "$SKILL_FILE"
-grep -q "phase11-plan-large-batches.sh" "$SKILL_FILE"
-grep -q "phase12-merge-large-batches.sh" "$SKILL_FILE"
-grep -q "phase13-show-large-batch-status.sh" "$SKILL_FILE"
+require_literal "$AGENT_FILE" "context_roots" "batch agent must understand context roots"
+require_literal "$AGENT_FILE" "Formal findings must point to locations inside scan_roots" "batch findings must stay inside scan roots"
+require_literal "$AGENT_FILE" "context_roots are read-only context" "agent must not count context roots as reviewed"
 
-grep -q "Maven 多模块" "$SKILL_FILE"
-grep -q "存量审查" "$SKILL_FILE"
-grep -q "全量代码" "$SKILL_FILE"
-grep -q "TOTAL_JAVA_LOC >= 120000" "$SKILL_FILE"
+require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "TARGET_BATCH_COST=32000" "planner must define target review cost"
+require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "HARD_MAX_BATCH_COST=45000" "planner must define hard review cost"
+require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "review_cost" "planner must compute review cost"
+require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "context_roots" "planner must emit context roots"
+require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "semantic-cost-batching" "planner must emit semantic-cost strategy"
+```
 
-grep -q "TARGET_BATCH_LOC = 25000" "$SKILL_FILE"
-grep -q "SOFT_MIN_BATCH_LOC = 15000" "$SKILL_FILE"
-grep -q "SOFT_MAX_BATCH_LOC = 30000" "$SKILL_FILE"
-grep -q "HARD_MAX_BATCH_LOC = 35000" "$SKILL_FILE"
+If `require_literal` is not already available in `tests/test_contract_docs.sh`, add this helper once near the top:
 
-grep -q "pending.*待执行" "$SKILL_FILE"
-grep -q "running.*执行中" "$SKILL_FILE"
-grep -q "completed.*已完成" "$SKILL_FILE"
-grep -q "failed.*失败待重试" "$SKILL_FILE"
-if grep -qE "partial|stale|skipped|部分完成|中断待确认|已跳过|reviewed_java_files|remaining_files" "$SKILL_FILE" "$AGENT_FILE"; then
-  echo "large repo v1 must keep atomic batch states only: pending/running/completed/failed" >&2
-  exit 1
-fi
-
-grep -q "scan_roots" "$SKILL_FILE"
-grep -q "正式问题.*scan_roots" "$SKILL_FILE"
-grep -q "jdtls.*跨目录" "$SKILL_FILE"
-grep -q "跨批依赖待复核" "$SKILL_FILE"
-
-grep -q "BATCH_PLAN_PATH" "$AGENT_FILE"
-grep -q "BATCH_STATUS_PATH" "$AGENT_FILE"
-grep -q "BATCH_RESULT_PATH" "$AGENT_FILE"
-grep -q "scan_roots" "$AGENT_FILE"
-grep -q "正式问题.*scan_roots" "$AGENT_FILE"
-grep -q "跨批依赖待复核" "$AGENT_FILE"
+```bash
+require_literal() {
+  local file="$1"
+  local text="$2"
+  local message="$3"
+  if ! grep -Fq "$text" "$file"; then
+    echo "$message" >&2
+    exit 1
+  fi
+}
 ```
 
 - [ ] **Step 2: Run the contract test and verify it fails**
@@ -87,293 +78,142 @@ Run:
 bash tests/test_contract_docs.sh
 ```
 
-Expected: FAIL because the scripts and contract wording do not exist yet.
+Expected: FAIL because the skill, agent, and planner still use the older module-batching contract.
 
 - [ ] **Step 3: Commit the failing contract test**
 
 ```bash
 git add tests/test_contract_docs.sh
-git commit -m "test: lock maven large repo batching contract"
+git commit -m "test: lock semantic cost batching contract"
 ```
 
 ---
 
-### Task 2: Add jdtls Capability Detection
+### Task 2: Add Planner Regressions For Oversized Modules And Tiny Tails
 
 **Files:**
-- Create: `scripts/phase10-detect-code-intelligence.sh`
-- Create: `tests/test_phase10_detect_code_intelligence.sh`
+- Modify: `tests/test_phase11_plan_large_batches.sh`
+- Test: `tests/test_phase11_plan_large_batches.sh`
 
-- [ ] **Step 1: Write tests for code intelligence detection**
+- [ ] **Step 1: Add a synthetic yudao-like fixture**
 
-Create `tests/test_phase10_detect_code_intelligence.sh`:
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/phase10.XXXXXX")"
-trap 'rm -rf "$TMP_DIR"' EXIT
-
-PROJECT_DIR="$TMP_DIR/demo"
-mkdir -p "$PROJECT_DIR/src/main/java/com/example"
-printf 'public class Demo {}\n' > "$PROJECT_DIR/src/main/java/com/example/Demo.java"
-
-OUTPUT="$(PATH="/usr/bin:/bin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR")"
-printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=false"
-printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_LANGUAGE=java"
-printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PROVIDER=none"
-printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_REASON="
-
-NON_JAVA="$TMP_DIR/non-java"
-mkdir -p "$NON_JAVA"
-OUTPUT="$(bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$NON_JAVA")"
-printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=false"
-printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_REASON=未识别Java项目"
-
-FAKE_BIN="$TMP_DIR/bin"
-FAKE_PLUGIN_ROOT="$TMP_DIR/plugins"
-mkdir -p "$FAKE_BIN" "$FAKE_PLUGIN_ROOT/claude-plugins-official/jdtls-lsp"
-cat > "$FAKE_BIN/jdtls" <<'SH'
-#!/bin/sh
-if [ "$1" = "--version" ]; then
-  echo "jdtls fake"
-  exit 0
-fi
-exit 0
-SH
-chmod +x "$FAKE_BIN/jdtls"
-
-OUTPUT="$(CLAUDE_CODE_PLUGIN_ROOTS="$FAKE_PLUGIN_ROOT" PATH="$FAKE_BIN:/usr/bin:/bin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR")"
-printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=true"
-printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PROVIDER=jdtls-lsp"
-printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_JDTLS_READY=true"
-printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PLUGIN_INSTALLED=true"
-```
-
-- [ ] **Step 2: Run the new test and verify it fails**
-
-Run:
+Add helper functions to `tests/test_phase11_plan_large_batches.sh` after the existing basic planner assertions:
 
 ```bash
-bash tests/test_phase10_detect_code_intelligence.sh
-```
-
-Expected: FAIL because `scripts/phase10-detect-code-intelligence.sh` does not exist.
-
-- [ ] **Step 3: Implement `phase10-detect-code-intelligence.sh`**
-
-Create `scripts/phase10-detect-code-intelligence.sh`:
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-PROJECT_DIR="${1:?请输入项目路径}"
-
-emit_unavailable() {
-  echo "CODE_INTELLIGENCE_AVAILABLE=false"
-  echo "CODE_INTELLIGENCE_LANGUAGE=java"
-  echo "CODE_INTELLIGENCE_PROVIDER=none"
-  echo "CODE_INTELLIGENCE_JDTLS_INSTALLED=${JDTLS_INSTALLED:-false}"
-  echo "CODE_INTELLIGENCE_JDTLS_READY=${JDTLS_READY:-false}"
-  echo "CODE_INTELLIGENCE_PLUGIN_INSTALLED=${PLUGIN_INSTALLED:-false}"
-  echo "CODE_INTELLIGENCE_REASON=$1"
-  echo "CODE_INTELLIGENCE_INSTALL_HINT=建议安装 jdtls 并启用 Claude Code jdtls-lsp 插件；不可用时将回退到 Maven 静态依赖分批"
-}
-
-is_java_project() {
-  [ -f "$PROJECT_DIR/pom.xml" ] ||
-    [ -f "$PROJECT_DIR/build.gradle" ] ||
-    [ -f "$PROJECT_DIR/build.gradle.kts" ] ||
-    find "$PROJECT_DIR" -name '*.java' -not -path '*/target/*' -not -path '*/build/*' -not -path '*/.git/*' -print -quit 2>/dev/null | grep -q .
-}
-
-if [ ! -d "$PROJECT_DIR" ]; then
-  emit_unavailable "项目路径不存在"
-  exit 0
-fi
-
-if ! is_java_project; then
-  emit_unavailable "未识别Java项目"
-  exit 0
-fi
-
-JDTLS_PATH="$(command -v jdtls 2>/dev/null || true)"
-JDTLS_INSTALLED=false
-JDTLS_READY=false
-PLUGIN_INSTALLED=false
-
-if [ -n "$JDTLS_PATH" ]; then
-  JDTLS_INSTALLED=true
-  if perl -e 'alarm 5; exec @ARGV' "$JDTLS_PATH" --version >/dev/null 2>&1; then
-    JDTLS_READY=true
-  fi
-fi
-
-plugin_installed() {
-  local roots="${CLAUDE_CODE_PLUGIN_ROOTS:-}"
-  local root
-  if [ -n "$roots" ]; then
-    IFS=':' read -r -a root_array <<< "$roots"
-    for root in "${root_array[@]}"; do
-      [ -d "$root/jdtls-lsp" ] && return 0
-      [ -d "$root/claude-plugins-official/jdtls-lsp" ] && return 0
-    done
-  fi
-  [ -d "$HOME/.claude/plugins/data/jdtls-lsp-claude-plugins-official" ]
-}
-
-if plugin_installed; then
-  PLUGIN_INSTALLED=true
-fi
-
-if [ "$JDTLS_INSTALLED" = true ] && [ "$JDTLS_READY" = true ] && [ "$PLUGIN_INSTALLED" = true ]; then
-  echo "CODE_INTELLIGENCE_AVAILABLE=true"
-  echo "CODE_INTELLIGENCE_LANGUAGE=java"
-  echo "CODE_INTELLIGENCE_PROVIDER=jdtls-lsp"
-  echo "CODE_INTELLIGENCE_COMMAND=$JDTLS_PATH"
-  echo "CODE_INTELLIGENCE_JDTLS_INSTALLED=true"
-  echo "CODE_INTELLIGENCE_JDTLS_READY=true"
-  echo "CODE_INTELLIGENCE_PLUGIN_INSTALLED=true"
-  echo "CODE_INTELLIGENCE_CAPABILITIES=definition,references,implementations,call_hierarchy,diagnostics"
-else
-  if [ "$JDTLS_INSTALLED" != true ] && [ "$PLUGIN_INSTALLED" != true ]; then
-    emit_unavailable "未检测到jdtls命令和Claude Code jdtls-lsp插件"
-  elif [ "$JDTLS_INSTALLED" != true ]; then
-    emit_unavailable "未检测到jdtls命令"
-  elif [ "$JDTLS_READY" != true ]; then
-    emit_unavailable "jdtls命令不可用或响应超时"
-  else
-    emit_unavailable "未检测到Claude Code jdtls-lsp插件"
-  fi
-fi
-```
-
-- [ ] **Step 4: Make it executable and run the test**
-
-Run:
-
-```bash
-chmod +x scripts/phase10-detect-code-intelligence.sh
-bash tests/test_phase10_detect_code_intelligence.sh
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add scripts/phase10-detect-code-intelligence.sh tests/test_phase10_detect_code_intelligence.sh
-git commit -m "feat: detect java code intelligence capability"
-```
-
----
-
-### Task 3: Implement Maven Module Batch Planning
-
-**Files:**
-- Create: `scripts/phase11-plan-large-batches.sh`
-- Create: `tests/test_phase11_plan_large_batches.sh`
-
-- [ ] **Step 1: Write planner tests**
-
-Create `tests/test_phase11_plan_large_batches.sh`:
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/phase11-large.XXXXXX")"
-trap 'rm -rf "$TMP_DIR"' EXIT
-
-PROJECT_DIR="$TMP_DIR/maven-large"
-mkdir -p "$PROJECT_DIR"
-cat > "$PROJECT_DIR/pom.xml" <<'XML'
+create_nested_module() {
+  local root="$1"
+  local module_path="$2"
+  local artifact="$3"
+  local package_path="$4"
+  local lines="$5"
+  mkdir -p "$root/$module_path/src/main/java/$package_path"
+  cat > "$root/$module_path/pom.xml" <<XML
 <project>
   <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>root</artifactId>
-  <version>1.0</version>
+  <artifactId>$artifact</artifactId>
+</project>
+XML
+  {
+    echo "package ${package_path//\//.};"
+    echo "public class Demo {"
+    seq 1 "$lines" | sed 's/.*/  public void m&() {}/'
+    echo "}"
+  } > "$root/$module_path/src/main/java/$package_path/Demo.java"
+}
+
+create_aggregator_module() {
+  local root="$1"
+  local module_path="$2"
+  shift 2
+  mkdir -p "$root/$module_path"
+  {
+    echo "<project><modelVersion>4.0.0</modelVersion><artifactId>$(basename "$module_path")</artifactId><packaging>pom</packaging><modules>"
+    for child in "$@"; do
+      echo "<module>$child</module>"
+    done
+    echo "</modules></project>"
+  } > "$root/$module_path/pom.xml"
+}
+```
+
+- [ ] **Step 2: Add the oversized split and tail rebalance test**
+
+Append this test case:
+
+```bash
+YUDAO_DIR="$TMP_DIR/yudao-like"
+mkdir -p "$YUDAO_DIR"
+cat > "$YUDAO_DIR/pom.xml" <<'XML'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <artifactId>yudao-like</artifactId>
   <packaging>pom</packaging>
   <modules>
-    <module>order-api</module>
-    <module>order-service</module>
-    <module>order-dao</module>
-    <module>inventory</module>
+    <module>yudao-module-mes</module>
+    <module>yudao-module-mall</module>
+    <module>yudao-framework</module>
+    <module>yudao-gateway</module>
+    <module>yudao-module-report</module>
+    <module>yudao-dependencies</module>
+    <module>yudao-server</module>
   </modules>
 </project>
 XML
 
-create_module() {
-  local module="$1"
-  local artifact="$2"
-  local dependency="${3:-}"
-  local lines="$4"
-  mkdir -p "$PROJECT_DIR/$module/src/main/java/com/example/$module"
-  cat > "$PROJECT_DIR/$module/pom.xml" <<XML
-<project>
-  <modelVersion>4.0.0</modelVersion>
-  <parent>
-    <groupId>com.example</groupId>
-    <artifactId>root</artifactId>
-    <version>1.0</version>
-  </parent>
-  <artifactId>$artifact</artifactId>
-  <dependencies>
-    $dependency
-  </dependencies>
-</project>
-XML
-  {
-    echo "package com.example.$module;"
-    echo "public class Demo {"
-    seq 1 "$lines" | sed 's/.*/  public void m&() {}/'
-    echo "}"
-  } > "$PROJECT_DIR/$module/src/main/java/com/example/$module/Demo.java"
-}
+create_aggregator_module "$YUDAO_DIR" "yudao-module-mes" "mes-api" "mes-server"
+create_nested_module "$YUDAO_DIR" "yudao-module-mes/mes-api" "mes-api" "com/example/mes/api" 4200
+create_nested_module "$YUDAO_DIR" "yudao-module-mes/mes-server" "mes-server" "com/example/mes/server/production" 26000
+create_nested_module "$YUDAO_DIR" "yudao-module-mes/mes-server" "mes-server" "com/example/mes/server/quality" 24000
+create_nested_module "$YUDAO_DIR" "yudao-module-mes/mes-server" "mes-server" "com/example/mes/server/material" 23000
 
-DEP_SERVICE='<dependency><groupId>com.example</groupId><artifactId>order-service</artifactId><version>1.0</version></dependency>'
-DEP_DAO='<dependency><groupId>com.example</groupId><artifactId>order-dao</artifactId><version>1.0</version></dependency>'
-create_module "order-api" "order-api" "$DEP_SERVICE" 8000
-create_module "order-service" "order-service" "$DEP_DAO" 10000
-create_module "order-dao" "order-dao" "" 5000
-create_module "inventory" "inventory" "" 6000
+create_aggregator_module "$YUDAO_DIR" "yudao-module-mall" "product" "trade" "promotion"
+create_nested_module "$YUDAO_DIR" "yudao-module-mall/product" "product" "com/example/mall/product" 7000
+create_nested_module "$YUDAO_DIR" "yudao-module-mall/trade" "trade" "com/example/mall/trade" 19500
+create_nested_module "$YUDAO_DIR" "yudao-module-mall/promotion" "promotion" "com/example/mall/promotion" 18500
 
-OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-010203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "standard" "main" "jdtls-lsp")"
+create_nested_module "$YUDAO_DIR" "yudao-framework" "yudao-framework" "com/example/framework" 23000
+create_nested_module "$YUDAO_DIR" "yudao-gateway" "yudao-gateway" "com/example/gateway" 1500
+create_nested_module "$YUDAO_DIR" "yudao-module-report" "yudao-module-report" "com/example/report" 1200
+mkdir -p "$YUDAO_DIR/yudao-dependencies"
+printf '<project><artifactId>yudao-dependencies</artifactId></project>\n' > "$YUDAO_DIR/yudao-dependencies/pom.xml"
+create_nested_module "$YUDAO_DIR" "yudao-server" "yudao-server" "com/example/server" 150
+
+OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-010203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static")"
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 
-test -f "$RUN_DIR/plan.json"
-test -f "$RUN_DIR/batches/batch-001.json"
-test -f "$RUN_DIR/results/batch-001.status.json"
-test -f "$RUN_DIR/progress.jsonl"
+jq -e '.strategy == "semantic-cost-batching"' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.budget.target_batch_cost == 32000' "$RUN_DIR/plan.json" >/dev/null
+jq -e '[.batches?] | length == 1' "$RUN_DIR/plan.json" >/dev/null 2>&1 || true
 
-grep -q '"strategy": "maven-module-batching"' "$RUN_DIR/plan.json"
-grep -q '"semantic_level": "jdtls-lsp"' "$RUN_DIR/plan.json"
-grep -q '"status": "pending"' "$RUN_DIR/results/batch-001.status.json"
-grep -q '"scan_roots"' "$RUN_DIR/batches/batch-001.json"
-grep -q '"order-api"' "$RUN_DIR/batches/batch-001.json"
-grep -q '"order-service"' "$RUN_DIR/batches/batch-001.json"
-grep -q '"order-dao"' "$RUN_DIR/batches/batch-001.json"
-grep -q '"from": "order-api"' "$RUN_DIR/batches/batch-001.json"
-grep -q '"to": "order-service"' "$RUN_DIR/batches/batch-001.json"
-if grep -q 'files.txt\|reviewed_java_files\|remaining_files' "$RUN_DIR"/batches/*.json "$RUN_DIR"/results/*.status.json; then
-  echo "planner must not create file manifests or file-level reviewed state" >&2
+if jq -e '.planned_java_loc > 35000 or .planned_review_cost > 45000' "$RUN_DIR"/batches/batch-*.json >/dev/null; then
+  echo "planner emitted an oversized batch" >&2
   exit 1
 fi
 
-OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-020304 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "standard" "main" "maven-static")"
-RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
-grep -q '"semantic_level": "maven-static"' "$RUN_DIR/plan.json"
+if jq -r '.units[].name? // empty' "$RUN_DIR"/batches/batch-*.json | grep -Fxq "yudao-module-mes"; then
+  echo "oversized top-level mes module must be split into smaller work units" >&2
+  exit 1
+fi
 
-STATUS_COUNT="$(find "$RUN_DIR/results" -name 'batch-*.status.json' | wc -l | tr -d ' ')"
-BATCH_COUNT="$(sed -n 's/.*"batch_count": \([0-9][0-9]*\).*/\1/p' "$RUN_DIR/plan.json" | head -1)"
-test "$STATUS_COUNT" = "$BATCH_COUNT"
+if jq -r 'select(.planned_java_loc < 5000) | .batch_id' "$RUN_DIR"/batches/batch-*.json | grep -q .; then
+  echo "tiny tail batch should have been rebalanced or converted to context" >&2
+  exit 1
+fi
+
+if jq -r '.units[].name? // empty' "$RUN_DIR"/batches/batch-*.json | grep -Fxq "yudao-dependencies"; then
+  echo "zero LOC dependency module must not be a scan unit" >&2
+  exit 1
+fi
+
+if jq -r '.units[].name? // empty' "$RUN_DIR"/batches/batch-*.json | grep -Fxq "yudao-server"; then
+  echo "tiny bootstrap server module should be context, not scan unit" >&2
+  exit 1
+fi
+
+jq -e '[.context_roots[]?] | length >= 1' "$RUN_DIR"/batches/batch-*.json >/dev/null
 ```
 
-- [ ] **Step 2: Run planner test and verify it fails**
+- [ ] **Step 3: Run the planner test and verify it fails**
 
 Run:
 
@@ -381,705 +221,472 @@ Run:
 bash tests/test_phase11_plan_large_batches.sh
 ```
 
-Expected: FAIL because the planner script does not exist.
+Expected: FAIL because the current planner still emits top-level oversized batches and tiny tails.
 
-- [ ] **Step 3: Implement the planner skeleton**
-
-Create `scripts/phase11-plan-large-batches.sh` with these top-level functions and constants:
+- [ ] **Step 4: Commit the failing planner regression**
 
 ```bash
-#!/bin/bash
-set -euo pipefail
+git add tests/test_phase11_plan_large_batches.sh
+git commit -m "test: cover semantic large repo batch planning"
+```
 
-PROJECT_DIR="${1:?请输入项目路径}"
-REVIEW_MODE="${2:?请输入审查模式}"
-BRANCH_NAME="${3:-no-branch}"
-SEMANTIC_LEVEL="${4:-maven-static}"
+---
 
-TARGET_BATCH_LOC=25000
-SOFT_MIN_BATCH_LOC=15000
-SOFT_MAX_BATCH_LOC=30000
-HARD_MAX_BATCH_LOC=35000
+### Task 3: Implement Work Unit Generation
 
-json_escape() {
-  printf '%s' "$1" | perl -0pe 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g; s/\t/\\t/g; s/\r/\\r/g'
+**Files:**
+- Modify: `scripts/phase11-plan-large-batches.sh`
+- Test: `tests/test_phase11_plan_large_batches.sh`
+
+- [ ] **Step 1: Add review-cost constants**
+
+Add near the existing LOC constants:
+
+```bash
+TARGET_BATCH_COST=32000
+SOFT_MIN_BATCH_COST=18000
+SOFT_MAX_BATCH_COST=38000
+HARD_MAX_BATCH_COST=45000
+TINY_BATCH_LOC=5000
+TINY_BATCH_COST=8000
+CONTEXT_COST_RATIO_PERCENT=25
+```
+
+- [ ] **Step 2: Add cost helpers**
+
+Add:
+
+```bash
+review_cost() {
+  local loc="$1"
+  local files="$2"
+  echo $((loc + files * 25))
 }
 
-branch_slug() {
-  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g; s/-\{2,\}/-/g; s/^-//; s/-$//' | cut -c1-40
+is_tiny_scan_unit() {
+  local loc="$1"
+  local cost="$2"
+  [ "$loc" -lt "$TINY_BATCH_LOC" ] && [ "$cost" -lt "$TINY_BATCH_COST" ]
 }
 
-short_hash() {
-  printf '%s' "$1" | shasum -a 256 | awk '{print substr($1, 1, 8)}'
-}
-
-module_loc() {
-  local dir="$1"
-  find "$dir" -name '*.java' -not -path '*/target/*' -print0 2>/dev/null |
-    xargs -0 wc -l 2>/dev/null |
-    awk 'END {print $1 + 0}'
-}
-
-module_files() {
-  local dir="$1"
-  find "$dir" -name '*.java' -not -path '*/target/*' 2>/dev/null | wc -l | tr -d ' '
+is_over_hard_limit() {
+  local loc="$1"
+  local cost="$2"
+  [ "$loc" -gt "$HARD_MAX_BATCH_LOC" ] || [ "$cost" -gt "$HARD_MAX_BATCH_COST" ]
 }
 ```
 
-- [ ] **Step 4: Add Maven reactor parsing**
+- [ ] **Step 3: Add recursive module extraction**
 
-Add static parsing helpers to the same script:
+Replace root-only module extraction with helpers that accept a POM path:
 
 ```bash
-extract_modules() {
-  perl -0ne 'while (/<module>\s*([^<]+?)\s*<\/module>/g) { print "$1\n" }' "$PROJECT_DIR/pom.xml"
-}
-
-artifact_id_for_pom() {
+extract_modules_from_pom() {
+  local pom_path="$1"
   perl -0ne '
-    s/<parent>.*?<\/parent>//sg;
-    if (/<artifactId>\s*([^<]+?)\s*<\/artifactId>/) { print $1; exit }
-  ' "$1"
-}
-
-dependencies_for_pom() {
-  perl -0ne '
-    while (/<dependency>.*?<artifactId>\s*([^<]+?)\s*<\/artifactId>.*?<\/dependency>/sg) {
-      print "$1\n";
+    while (/<module>\s*([^<]+?)\s*<\/module>/g) {
+      my $module = $1;
+      $module =~ s/&amp;/&/g;
+      $module =~ s/&lt;/</g;
+      $module =~ s/&gt;/>/g;
+      $module =~ s/&quot;/"/g;
+      $module =~ s/&apos;/'\''/g;
+      print "$module\n";
     }
-  ' "$1"
+  ' "$pom_path"
+}
+
+has_child_modules() {
+  local module_dir="$1"
+  [ -f "$module_dir/pom.xml" ] && extract_modules_from_pom "$module_dir/pom.xml" | grep -q .
 }
 ```
 
-- [ ] **Step 5: Add batch JSON/status writers**
+- [ ] **Step 4: Add package unit discovery**
 
-Implement writers that produce directory-level batch plans:
+Add:
 
 ```bash
-write_status() {
-  local status_path="$1"
-  local batch_id="$2"
-  local planned_loc="$3"
-  local planned_files="$4"
-  cat > "$status_path.tmp" <<JSON
-{
-  "schema_version": 1,
-  "run_id": "$(json_escape "$RUN_ID")",
-  "batch_id": "$batch_id",
-  "status": "pending",
-  "planned_java_loc": $planned_loc,
-  "planned_java_file_count": $planned_files,
-  "attempt": 0,
-  "started_at": null,
-  "finished_at": null,
-  "result_path": "results/$batch_id.md",
-  "finding_count": 0,
-  "error": null
-}
-JSON
-  mv "$status_path.tmp" "$status_path"
+discover_package_units() {
+  local module_name="$1"
+  local module_path="$2"
+  local java_root="$PROJECT_DIR/$module_path/src/main/java"
+  [ -d "$java_root" ] || return 0
+
+  find "$java_root" -mindepth 1 -maxdepth 3 -type d -print0 2>/dev/null |
+    while IFS= read -r -d '' dir; do
+      if find "$dir" -maxdepth 1 -name '*.java' -print -quit | grep -q .; then
+        local rel="${dir#$PROJECT_DIR/}"
+        local loc files cost unit_id
+        loc="$(module_loc "$dir")"
+        files="$(module_files "$dir")"
+        cost="$(review_cost "$loc" "$files")"
+        unit_id="package:${rel}"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$unit_id" "package" "$module_name:$rel" "$rel" "$loc" "$files" "$cost" "$module_name"
+      fi
+    done
 }
 ```
 
-Use `batch-001`, `batch-002`, etc. for ids. Store `scan_roots` as module paths, not file paths.
+- [ ] **Step 5: Build `units.tsv`**
 
-- [ ] **Step 6: Add simple dependency-aware grouping**
-
-Implement v1 grouping with these concrete rules:
+Replace the current `MODULES_TSV` planning source with `UNITS_TSV`. Each row format is:
 
 ```text
-For each unassigned module sorted by risk score:
-  start a new batch with that module
-  add direct reactor dependencies if they are unassigned and total LOC <= SOFT_MAX_BATCH_LOC
-  if current batch LOC < SOFT_MIN_BATCH_LOC, add the nearest unassigned module with the strongest dependency relation
-  if any single module LOC > HARD_MAX_BATCH_LOC, emit one batch for the module path and set split_reason="oversized_module"
+unit_id<TAB>kind<TAB>name<TAB>path<TAB>loc<TAB>files<TAB>cost<TAB>parent_module<TAB>context_only<TAB>risk
 ```
 
-The oversized-module split can be improved later; v1 must mark it clearly but may keep the module as one batch if no safe package directories are detected. If it stays above hard max, set `"large_batch": true` and `"split_reason": "oversized_module_needs_package_split"` so the status table is honest.
+Implementation rules:
 
-- [ ] **Step 7: Run planner tests**
+```bash
+# Pseudocode to translate directly into the script:
+# for each root module:
+#   compute loc/files/cost
+#   if loc == 0: add context_only row
+#   else if tiny and module name matches server|dependencies|bom: add context_only row
+#   else if over hard and has child modules: add child submodule rows
+#   else if over hard: add package rows
+#   else: add module row
+# after adding child rows, recursively split any child row still over hard by package roots
+```
+
+Use concrete `case` rules for context-only modules:
+
+```bash
+case "$module" in
+  *dependencies*|*bom*|*-server|*server) context_only=true ;;
+  *) context_only=false ;;
+esac
+```
+
+- [ ] **Step 6: Emit plan budget fields**
+
+In `plan.json`, change:
+
+```json
+"strategy": "maven-module-batching"
+```
+
+to:
+
+```json
+"strategy": "semantic-cost-batching"
+```
+
+and include:
+
+```json
+"budget": {
+  "target_batch_loc": 25000,
+  "soft_min_batch_loc": 15000,
+  "soft_max_batch_loc": 30000,
+  "hard_max_batch_loc": 35000,
+  "target_batch_cost": 32000,
+  "soft_min_batch_cost": 18000,
+  "soft_max_batch_cost": 38000,
+  "hard_max_batch_cost": 45000
+}
+```
+
+- [ ] **Step 7: Run the focused planner test**
 
 Run:
 
 ```bash
-chmod +x scripts/phase11-plan-large-batches.sh
+bash tests/test_phase11_plan_large_batches.sh
+```
+
+Expected: still FAIL because packing and JSON emission do not yet use `units`.
+
+- [ ] **Step 8: Commit work-unit generation**
+
+```bash
+git add scripts/phase11-plan-large-batches.sh
+git commit -m "feat: build semantic work units for large repo batches"
+```
+
+---
+
+### Task 4: Implement Semantic-Cost Packing And Tail Rebalancing
+
+**Files:**
+- Modify: `scripts/phase11-plan-large-batches.sh`
+- Test: `tests/test_phase11_plan_large_batches.sh`
+
+- [ ] **Step 1: Add unit field accessors**
+
+Add:
+
+```bash
+unit_field() {
+  local unit_id="$1"
+  local field="$2"
+  awk -F '\t' -v unit_id="$unit_id" -v field="$field" '
+    $1 == unit_id {
+      if (field == "kind") print $2;
+      else if (field == "name") print $3;
+      else if (field == "path") print $4;
+      else if (field == "loc") print $5;
+      else if (field == "files") print $6;
+      else if (field == "cost") print $7;
+      else if (field == "parent") print $8;
+      else if (field == "context_only") print $9;
+      else if (field == "risk") print $10;
+      exit
+    }
+  ' "$UNITS_TSV"
+}
+```
+
+- [ ] **Step 2: Build affinity edges**
+
+Add `UNIT_EDGES_TSV` rows:
+
+```text
+from_unit<TAB>to_unit<TAB>weight<TAB>reason
+```
+
+Use these deterministic static weights:
+
+```text
+same parent module: 80
+Maven reactor dependency: 70
+same top-level prefix: 50
+bootstrap context to server dependency: 40
+shared domain token: 30
+```
+
+The first implementation can add same-parent and shared-domain edges without waiting for jdtls.
+
+- [ ] **Step 3: Replace module packing with unit packing**
+
+Use this concrete loop structure:
+
+```bash
+ASSIGNED_UNITS="|"
+BATCH_IDS=()
+
+while has_unassigned_scan_units; do
+  seed="$(next_unassigned_unit_by_risk)"
+  CURRENT_UNITS=()
+  CURRENT_CONTEXT_UNITS=()
+  CURRENT_LOC=0
+  CURRENT_FILES=0
+  CURRENT_COST=0
+  add_unit_to_batch "$seed"
+
+  while candidate="$(best_affinity_candidate_under_soft_max)"; [ -n "$candidate" ]; do
+    add_unit_to_batch "$candidate"
+  done
+
+  if [ "$CURRENT_LOC" -lt "$SOFT_MIN_BATCH_LOC" ] && [ "$CURRENT_COST" -lt "$SOFT_MIN_BATCH_COST" ]; then
+    candidate="$(best_low_cost_candidate_under_hard_max)"
+    [ -n "$candidate" ] && add_unit_to_batch "$candidate"
+  fi
+
+  validate_current_batch_not_over_hard
+  write_current_batch
+done
+```
+
+- [ ] **Step 4: Add bounded context roots**
+
+For each batch, attach context-only units with affinity to the batch until:
+
+```bash
+context_cost <= CURRENT_COST * CONTEXT_COST_RATIO_PERCENT / 100
+```
+
+If a context-only unit is too large, skip it and rely on jdtls or module summaries rather than expanding the batch.
+
+- [ ] **Step 5: Add tail rebalancing**
+
+Before writing final batch JSON files, run:
+
+```text
+for each planned batch with loc < 5000 and cost < 8000:
+  find target batch with highest affinity and hard-limit headroom
+  if found: move its scan units into target and mark split_reason tail_rebalanced
+  else if all units are tiny/bootstrap/dependency: move to context_roots of strongest batch
+  else keep it and set split_reason tiny_batch_no_legal_merge
+```
+
+Keep this implementation simple by storing draft batches in temporary TSV rows before writing JSON:
+
+```text
+batch_id<TAB>unit_id
+batch_id<TAB>context_unit_id
+```
+
+- [ ] **Step 6: Emit new batch JSON schema**
+
+Each batch JSON must include:
+
+```json
+{
+  "strategy": "semantic-cost-batching",
+  "planned_review_cost": 31250,
+  "planned_java_loc": 24800,
+  "planned_java_file_count": 186,
+  "scan_roots": [],
+  "context_roots": [],
+  "units": [],
+  "affinity_edges": [],
+  "split_reason": "dependency_affinity_group"
+}
+```
+
+Keep a compatibility `modules` array with `{ "name": "...", "path": "..." }` entries generated from `units` so phase13 and older docs/tests continue to work during the transition.
+
+- [ ] **Step 7: Run planner test**
+
+Run:
+
+```bash
 bash tests/test_phase11_plan_large_batches.sh
 ```
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 8: Commit semantic packing**
 
 ```bash
 git add scripts/phase11-plan-large-batches.sh tests/test_phase11_plan_large_batches.sh
-git commit -m "feat: plan maven large repo batches"
+git commit -m "feat: pack large repo batches by semantic cost"
 ```
 
 ---
 
-### Task 4: Add Status Console
+### Task 5: Update Status, Merge, Skill, Agent, And Examples
 
 **Files:**
-- Create: `scripts/phase13-show-large-batch-status.sh`
-- Create: `tests/test_phase13_show_large_batch_status.sh`
-
-- [ ] **Step 1: Write status console test**
-
-Create `tests/test_phase13_show_large_batch_status.sh`:
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/phase13.XXXXXX")"
-trap 'rm -rf "$TMP_DIR"' EXIT
-
-PROJECT_DIR="$TMP_DIR/project"
-RUN_DIR="$PROJECT_DIR/.cc-code-reviewer/runs/20260528-010203-main-standard-full-large-maven"
-mkdir -p "$RUN_DIR/batches" "$RUN_DIR/results"
-
-cat > "$RUN_DIR/plan.json" <<JSON
-{"run_id":"20260528-010203-main-standard-full-large-maven","project_name":"project","project_dir":"$PROJECT_DIR","review_mode":"standard","review_scope":"全量代码","semantic_level":"maven-static","total_java_loc":500000,"total_java_file_count":4000,"batch_count":2}
-JSON
-
-cat > "$RUN_DIR/batches/batch-001.json" <<JSON
-{"batch_id":"batch-001","planned_java_loc":24800,"planned_java_file_count":186,"scan_roots":["user-api","user-service"],"modules":[{"name":"user-api"},{"name":"user-service"}]}
-JSON
-cat > "$RUN_DIR/batches/batch-002.json" <<JSON
-{"batch_id":"batch-002","planned_java_loc":26100,"planned_java_file_count":201,"scan_roots":["order-core","order-dao"],"modules":[{"name":"order-core"},{"name":"order-dao"}]}
-JSON
-
-cat > "$RUN_DIR/results/batch-001.status.json" <<'JSON'
-{"batch_id":"batch-001","status":"completed","planned_java_loc":24800,"planned_java_file_count":186,"finished_at":"2026-05-28T14:30:00Z","finding_count":5}
-JSON
-cat > "$RUN_DIR/results/batch-002.status.json" <<'JSON'
-{"batch_id":"batch-002","status":"failed","planned_java_loc":26100,"planned_java_file_count":201,"finished_at":"2026-05-28T15:30:00Z","error":"上次执行中断，需要整批重跑"}
-JSON
-
-OUTPUT="$(bash "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR")"
-printf '%s\n' "$OUTPUT" | grep -q "大仓库审查任务"
-printf '%s\n' "$OUTPUT" | grep -q "已完成"
-printf '%s\n' "$OUTPUT" | grep -q "失败待重试"
-printf '%s\n' "$OUTPUT" | grep -q "user-api,user-service"
-printf '%s\n' "$OUTPUT" | grep -q "Java 行覆盖: 24,800 / 500,000"
-if printf '%s\n' "$OUTPUT" | grep -qE "pending|running|completed|failed"; then
-  echo "status console must show Chinese labels, not internal enum values" >&2
-  exit 1
-fi
-```
-
-- [ ] **Step 2: Run status test and verify it fails**
-
-Run:
-
-```bash
-bash tests/test_phase13_show_large_batch_status.sh
-```
-
-Expected: FAIL because the status console script does not exist.
-
-- [ ] **Step 3: Implement status console**
-
-Create `scripts/phase13-show-large-batch-status.sh` with:
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-PROJECT_DIR="${1:?请输入项目路径}"
-RUNS_DIR="$PROJECT_DIR/.cc-code-reviewer/runs"
-
-json_value() {
-  local key="$1"
-  local file="$2"
-  perl -0ne '
-    BEGIN { our $key = shift @ARGV; }
-    our $key;
-    if (/"\Q$key\E"\s*:\s*("(?:\\.|[^"\\])*"|[0-9]+|true|false|null)/s) {
-      my $v = $1;
-      if ($v =~ /^"/) { $v = substr($v, 1, -1); $v =~ s/\\(["\\\/])/$1/g; }
-      print $v unless $v eq "null";
-      exit;
-    }
-  ' "$key" "$file"
-}
-
-status_label() {
-  case "$1" in
-    pending) echo "待执行" ;;
-    running) echo "执行中" ;;
-    completed) echo "已完成" ;;
-    failed) echo "失败待重试" ;;
-    *) echo "未知" ;;
-  esac
-}
-
-format_num() {
-  printf "%'d" "$1" 2>/dev/null || printf "%s" "$1"
-}
-```
-
-Find the newest run with `ls -td "$RUNS_DIR"/*-large-maven`, read its plan, total completed LOC from completed statuses, and print a fixed-width table:
-
-```bash
-printf '%-5s %-12s %-10s %-6s %s\n' "批次" "状态" "行数" "文件" "模块"
-```
-
-- [ ] **Step 4: Run status console test**
-
-Run:
-
-```bash
-chmod +x scripts/phase13-show-large-batch-status.sh
-bash tests/test_phase13_show_large_batch_status.sh
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add scripts/phase13-show-large-batch-status.sh tests/test_phase13_show_large_batch_status.sh
-git commit -m "feat: show large review batch status"
-```
-
----
-
-### Task 5: Add Deterministic Merge
-
-**Files:**
-- Create: `scripts/phase12-merge-large-batches.sh`
-- Create: `tests/test_phase12_merge_large_batches.sh`
-
-- [ ] **Step 1: Write merge tests**
-
-Create `tests/test_phase12_merge_large_batches.sh`:
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/phase12-large.XXXXXX")"
-trap 'rm -rf "$TMP_DIR"' EXIT
-
-RUN_DIR="$TMP_DIR/run"
-mkdir -p "$RUN_DIR/batches" "$RUN_DIR/results"
-
-cat > "$RUN_DIR/plan.json" <<'JSON'
-{"run_id":"run-1","project_name":"demo","review_mode":"standard","review_scope":"全量代码","semantic_level":"maven-static","total_java_loc":50000,"total_java_file_count":400,"batch_count":2}
-JSON
-
-cat > "$RUN_DIR/batches/batch-001.json" <<'JSON'
-{"batch_id":"batch-001","planned_java_loc":25000,"planned_java_file_count":200,"scan_roots":["order-api"],"modules":[{"name":"order-api"}]}
-JSON
-cat > "$RUN_DIR/batches/batch-002.json" <<'JSON'
-{"batch_id":"batch-002","planned_java_loc":25000,"planned_java_file_count":200,"scan_roots":["payment"],"modules":[{"name":"payment"}]}
-JSON
-
-cat > "$RUN_DIR/results/batch-001.status.json" <<JSON
-{"batch_id":"batch-001","status":"completed","planned_java_loc":25000,"planned_java_file_count":200,"result_path":"$RUN_DIR/results/batch-001.md","finding_count":1}
-JSON
-cat > "$RUN_DIR/results/batch-001.md" <<'MD'
-# Batch 001
-
-## 发现列表
-
-### P1 | [维度1-正确性] 示例问题
-- 文件：order-api/src/main/java/Demo.java:10
-- 置信度：高
-- 证据：示例证据
-- 影响：示例影响
-- 建议：示例建议
-
-## 跨批依赖待复核
-- payment 模块调用链需要在对应批次复核
-MD
-
-cat > "$RUN_DIR/results/batch-002.status.json" <<'JSON'
-{"batch_id":"batch-002","status":"failed","planned_java_loc":25000,"planned_java_file_count":200,"error":"subagent failed"}
-JSON
-
-OUTPUT="$(bash "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "$RUN_DIR")"
-FINAL_REPORT="$(printf '%s\n' "$OUTPUT" | sed -n 's/^FINAL_REPORT_PATH=//p')"
-
-test -f "$RUN_DIR/summary.json"
-test -f "$FINAL_REPORT"
-grep -q '"completed_batches": 1' "$RUN_DIR/summary.json"
-grep -q '"failed_batches": 1' "$RUN_DIR/summary.json"
-grep -q '"java_loc_coverage_percent": 50' "$RUN_DIR/summary.json"
-grep -q '\[阶段性\]' "$FINAL_REPORT"
-grep -q "示例问题" "$FINAL_REPORT"
-grep -q "跨批依赖线索" "$FINAL_REPORT"
-grep -q "payment 模块调用链" "$FINAL_REPORT"
-```
-
-- [ ] **Step 2: Run merge test and verify it fails**
-
-Run:
-
-```bash
-bash tests/test_phase12_merge_large_batches.sh
-```
-
-Expected: FAIL because the merge script does not exist.
-
-- [ ] **Step 3: Implement merge script**
-
-Create `scripts/phase12-merge-large-batches.sh` using the same `json_value` helper from Task 4. Implement:
-
-```text
-read plan.json
-for each batches/batch-*.json:
-  read matching results/batch-XXX.status.json
-  if status=completed and result_path exists:
-    include result markdown
-    add planned_java_loc and planned_java_file_count to covered totals
-  else:
-    count as failed or pending
-write summary.json
-write final/code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
-```
-
-Report title logic:
-
-```bash
-if [ "$COMPLETED_BATCHES" -lt "$BATCH_COUNT" ]; then
-  REPORT_TITLE="[阶段性] 代码审查报告 - $PROJECT_NAME"
-else
-  REPORT_TITLE="代码审查报告 - $PROJECT_NAME"
-fi
-```
-
-The final report must include:
-
-```markdown
-## 大仓库审查执行摘要
-
-- Run ID：
-- 批次完成：
-- Java 行覆盖：
-- Java 文件覆盖：
-- 语义增强：
-- 未完成批次：
-```
-
-- [ ] **Step 4: Run merge test**
-
-Run:
-
-```bash
-chmod +x scripts/phase12-merge-large-batches.sh
-bash tests/test_phase12_merge_large_batches.sh
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add scripts/phase12-merge-large-batches.sh tests/test_phase12_merge_large_batches.sh
-git commit -m "feat: merge completed large review batches"
-```
-
----
-
-### Task 6: Update Batch Agent Contract
-
-**Files:**
-- Modify: `agents/cc-code-reviewer.md`
-- Test: `tests/test_contract_docs.sh`
-
-- [ ] **Step 1: Update the agent batch input contract**
-
-In `agents/cc-code-reviewer.md`, add a section named `大型仓库批次模式` near the existing batch output mode instructions. Include this exact contract text:
-
-```markdown
-## 大型仓库批次模式
-
-当参数中包含 `BATCH_PLAN_PATH`、`BATCH_STATUS_PATH`、`BATCH_RESULT_PATH` 时，进入大型仓库批次模式。
-
-执行规则：
-- 必须先读取 `BATCH_PLAN_PATH`。
-- `scan_roots` 是本批正式审查边界。
-- 正式问题的位置必须位于 `scan_roots` 内。
-- 允许使用 jdtls 跨目录查询 definition、references、implementations、call hierarchy 来理解调用链。
-- `scan_roots` 外的代码只能作为外部依赖上下文，不得作为本批正式问题位置。
-- 如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」，不计入正式问题数量。
-- 批次是原子的；不要写 partial、stale、skipped 或文件级 reviewed 状态。
-- 完整写入 `BATCH_RESULT_PATH` 后，才能把 `BATCH_STATUS_PATH` 写为 `completed`。
-- 无法完整完成时，把 `BATCH_STATUS_PATH` 写为 `failed`，并写明错误原因。
-```
-
-- [ ] **Step 2: Add batch status write examples**
-
-Add status examples:
-
-```json
-{
-  "schema_version": 1,
-  "batch_id": "batch-001",
-  "status": "completed",
-  "planned_java_loc": 24800,
-  "planned_java_file_count": 186,
-  "finding_count": 12,
-  "result_path": "results/batch-001.md",
-  "error": null
-}
-```
-
-```json
-{
-  "schema_version": 1,
-  "batch_id": "batch-001",
-  "status": "failed",
-  "planned_java_loc": 24800,
-  "planned_java_file_count": 186,
-  "finding_count": 0,
-  "result_path": null,
-  "error": "上次执行中断，需要整批重跑"
-}
-```
-
-- [ ] **Step 3: Run contract test**
-
-Run:
-
-```bash
-bash tests/test_contract_docs.sh
-```
-
-Expected: still FAIL until the skill is updated in Task 7, but agent-related grep checks should now pass.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add agents/cc-code-reviewer.md
-git commit -m "docs: define large batch agent contract"
-```
-
----
-
-### Task 7: Update Scan Skill Orchestration
-
-**Files:**
+- Modify: `scripts/phase13-show-large-batch-status.sh`
+- Modify: `scripts/phase12-merge-large-batches.sh`
 - Modify: `skills/cc-code-reviewer/SKILL.md`
-- Test: `tests/test_contract_docs.sh`
-
-- [ ] **Step 1: Add pre-scan jdtls detection**
-
-In `skills/cc-code-reviewer/SKILL.md`, update the pre-scan script list to run phase10 after phase3 and before phase4:
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR"
-# 输出：CODE_INTELLIGENCE_AVAILABLE=true|false CODE_INTELLIGENCE_PROVIDER=jdtls-lsp|none ...
-```
-
-Update the pre-scan summary with:
-
-```text
-🧠 代码智能：{CODE_INTELLIGENCE_AVAILABLE=true 时显示 "✅ jdtls-lsp 可用，可用于跨目录调用链理解" / false 时显示 "⚠️ 未启用 jdtls-lsp，将使用 Maven 静态依赖分批；建议安装 jdtls 并启用 jdtls-lsp 提升跨模块理解质量"}
-```
-
-- [ ] **Step 2: Add large mode trigger wording**
-
-Add a section `### Maven 大仓库模式判定`:
-
-```markdown
-仅当以下条件全部满足时进入 Maven 大仓库模式：
-- `PROJECT_TYPE=maven-multi`
-- `REVIEW_TYPE=存量审查`
-- `REVIEW_SCOPE=全量代码`
-- `TOTAL_JAVA_LOC >= 120000`
-
-判定公式：
-```text
-TOTAL_JAVA_LOC >= 120000
-TARGET_BATCH_LOC = 25000
-SOFT_MIN_BATCH_LOC = 15000
-SOFT_MAX_BATCH_LOC = 30000
-HARD_MAX_BATCH_LOC = 35000
-```
-```
-
-- [ ] **Step 3: Add planning command and status display**
-
-Add this execution contract before batch agent launch:
-
-```bash
-SEMANTIC_LEVEL="maven-static"
-if [ "$CODE_INTELLIGENCE_AVAILABLE" = "true" ]; then
-  SEMANTIC_LEVEL="jdtls-lsp"
-fi
-
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "$SEMANTIC_LEVEL"
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR"
-```
-
-- [ ] **Step 4: Add per-run execution count question**
-
-Add an AskUserQuestion step shown only in Maven large mode:
-
-```text
-question: "请选择本轮执行批次"
-header: "执行批次"
-options:
-  - label: "执行 3 批"
-    description: "适合额度紧张或先试跑"
-  - label: "执行 5 批（推荐）"
-    description: "适合大多数 50 万行级项目，便于跨天继续"
-  - label: "执行 10 批"
-    description: "适合当前额度充足时加速推进"
-  - label: "执行全部未完成批次"
-    description: "一次性执行所有待执行和失败待重试批次"
-multiSelect: false
-```
-
-- [ ] **Step 5: Add resume behavior**
-
-Document:
-
-```text
-恢复时必须读取兼容 RUN_DIR 的 plan.json。
-running 状态一律转为 failed，错误写为“上次执行中断，需要整批重跑”。
-completed 批次默认跳过。
-pending 和 failed 批次按用户本轮执行批次数调度。
-```
-
-- [ ] **Step 6: Add batch prompt injection**
-
-For each selected batch, inject:
-
-```markdown
-| 运行目录 | {RUN_DIR} |
-| 批次计划文件 | {BATCH_PLAN_PATH} |
-| 批次状态文件 | {BATCH_STATUS_PATH} |
-| 批次结果文件 | {BATCH_RESULT_PATH} |
-| 审查输出模式 | 仅发现清单 |
-
-### 本批审查边界
-请读取 `BATCH_PLAN_PATH`，以其中 `scan_roots` 作为正式审查边界。
-允许使用 jdtls 跨目录理解调用链，但正式问题必须位于 `scan_roots` 内。
-```
-
-- [ ] **Step 7: Add merge command**
-
-After selected batch execution:
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merge-large-batches.sh" "$RUN_DIR"
-```
-
-Document that staged reports are allowed and full reports require all batches completed.
-
-- [ ] **Step 8: Run contract test**
-
-Run:
-
-```bash
-bash tests/test_contract_docs.sh
-```
-
-Expected: PASS.
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add skills/cc-code-reviewer/SKILL.md tests/test_contract_docs.sh
-git commit -m "docs: orchestrate maven large repo batching"
-```
-
----
-
-### Task 8: Update Examples And Report Format
-
-**Files:**
+- Modify: `agents/cc-code-reviewer.md`
 - Modify: `references/examples.md`
-- Modify: `references/report-format.md`
-- Modify: `README.md`
-- Modify: `AGENTS.md`
-- Modify: `CLAUDE.md`
+- Test: `tests/test_phase13_show_large_batch_status.sh`
 - Test: `tests/test_contract_docs.sh`
 
-- [ ] **Step 1: Add report format section**
+- [ ] **Step 1: Update phase13 status display**
 
-In `references/report-format.md`, add:
-
-```markdown
-## 大仓库审查执行摘要
-
-分批审查报告必须包含：
-- Run ID
-- 审查分支
-- 审查模式
-- 语义增强：`jdtls-lsp` 或 `maven-static`
-- 批次完成情况：已完成 / 失败待重试 / 待执行
-- Java 行覆盖率
-- Java 文件覆盖率
-- 未完成批次说明
-
-阶段性报告标题必须包含 `[阶段性]`。
-完整报告仅在所有批次为 `已完成` 后生成。
-```
-
-- [ ] **Step 2: Add examples**
-
-In `references/examples.md`, add a section `## 示例：Maven 大仓库分批审查` with this flow:
+Teach `phase13-show-large-batch-status.sh` to read:
 
 ```text
-用户：帮我审查 /repo/large-maven
-系统：预扫描完成，识别 Maven 多模块，500,000 行，jdtls-lsp 可用
-系统：进入 Maven 大仓库模式，预计 20 批
-系统：展示批次状态表，状态使用 待执行 / 执行中 / 已完成 / 失败待重试
-AskUserQuestion：请选择本轮执行批次
-用户：执行 5 批（推荐）
-系统：执行 batch-001 到 batch-005
-系统：生成阶段性报告或等待继续
-次日用户：继续审查 /repo/large-maven
-系统：读取 RUN_DIR，跳过已完成批次，继续待执行批次
+planned_review_cost
+units[].name
+context_roots
+split_reason
 ```
 
-- [ ] **Step 3: Update README/AGENTS/CLAUDE only with stable user-facing contract**
-
-Add concise mentions:
+Fallback behavior:
 
 ```text
-Maven 多模块存量全量审查超过阈值时，插件会生成可恢复的大仓库批次任务。批次是原子的，已完成批次跨会话保留，未完成批次整批重跑。
+if units exists: display units names
+else if modules exists: display modules names
+else: display scan_roots
 ```
 
-- [ ] **Step 4: Run contract test**
+Keep internal enum labels hidden from user-facing output.
+
+- [ ] **Step 2: Update phase13 test**
+
+Extend `tests/test_phase13_show_large_batch_status.sh` fixture batch JSON:
+
+```json
+{
+  "batch_id": "batch-001",
+  "strategy": "semantic-cost-batching",
+  "planned_review_cost": 31250,
+  "planned_java_loc": 24800,
+  "planned_java_file_count": 186,
+  "context_roots": ["yudao-server"],
+  "units": [
+    {"name": "user-api", "path": "user-api"},
+    {"name": "user-service", "path": "user-service"}
+  ],
+  "split_reason": "dependency_affinity_group"
+}
+```
+
+Assert:
+
+```bash
+printf '%s\n' "$OUTPUT" | grep -q "user-api,user-service"
+printf '%s\n' "$OUTPUT" | grep -q "dependency_affinity_group"
+```
+
+- [ ] **Step 3: Keep phase12 coverage file-based**
+
+In `scripts/phase12-merge-large-batches.sh`, ensure summary wording and JSON continue to use Java files as the coverage denominator. Do not introduce LOC coverage as the primary metric. If the script displays LOC, label it as planning scale, not coverage.
+
+- [ ] **Step 4: Update skill contract**
+
+In `skills/cc-code-reviewer/SKILL.md`, replace the old planner description with:
+
+```text
+Maven 大仓库规划使用 semantic-cost batching：
+- 先生成 work units，而不是直接把顶层 Maven module 当批次
+- review_cost = java_loc + java_file_count * 25
+- 超过 HARD_MAX_BATCH_LOC 或 HARD_MAX_BATCH_COST 的 unit 必须继续拆分
+- 0 行依赖/BOM 模块与极小 bootstrap 模块默认进入 context_roots，不单独成批
+- tiny tail batches 必须合并、转为 context，或写明无法合法合并的原因
+- context_roots 只用于理解，不计入 Java 文件覆盖率
+```
+
+- [ ] **Step 5: Update agent contract**
+
+In `agents/cc-code-reviewer.md`, add:
+
+```text
+批次计划中的 `units[].scan_roots` 和顶层 `scan_roots` 是正式审查边界。
+`context_roots` 只能作为只读上下文使用，不得计入已审查 Java 文件，不得从 context_roots 产出正式问题。
+正式问题必须定位在 scan_roots 内；context_roots 中发现的风险只能写入跨批依赖待复核。
+```
+
+- [ ] **Step 6: Update examples**
+
+In `references/examples.md`, adjust the large Maven example table so no batch is above 35k and no tiny batch appears alone. Use a yudao-like example:
+
+```text
+batch-001 待执行 28,400 310 yudao-module-mes:production
+batch-002 待执行 27,900 295 yudao-module-mes:quality,material
+batch-003 待执行 26,800 276 yudao-module-mall:trade,statistics
+batch-004 待执行 25,700 260 yudao-module-mall:promotion,product
+batch-005 待执行 24,900 403 yudao-gateway,yudao-framework context:yudao-server
+```
+
+- [ ] **Step 7: Run focused tests**
 
 Run:
 
 ```bash
+bash tests/test_phase13_show_large_batch_status.sh
 bash tests/test_contract_docs.sh
 ```
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit contract and display updates**
 
 ```bash
-git add references/examples.md references/report-format.md README.md AGENTS.md CLAUDE.md
-git commit -m "docs: document maven large repo review flow"
+git add scripts/phase13-show-large-batch-status.sh scripts/phase12-merge-large-batches.sh skills/cc-code-reviewer/SKILL.md agents/cc-code-reviewer.md references/examples.md tests/test_phase13_show_large_batch_status.sh tests/test_contract_docs.sh
+git commit -m "docs: update semantic large repo batch contract"
 ```
 
 ---
 
-### Task 9: Full Verification
+### Task 6: Run Full Verification And Clean Up
 
 **Files:**
-- Test: `tests/run_all.sh`
+- Verify all touched files.
 
-- [ ] **Step 1: Run focused tests**
+- [ ] **Step 1: Run targeted tests**
 
 Run:
 
 ```bash
-bash tests/test_phase10_detect_code_intelligence.sh
 bash tests/test_phase11_plan_large_batches.sh
-bash tests/test_phase12_merge_large_batches.sh
 bash tests/test_phase13_show_large_batch_status.sh
 bash tests/test_contract_docs.sh
 ```
@@ -1094,9 +701,22 @@ Run:
 bash tests/run_all.sh
 ```
 
-Expected: all PASS, including `git diff --check`.
+Expected: all tests PASS, including `git diff --check`.
 
-- [ ] **Step 3: Inspect worktree**
+- [ ] **Step 3: Inspect generated yudao-like plan**
+
+Run the planner test once and inspect the latest temporary failure output only if a test fails. If the test passes, manually run a local fixture only when needed. The final implementation must satisfy:
+
+```text
+no batch planned_java_loc > 35000
+no batch planned_review_cost > 45000
+no standalone batch below 5000 LOC unless split_reason=tiny_batch_no_legal_merge
+no zero-LOC scan unit
+context_roots present for bootstrap/dependency modules when applicable
+strategy=semantic-cost-batching
+```
+
+- [ ] **Step 4: Check worktree**
 
 Run:
 
@@ -1104,45 +724,21 @@ Run:
 git status --short
 ```
 
-Expected: only intentional files are modified.
+Expected: only intentional files changed. Do not revert unrelated pre-existing user changes.
 
-- [ ] **Step 4: Commit any verification-only fixes**
+- [ ] **Step 5: Final commit if needed**
 
-If verification required small fixes, commit them:
+If Tasks 1-5 were not committed one by one, create a final commit:
 
 ```bash
-git add scripts tests skills agents references README.md AGENTS.md CLAUDE.md
-git commit -m "test: verify maven large repo batching"
+git add scripts/phase11-plan-large-batches.sh scripts/phase13-show-large-batch-status.sh scripts/phase12-merge-large-batches.sh skills/cc-code-reviewer/SKILL.md agents/cc-code-reviewer.md references/examples.md tests/test_phase11_plan_large_batches.sh tests/test_phase13_show_large_batch_status.sh tests/test_contract_docs.sh
+git commit -m "feat: implement semantic large repo batching"
 ```
-
-If no files changed after verification, do not create an empty commit.
 
 ---
 
 ## Self-Review
 
-Spec coverage:
-
-- Maven multi-module stock full-scope only: Task 1, Task 7, Task 8.
-- 25k target batch budget and 15k/30k/35k bounds: Task 1, Task 3, Task 7.
-- Maven module graph and dependency-aware planning: Task 3.
-- jdtls recommended but optional: Task 2, Task 7, Task 8.
-- Batch atomicity and four states only: Task 1, Task 3, Task 6, Task 7.
-- No file manifests or file-level reviewed state: Task 1, Task 3.
-- Persistent run directory: Task 3, Task 4, Task 5.
-- Resume without rerunning completed batches: Task 4, Task 7.
-- Console status table in Chinese: Task 4, Task 8.
-- Batch agent formal boundary vs jdtls semantic lookup: Task 6, Task 7.
-- Staged/full report merge: Task 5, Task 8.
-- Feishu parent-only upload is covered in Task 7/8 documentation and remains implemented by the existing upload path.
-
-Placeholder scan:
-
-- No placeholder markers or deferred-detail language.
-- Each task has exact file paths, commands, expected results, and concrete snippets.
-
-Type and name consistency:
-
-- Script names use `phase10-detect-code-intelligence.sh`, `phase11-plan-large-batches.sh`, `phase12-merge-large-batches.sh`, and `phase13-show-large-batch-status.sh`.
-- Batch status states are consistently `pending`, `running`, `completed`, `failed`.
-- User-facing status labels are consistently `待执行`, `执行中`, `已完成`, `失败待重试`.
+- Spec coverage: covered work units, review cost, recursive oversized splitting, affinity packing, tail rebalancing, bounded context roots, Java-file coverage, skill/agent contracts, examples, and tests.
+- Placeholder scan: no TBD/TODO placeholders remain.
+- Type consistency: canonical batch fields are `units`, `context_roots`, `planned_review_cost`, `affinity_edges`, and `strategy=semantic-cost-batching`; `modules` remains only as a compatibility alias.
