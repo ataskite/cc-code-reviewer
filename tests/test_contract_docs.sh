@@ -27,6 +27,16 @@ QUICK_START_CN="快速""启动"
 BYPASS_PHRASES_CN="无需人工""交互|跳过所有""交互|参数校验""失败|禁止降级为交互式""模式"
 SCAN_BYPASS_PATTERN="${MODE_BYPASS_TOKEN}|${PARAMS_BYPASS_TOKEN}|${QUICK_START_CN}|${BYPASS_PHRASES_CN}|${DD}type|${DD}scope|${DD}upload|${DD}branch|${DD}concurrency"
 
+require_literal() {
+  local file="$1"
+  local text="$2"
+  local message="$3"
+  if ! grep -Fq "$text" "$file"; then
+    echo "$message" >&2
+    exit 1
+  fi
+}
+
 grep -q "### 第三步之后：持久化报告文件" "$AGENT_FILE"
 grep -q "REPORT_FILENAME" "$AGENT_FILE"
 grep -q "所有上传和本地输出都必须复用同一个 Markdown 文件" "$AGENT_FILE"
@@ -67,8 +77,8 @@ grep -q "| 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |" "$SKILL_FILE"
 grep -q "| 报告格式路径 | {REPORT_FORMAT_PATH} |" "$SKILL_FILE"
 grep -q 'REVIEW_FRAMEWORK_PATH=.*references/review-framework.md' "$SKILL_FILE"
 grep -q 'REPORT_FORMAT_PATH=.*references/report-format.md' "$SKILL_FILE"
-GLOBAL_REFERENCE_LINE="$(grep -n "### 第五步之前：准备审查参考文件路径" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
-TASK_LAUNCH_LINE="$(grep -n "### 第五步：调用子 agent 执行代码审查" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+GLOBAL_REFERENCE_LINE="$(grep -n "### 第六步之前：准备审查参考文件路径" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+TASK_LAUNCH_LINE="$(grep -n "### 第七步：调用子 agent 执行代码审查" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 if [ -z "$GLOBAL_REFERENCE_LINE" ] || [ -z "$TASK_LAUNCH_LINE" ] || [ "$GLOBAL_REFERENCE_LINE" -ge "$TASK_LAUNCH_LINE" ]; then
   echo "review reference path preparation must be a global pre-Task step before launching the reviewer agent" >&2
   exit 1
@@ -359,6 +369,25 @@ grep -q "TARGET_BATCH_LOC = 25000" "$SKILL_FILE"
 grep -q "SOFT_MIN_BATCH_LOC = 15000" "$SKILL_FILE"
 grep -q "SOFT_MAX_BATCH_LOC = 30000" "$SKILL_FILE"
 grep -q "HARD_MAX_BATCH_LOC = 35000" "$SKILL_FILE"
+require_literal "$SKILL_FILE" "semantic-cost batching" "large repo strategy must be semantic-cost batching"
+require_literal "$SKILL_FILE" "review_cost = java_loc + java_file_count * 25" "review cost formula must be documented"
+require_literal "$SKILL_FILE" "TARGET_BATCH_COST = 32000" "target review cost must be documented"
+require_literal "$SKILL_FILE" "HARD_MAX_BATCH_COST = 45000" "hard review cost must be documented"
+require_literal "$SKILL_FILE" "context_roots" "large repo plan must include bounded context roots"
+require_literal "$SKILL_FILE" "context cost" "large repo context cost must be bounded"
+require_literal "$SKILL_FILE" "work units" "large repo planner must use work units"
+require_literal "$SKILL_FILE" "oversized modules are split before plan emission" "oversized modules must be split, not only marked"
+require_literal "$SKILL_FILE" "tiny tail batches" "tiny tail batches must be rebalanced"
+
+require_literal "$AGENT_FILE" "context_roots" "batch agent must understand context roots"
+require_literal "$AGENT_FILE" "Formal findings must point to locations inside scan_roots" "batch findings must stay inside scan roots"
+require_literal "$AGENT_FILE" "context_roots are read-only context" "agent must not count context roots as reviewed"
+
+require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "TARGET_BATCH_COST=32000" "planner must define target review cost"
+require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "HARD_MAX_BATCH_COST=45000" "planner must define hard review cost"
+require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "review_cost" "planner must compute review cost"
+require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "context_roots" "planner must emit context roots"
+require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "semantic-cost-batching" "planner must emit semantic-cost strategy"
 
 grep -q "pending.*待执行" "$SKILL_FILE"
 grep -q "running.*执行中" "$SKILL_FILE"
@@ -430,6 +459,29 @@ grep -q '默认 `2`' "$SKILL_FILE"
 grep -q '1.*2.*3' "$SKILL_FILE"
 if grep -q "5 路并发" "$SKILL_FILE"; then
   echo "batch concurrency options must be 1/2/3, not 1/3/5" >&2
+  exit 1
+fi
+
+grep -q 'label: "本地 Markdown 报告"' "$SKILL_FILE"
+if grep -q 'label: "仅显示报告"' "$SKILL_FILE"; then
+  echo "first review result handling option must be local Markdown report, not only chat display" >&2
+  exit 1
+fi
+
+BATCH_SHOW_LINE="$(grep -n "phase13-show-large-batch-status.sh" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+BATCH_PICK_LINE="$(grep -n 'question: "请选择本轮执行批次"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+CONCURRENCY_LINE="$(grep -n 'question: "请选择并发扫描策略"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+if [ -z "$BATCH_SHOW_LINE" ] || [ -z "$BATCH_PICK_LINE" ] || [ -z "$CONCURRENCY_LINE" ] || [ "$BATCH_SHOW_LINE" -ge "$BATCH_PICK_LINE" ] || [ "$BATCH_PICK_LINE" -ge "$CONCURRENCY_LINE" ]; then
+  echo "large repo flow must show batch status, then select execution batches, then select concurrency" >&2
+  exit 1
+fi
+grep -q "原样输出到控制台" "$SKILL_FILE"
+grep -q "自行输入批次号" "$SKILL_FILE"
+grep -q "BATCH_SELECTION" "$SKILL_FILE"
+grep -q "RUN_BATCH_IDS" "$SKILL_FILE"
+grep -q "RUN_BATCH_COUNT" "$SKILL_FILE"
+if grep -q '分批并行扫描（{BATCH_COUNT} 批 / {CONCURRENCY} 路并发）' "$SKILL_FILE"; then
+  echo "large repo execution copy must distinguish current-run batch count from total batch count" >&2
   exit 1
 fi
 

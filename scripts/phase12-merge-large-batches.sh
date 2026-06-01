@@ -229,8 +229,8 @@ cat > "$FINAL_REPORT.tmp" <<MD
 - 失败待重试批次：$FAILED_BATCHES
 - 待执行批次：$PENDING_BATCHES
 - 执行中批次：$RUNNING_BATCHES
-- Java 行覆盖：$(format_number "$COVERED_LOC") / $(format_number "$TOTAL_JAVA_LOC")（$LOC_COVERAGE%）
 - Java 文件覆盖：$(format_number "$COVERED_FILES") / $(format_number "$TOTAL_JAVA_FILE_COUNT")（$FILE_COVERAGE%）
+- 已完成批次 Java 行规模：$(format_number "$COVERED_LOC") / $(format_number "$TOTAL_JAVA_LOC")（规划规模参考，不作为覆盖率口径）
 - 已合并问题数：$TOTAL_FINDINGS
 
 ## 已完成批次发现
@@ -260,6 +260,7 @@ cat >> "$FINAL_REPORT.tmp" <<'MD'
 ## 覆盖说明
 
 本报告只合并状态为“已完成”的批次。失败、待执行或执行中的批次不会进入正式问题结论。
+Java 文件覆盖率是唯一覆盖指标；LOC 与 review cost 仅作为分批规划和进度参考。
 MD
 
 mv "$FINAL_REPORT.tmp" "$FINAL_REPORT"

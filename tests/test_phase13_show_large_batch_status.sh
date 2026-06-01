@@ -29,13 +29,21 @@ cat > "$RUN_DIR/batches/batch-001.json" <<'JSON'
 {
   "schema_version": 1,
   "batch_id": "batch-001",
+  "strategy": "semantic-cost-batching",
   "planned_java_loc": 24800,
+  "planned_review_cost": 31250,
   "planned_java_file_count": 210,
   "scan_roots": ["user-api", "user-service"],
+  "context_roots": ["server/bootstrap"],
+  "units": [
+    {"name": "user-api", "path": "user-api"},
+    {"name": "user-service", "path": "user-service"}
+  ],
   "modules": [
     {"name": "user-api", "path": "user-api"},
     {"name": "user-service", "path": "user-service"}
-  ]
+  ],
+  "split_reason": "dependency_affinity_group"
 }
 JSON
 
@@ -43,12 +51,19 @@ cat > "$RUN_DIR/batches/batch-002.json" <<'JSON'
 {
   "schema_version": 1,
   "batch_id": "batch-002",
+  "strategy": "semantic-cost-batching",
   "planned_java_loc": 25200,
+  "planned_review_cost": 31800,
   "planned_java_file_count": 190,
   "scan_roots": ["order-service"],
+  "context_roots": ["server/bootstrap"],
+  "units": [
+    {"name": "order-service", "path": "order-service"}
+  ],
   "modules": [
     {"name": "order-service", "path": "order-service"}
-  ]
+  ],
+  "split_reason": "dependency_affinity_group"
 }
 JSON
 
@@ -76,11 +91,19 @@ JSON
 OUTPUT="$(bash "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR")"
 
 printf '%s\n' "$OUTPUT" | grep -q "大仓库审查任务"
-printf '%s\n' "$OUTPUT" | grep -q "批次 状态 行数 文件 模块"
+printf '%s\n' "$OUTPUT" | grep -q "批次 状态 行数 成本 文件 模块 原因"
 printf '%s\n' "$OUTPUT" | grep -q "已完成"
 printf '%s\n' "$OUTPUT" | grep -q "失败待重试"
 printf '%s\n' "$OUTPUT" | grep -q "user-api,user-service"
+printf '%s\n' "$OUTPUT" | grep -q "dependency_affinity_group"
+printf '%s\n' "$OUTPUT" | grep -q "context:server/bootstrap"
 printf '%s\n' "$OUTPUT" | grep -q "Java 行覆盖: 24,800 / 500,000"
+printf '%s\n' "$OUTPUT" | grep -q "本轮可执行批次"
+printf '%s\n' "$OUTPUT" | grep -q "batch-002"
+printf '%s\n' "$OUTPUT" | grep -q "推荐执行计划"
+printf '%s\n' "$OUTPUT" | grep -q "执行 5 批（推荐）"
+printf '%s\n' "$OUTPUT" | grep -q "预估耗时"
+printf '%s\n' "$OUTPUT" | grep -q "也可以自行输入批次号"
 
 if printf '%s\n' "$OUTPUT" | grep -qE '(^|[[:space:]])(pending|running|completed|failed)([[:space:]]|$)'; then
   echo "status output must not expose internal enum values" >&2

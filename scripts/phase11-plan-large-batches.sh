@@ -6,10 +6,18 @@ REVIEW_MODE="${2:?请输入审查模式}"
 BRANCH_NAME="${3:-no-branch}"
 SEMANTIC_LEVEL="${4:-maven-static}"
 
+TARGET_BATCH_COST=32000
+SOFT_MIN_BATCH_COST=18000
+SOFT_MAX_BATCH_COST=38000
+HARD_MAX_BATCH_COST=45000
+TINY_BATCH_LOC=5000
+TINY_BATCH_COST=8000
+CONTEXT_COST_RATIO_PERCENT=25
+
+HARD_MAX_BATCH_LOC=35000
 TARGET_BATCH_LOC=25000
 SOFT_MIN_BATCH_LOC=15000
 SOFT_MAX_BATCH_LOC=30000
-HARD_MAX_BATCH_LOC=35000
 
 json_escape() {
   printf '%s' "$1" | perl -0pe 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g; s/\t/\\t/g; s/\r/\\r/g'
@@ -24,7 +32,7 @@ branch_slug() {
   printf '%s' "$slug"
 }
 
-module_loc() {
+java_loc() {
   local dir="$1"
   local total=0
   local file lines
@@ -35,17 +43,19 @@ module_loc() {
   printf '%s\n' "$total"
 }
 
-module_files() {
+java_files() {
   local dir="$1"
-  local total=0
-  local file
-  while IFS= read -r -d '' file; do
-    total=$((total + 1))
-  done < <(find "$dir" -name '*.java' -not -path '*/target/*' -print0 2>/dev/null)
-  printf '%s\n' "$total"
+  find "$dir" -name '*.java' -not -path '*/target/*' -print0 2>/dev/null | tr '\0' '\n' | wc -l | tr -d ' '
 }
 
-extract_modules() {
+review_cost() {
+  local loc="$1"
+  local files="$2"
+  printf '%s\n' $((loc + files * 25))
+}
+
+extract_modules_from_pom() {
+  local pom_path="$1"
   perl -0ne '
     while (/<module>\s*([^<]+?)\s*<\/module>/g) {
       my $module = $1;
@@ -56,7 +66,7 @@ extract_modules() {
       $module =~ s/&apos;/'\''/g;
       print "$module\n";
     }
-  ' "$PROJECT_DIR/pom.xml"
+  ' "$pom_path"
 }
 
 artifact_id_for_pom() {
@@ -74,62 +84,376 @@ dependencies_for_pom() {
   ' "$1"
 }
 
-module_field() {
-  local module="$1"
+path_join() {
+  local parent="$1"
+  local child="$2"
+  if [ -z "$parent" ]; then
+    printf '%s\n' "$child"
+  else
+    printf '%s/%s\n' "$parent" "$child"
+  fi
+}
+
+basename_path() {
+  local path="$1"
+  printf '%s\n' "${path##*/}"
+}
+
+is_support_context() {
+  local name="$1"
+  local loc="$2"
+  local path="${3:-$1}"
+  local lower
+  lower="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
+  if [ "$loc" -eq 0 ]; then
+    return 0
+  fi
+  if [ "$loc" -lt "$TINY_BATCH_LOC" ]; then
+    case "$lower" in
+      *dependencies*|*dependency*|*bom*) return 0 ;;
+    esac
+    case "$lower" in
+      *server*) case "$path" in */*) ;; *) return 0 ;; esac ;;
+    esac
+  fi
+  return 1
+}
+
+append_unit() {
+  local unit_id="$1"
+  local display_name="$2"
+  local path="$3"
+  local kind="$4"
+  local artifact="$5"
+  local loc="$6"
+  local files="$7"
+  local cost="$8"
+  local split_reason="$9"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$unit_id" "$display_name" "$path" "$kind" "$artifact" "$loc" "$files" "$cost" "$split_reason" >> "$UNITS_TSV"
+}
+
+append_context() {
+  local unit_id="$1"
+  local display_name="$2"
+  local path="$3"
+  local kind="$4"
+  local artifact="$5"
+  local loc="$6"
+  local files="$7"
+  local cost="$8"
+  local split_reason="$9"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$unit_id" "$display_name" "$path" "$kind" "$artifact" "$loc" "$files" "$cost" "$split_reason" >> "$CONTEXT_TSV"
+}
+
+append_legacy_unit() {
+  local name="$1"
+  local path="$2"
+  local kind="$3"
+  local artifact="$4"
+  local loc="$5"
+  local files="$6"
+  local cost="$7"
+  local split_reason="$8"
+  local unit_id="$kind:$path"
+  append_unit "$unit_id" "$name" "$path" "$kind" "$artifact" "$loc" "$files" "$cost" "$split_reason"
+}
+
+child_module_count() {
+  local dir="$1"
+  if [ ! -f "$dir/pom.xml" ]; then
+    printf '0\n'
+    return
+  fi
+  extract_modules_from_pom "$dir/pom.xml" | awk 'NF {count++} END {print count + 0}'
+}
+
+java_child_dirs() {
+  local dir="$1"
+  find "$dir" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null |
+    while IFS= read -r -d '' child; do
+      if [ "$(java_loc "$child")" -gt 0 ]; then
+        printf '%s\n' "$(basename "$child")"
+      fi
+    done | sort
+}
+
+split_package_dir() {
+  local module_rel="$1"
+  local top_name="$2"
+  local artifact="$3"
+  local package_rel="$4"
+  local src_root="$PROJECT_DIR/$module_rel/src/main/java"
+  local abs_dir="$src_root"
+  local unit_path="$module_rel/src/main/java"
+  if [ -n "$package_rel" ]; then
+    abs_dir="$src_root/$package_rel"
+    unit_path="$module_rel/src/main/java/$package_rel"
+  fi
+
+  local loc files cost children
+  loc="$(java_loc "$abs_dir")"
+  [ "$loc" -gt 0 ] || return
+  files="$(java_files "$abs_dir")"
+  cost="$(review_cost "$loc" "$files")"
+  children="$(java_child_dirs "$abs_dir")"
+
+  if [ "$loc" -le "$HARD_MAX_BATCH_LOC" ] && [ "$cost" -le "$HARD_MAX_BATCH_COST" ]; then
+    append_unit "java-package:$unit_path" "$top_name:$package_rel" "$unit_path" "java-package" "$artifact" "$loc" "$files" "$cost" "oversized_module_package_split"
+    return
+  fi
+
+  if [ -n "$children" ]; then
+    while IFS= read -r child; do
+      [ -n "$child" ] || continue
+      if [ -n "$package_rel" ]; then
+        split_package_dir "$module_rel" "$top_name" "$artifact" "$package_rel/$child"
+      else
+        split_package_dir "$module_rel" "$top_name" "$artifact" "$child"
+      fi
+    done <<< "$children"
+    return
+  fi
+
+  append_unit "java-package:$unit_path" "$top_name:$package_rel" "$unit_path" "java-package" "$artifact" "$loc" "$files" "$cost" "oversized_package_no_smaller_directory"
+}
+
+split_package_units() {
+  local module_rel="$1"
+  local top_name="$2"
+  local artifact="$3"
+  local src_root="$PROJECT_DIR/$module_rel/src/main/java"
+  if [ -d "$src_root" ]; then
+    split_package_dir "$module_rel" "$top_name" "$artifact" ""
+  else
+    local loc files cost
+    loc="$(java_loc "$PROJECT_DIR/$module_rel")"
+    files="$(java_files "$PROJECT_DIR/$module_rel")"
+    cost="$(review_cost "$loc" "$files")"
+    append_unit "maven-module:$module_rel" "$top_name" "$module_rel" "maven-module" "$artifact" "$loc" "$files" "$cost" "oversized_module_without_java_package_root"
+  fi
+}
+
+generate_work_units() {
+  local module_rel="$1"
+  local top_name="$2"
+  local module_dir="$PROJECT_DIR/$module_rel"
+  local pom_path="$module_dir/pom.xml"
+  [ -f "$pom_path" ] || return
+
+  local artifact name loc files cost child_count
+  artifact="$(artifact_id_for_pom "$pom_path")"
+  if [ -z "$artifact" ]; then
+    artifact="$(basename_path "$module_rel")"
+  fi
+  name="$(basename_path "$module_rel")"
+  loc="$(java_loc "$module_dir")"
+  files="$(java_files "$module_dir")"
+  cost="$(review_cost "$loc" "$files")"
+  child_count="$(child_module_count "$module_dir")"
+
+  if is_support_context "$name" "$loc" "$module_rel"; then
+    append_context "context-module:$module_rel" "$name" "$module_rel" "context-module" "$artifact" "$loc" "$files" "$cost" "tiny_or_zero_support_context"
+    return
+  fi
+
+  if [ "$loc" -gt "$HARD_MAX_BATCH_LOC" ] || [ "$cost" -gt "$HARD_MAX_BATCH_COST" ]; then
+    if [ "$child_count" -gt 0 ]; then
+      while IFS= read -r child; do
+        [ -n "$child" ] || continue
+        generate_work_units "$(path_join "$module_rel" "$child")" "$top_name"
+      done < <(extract_modules_from_pom "$pom_path")
+      return
+    fi
+    split_package_units "$module_rel" "$top_name" "$artifact"
+    return
+  fi
+
+  append_unit "maven-module:$module_rel" "$name" "$module_rel" "maven-module" "$artifact" "$loc" "$files" "$cost" "maven_module"
+}
+
+unit_field() {
+  local unit="$1"
   local field="$2"
-  awk -F '\t' -v module="$module" -v field="$field" '
-    $1 == module {
-      if (field == "path") print $2;
-      else if (field == "artifact") print $3;
-      else if (field == "loc") print $4;
-      else if (field == "files") print $5;
-      else if (field == "risk") print $6;
+  awk -F '\t' -v unit="$unit" -v field="$field" '
+    $1 == unit {
+      if (field == "name") print $2;
+      else if (field == "path") print $3;
+      else if (field == "kind") print $4;
+      else if (field == "artifact") print $5;
+      else if (field == "loc") print $6;
+      else if (field == "files") print $7;
+      else if (field == "cost") print $8;
+      else if (field == "split_reason") print $9;
       exit
     }
-  ' "$MODULES_TSV"
+  ' "$UNITS_TSV"
 }
 
 is_assigned() {
-  case "$ASSIGNED_MODULES" in
+  case "$ASSIGNED_UNITS" in
     *"|$1|"*) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 mark_assigned() {
-  ASSIGNED_MODULES="$ASSIGNED_MODULES$1|"
+  ASSIGNED_UNITS="$ASSIGNED_UNITS$1|"
 }
 
-batch_contains() {
-  local candidate="$1"
-  local module
-  for module in "${CURRENT_BATCH[@]}"; do
-    if [ "$module" = "$candidate" ]; then
-      return 0
+batch_has_unit() {
+  local batch_file="$1"
+  local unit="$2"
+  awk -F '\t' -v unit="$unit" '$1 == unit {found=1} END {exit found ? 0 : 1}' "$batch_file"
+}
+
+batch_sum_field() {
+  local batch_file="$1"
+  local field="$2"
+  awk -F '\t' -v field="$field" '
+    {
+      if (field == "loc") sum += $6;
+      else if (field == "files") sum += $7;
+      else if (field == "cost") sum += $8;
+    }
+    END {print sum + 0}
+  ' "$batch_file"
+}
+
+add_unit_to_draft() {
+  local unit="$1"
+  local draft_file="$2"
+  awk -F '\t' -v unit="$unit" '$1 == unit {print; exit}' "$UNITS_TSV" >> "$draft_file"
+  mark_assigned "$unit"
+}
+
+next_unassigned_unit() {
+  while IFS="$(printf '\t')" read -r _cost _line unit; do
+    [ -n "$unit" ] || continue
+    if ! is_assigned "$unit"; then
+      printf '%s\n' "$unit"
+      return
     fi
+  done < "$SORTED_UNITS_TSV"
+}
+
+try_fill_draft() {
+  local draft_file="$1"
+  local max_cost="$2"
+  local changed=1
+  local current_loc current_cost unit loc cost
+  while [ "$changed" -eq 1 ]; do
+    changed=0
+    current_loc="$(batch_sum_field "$draft_file" loc)"
+    current_cost="$(batch_sum_field "$draft_file" cost)"
+    while IFS="$(printf '\t')" read -r _sort_cost _line unit; do
+      [ -n "$unit" ] || continue
+      if is_assigned "$unit"; then
+        continue
+      fi
+      loc="$(unit_field "$unit" loc)"
+      cost="$(unit_field "$unit" cost)"
+      if [ $((current_loc + loc)) -le "$HARD_MAX_BATCH_LOC" ] && [ $((current_cost + cost)) -le "$max_cost" ]; then
+        add_unit_to_draft "$unit" "$draft_file"
+        changed=1
+        break
+      fi
+    done < "$SORTED_UNITS_TSV"
   done
-  return 1
 }
 
-add_to_batch() {
-  local module="$1"
-  local loc files
-  loc="$(module_field "$module" loc)"
-  files="$(module_field "$module" files)"
-  CURRENT_BATCH+=("$module")
-  CURRENT_LOC=$((CURRENT_LOC + loc))
-  CURRENT_FILES=$((CURRENT_FILES + files))
-  mark_assigned "$module"
-}
+rebalance_tiny_batches() {
+  local draft tiny_loc tiny_cost other other_loc other_cost unit path kind artifact files
+  for draft in "$DRAFT_DIR"/draft-*.tsv; do
+    [ -s "$draft" ] || continue
+    tiny_loc="$(batch_sum_field "$draft" loc)"
+    tiny_cost="$(batch_sum_field "$draft" cost)"
+    if [ "$tiny_loc" -ge "$TINY_BATCH_LOC" ] || [ "$tiny_cost" -ge "$TINY_BATCH_COST" ]; then
+      continue
+    fi
 
-next_unassigned_by_risk() {
-  awk -F '\t' '{print $6 "\t" NR "\t" $1}' "$MODULES_TSV" | sort -rn -k1,1 -k2,2n |
-    while IFS="$(printf '\t')" read -r _risk _line module; do
-      if ! is_assigned "$module"; then
-        printf '%s\n' "$module"
+    for other in "$DRAFT_DIR"/draft-*.tsv; do
+      [ "$other" != "$draft" ] || continue
+      [ -s "$other" ] || continue
+      other_loc="$(batch_sum_field "$other" loc)"
+      other_cost="$(batch_sum_field "$other" cost)"
+      if [ $((other_loc + tiny_loc)) -le "$HARD_MAX_BATCH_LOC" ] && [ $((other_cost + tiny_cost)) -le "$HARD_MAX_BATCH_COST" ]; then
+        cat "$draft" >> "$other"
+        : > "$draft"
         break
       fi
     done
+
+    if [ -s "$draft" ]; then
+      while IFS="$(printf '\t')" read -r unit name path kind artifact tiny_loc files tiny_cost _split_reason; do
+        append_context "tiny-context:$path" "$name" "$path" "tiny-context-unit" "$artifact" "$tiny_loc" "$files" "$tiny_cost" "tiny_tail_context"
+      done < "$draft"
+      : > "$draft"
+    fi
+  done
+}
+
+write_json_string_array() {
+  local item
+  local first=1
+  printf '['
+  for item in "$@"; do
+    if [ "$first" -eq 0 ]; then
+      printf ','
+    fi
+    printf '\n    "%s"' "$(json_escape "$item")"
+    first=0
+  done
+  if [ "$first" -eq 0 ]; then
+    printf '\n  '
+  fi
+  printf ']'
+}
+
+context_affinity() {
+  local context_name="$1"
+  local context_path="$2"
+  local batch_file="$3"
+  local unit_id unit_name unit_path _rest
+  local score=0
+  while IFS="$(printf '\t')" read -r unit_id unit_name unit_path _rest; do
+    case "$unit_name:$unit_path" in
+      *"$context_name"*|*"$context_path"*) score=$((score + 60)) ;;
+    esac
+    case "$context_name" in
+      *dependencies*|*dependency*|*bom*) score=$((score + 20)) ;;
+    esac
+    case "$context_name" in
+      *server*) score=$((score + 15)) ;;
+    esac
+  done < "$batch_file"
+  printf '%s\n' "$score"
+}
+
+context_roots_args() {
+  local batch_file="$1"
+  local batch_cost="$2"
+  local context_limit=$((batch_cost * CONTEXT_COST_RATIO_PERCENT / 100))
+  local selected_cost=0
+  local candidates="$RUN_DIR/context-candidates.tmp"
+
+  [ -s "$CONTEXT_TSV" ] || return 0
+  : > "$candidates"
+  while IFS="$(printf '\t')" read -r _unit_id name path kind artifact loc files cost split_reason; do
+    [ -n "$path" ] || continue
+    [ "$cost" -le "$context_limit" ] || continue
+    affinity="$(context_affinity "$name" "$path" "$batch_file")"
+    [ "$affinity" -gt 0 ] || continue
+    printf '%s\t%s\t%s\n' "$affinity" "$cost" "$path" >> "$candidates"
+  done < "$CONTEXT_TSV"
+
+  sort -rn -k1,1 -k2,2n "$candidates" | while IFS="$(printf '\t')" read -r _affinity cost path; do
+    if [ $((selected_cost + cost)) -le "$context_limit" ]; then
+      printf '%s\n' "$path"
+      selected_cost=$((selected_cost + cost))
+    fi
+  done
 }
 
 write_status() {
@@ -137,6 +461,7 @@ write_status() {
   local batch_id="$2"
   local planned_loc="$3"
   local planned_files="$4"
+  local planned_cost="$5"
   cat > "$status_path.tmp" <<JSON
 {
   "schema_version": 1,
@@ -145,6 +470,7 @@ write_status() {
   "status": "pending",
   "planned_java_loc": $planned_loc,
   "planned_java_file_count": $planned_files,
+  "planned_review_cost": $planned_cost,
   "attempt": 0,
   "started_at": null,
   "finished_at": null,
@@ -156,116 +482,118 @@ JSON
   mv "$status_path.tmp" "$status_path"
 }
 
-write_json_string_array() {
-  local indent="$1"
-  shift
-  local first=1
-  local item
-  printf '['
-  for item in "$@"; do
-    if [ "$first" -eq 0 ]; then
-      printf ','
-    fi
-    printf '\n%s"%s"' "$indent" "$(json_escape "$item")"
-    first=0
-  done
-  if [ "$first" -eq 0 ]; then
-    printf '\n  '
-  fi
-  printf ']'
-}
-
 write_batch() {
   local batch_id="$1"
   local batch_path="$2"
-  local status_rel="results/$batch_id.status.json"
-  local result_rel="results/$batch_id.md"
-  local large_batch="$3"
-  local split_reason="$4"
+  local batch_file="$3"
+  local planned_loc planned_files planned_cost status_rel result_rel
+  planned_loc="$(batch_sum_field "$batch_file" loc)"
+  planned_files="$(batch_sum_field "$batch_file" files)"
+  planned_cost="$(batch_sum_field "$batch_file" cost)"
+  status_rel="results/$batch_id.status.json"
+  result_rel="results/$batch_id.md"
+
   local scan_roots=()
-  local module_entries=()
-  local semantic_entries=()
-  local edge_entries=("")
-  local module path artifact loc files dep
-
-  for module in "${CURRENT_BATCH[@]}"; do
-    path="$(module_field "$module" path)"
-    artifact="$(module_field "$module" artifact)"
-    loc="$(module_field "$module" loc)"
-    files="$(module_field "$module" files)"
+  local context_roots=()
+  local unit_id name path kind artifact loc files cost split_reason entry first
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    context_roots+=("$path")
+  done < <(context_roots_args "$batch_file" "$planned_cost")
+  while IFS="$(printf '\t')" read -r unit_id name path kind artifact loc files cost split_reason; do
     scan_roots+=("$path")
-    module_entries+=("{\"name\":\"$(json_escape "$module")\",\"path\":\"$(json_escape "$path")\",\"artifact_id\":\"$(json_escape "$artifact")\",\"java_loc\":$loc,\"java_file_count\":$files}")
-    semantic_entries+=("\"$(json_escape "$module")\":{\"artifact_id\":\"$(json_escape "$artifact")\",\"module_path\":\"$(json_escape "$path")\"}")
-  done
-
-  for module in "${CURRENT_BATCH[@]}"; do
-    while IFS="$(printf '\t')" read -r _from_artifact dep dep_module; do
-      [ -n "$dep_module" ] || continue
-      if batch_contains "$dep_module"; then
-        edge_entries+=("{\"from\": \"$(json_escape "$module")\", \"to\": \"$(json_escape "$dep_module")\"}")
-      fi
-    done < <(awk -F '\t' -v module="$module" '$1 == module {print $2 "\t" $3 "\t" $4}' "$EDGES_TSV")
-  done
+  done < "$batch_file"
 
   {
     printf '{\n'
     printf '  "schema_version": 1,\n'
     printf '  "run_id": "%s",\n' "$(json_escape "$RUN_ID")"
     printf '  "batch_id": "%s",\n' "$batch_id"
-    printf '  "strategy": "maven-module-batching",\n'
+    printf '  "strategy": "semantic-cost-batching",\n'
     printf '  "semantic_level": "%s",\n' "$(json_escape "$SEMANTIC_LEVEL")"
-    printf '  "planned_java_loc": %s,\n' "$CURRENT_LOC"
-    printf '  "planned_java_file_count": %s,\n' "$CURRENT_FILES"
+    printf '  "planned_java_loc": %s,\n' "$planned_loc"
+    printf '  "planned_java_file_count": %s,\n' "$planned_files"
+    printf '  "planned_review_cost": %s,\n' "$planned_cost"
     printf '  "scan_roots": '
-    write_json_string_array '    ' "${scan_roots[@]}"
+    write_json_string_array "${scan_roots[@]}"
     printf ',\n'
-    printf '  "modules": ['
-    local first=1 entry
-    for entry in "${module_entries[@]}"; do
+    printf '  "context_roots": '
+    write_json_string_array ${context_roots[@]+"${context_roots[@]}"}
+    printf ',\n'
+    printf '  "units": ['
+    first=1
+    while IFS="$(printf '\t')" read -r unit_id name path kind artifact loc files cost split_reason; do
       if [ "$first" -eq 0 ]; then
         printf ','
       fi
-      printf '\n    %s' "$entry"
+      printf '\n    {"name":"%s","path":"%s","kind":"%s","java_loc":%s,"java_file_count":%s,"review_cost":%s}' \
+        "$(json_escape "$name")" "$(json_escape "$path")" "$(json_escape "$kind")" "$loc" "$files" "$cost"
       first=0
-    done
+    done < "$batch_file"
     if [ "$first" -eq 0 ]; then
       printf '\n  '
     fi
     printf '],\n'
-    printf '  "module_dependency_edges": ['
+    printf '  "modules": ['
     first=1
-    for entry in "${edge_entries[@]}"; do
-      [ -n "$entry" ] || continue
+    while IFS="$(printf '\t')" read -r unit_id name path kind artifact loc files cost split_reason; do
       if [ "$first" -eq 0 ]; then
         printf ','
       fi
-      printf '\n    %s' "$entry"
+      printf '\n    {"name":"%s","path":"%s","artifact_id":"%s","java_loc":%s,"java_file_count":%s,"review_cost":%s}' \
+        "$(json_escape "$name")" "$(json_escape "$path")" "$(json_escape "$artifact")" "$loc" "$files" "$cost"
       first=0
-    done
+    done < "$batch_file"
+    if [ "$first" -eq 0 ]; then
+      printf '\n  '
+    fi
+    printf '],\n'
+    printf '  "affinity_edges": [],\n'
+    printf '  "module_dependency_edges": ['
+    first=1
+    while IFS="$(printf '\t')" read -r from to dep; do
+      [ -n "$from" ] || continue
+      if batch_has_unit "$batch_file" "$from" && batch_has_unit "$batch_file" "$to"; then
+        if [ "$first" -eq 0 ]; then
+          printf ','
+        fi
+        printf '\n    {"from": "%s", "to": "%s", "artifact_id": "%s"}' \
+          "$(json_escape "$from")" "$(json_escape "$to")" "$(json_escape "$dep")"
+        first=0
+      fi
+    done < "$EDGES_TSV"
     if [ "$first" -eq 0 ]; then
       printf '\n  '
     fi
     printf '],\n'
     printf '  "semantic_lookup": {'
     first=1
-    for entry in "${semantic_entries[@]}"; do
+    while IFS="$(printf '\t')" read -r unit_id name path kind artifact loc files cost split_reason; do
       if [ "$first" -eq 0 ]; then
         printf ','
       fi
-      printf '\n    %s' "$entry"
+      printf '\n    "%s":{"artifact_id":"%s","module_path":"%s","kind":"%s","review_cost":%s}' \
+        "$(json_escape "$name")" "$(json_escape "$artifact")" "$(json_escape "$path")" "$(json_escape "$kind")" "$cost"
       first=0
-    done
+    done < "$batch_file"
     if [ "$first" -eq 0 ]; then
       printf '\n  '
     fi
     printf '},\n'
-    printf '  "large_batch": %s,\n' "$large_batch"
+    if [ "$planned_loc" -gt "$SOFT_MAX_BATCH_LOC" ] || [ "$planned_cost" -gt "$SOFT_MAX_BATCH_COST" ]; then
+      printf '  "large_batch": true,\n'
+    else
+      printf '  "large_batch": false,\n'
+    fi
+    split_reason="$(awk -F '\t' 'NR == 1 {print $9}' "$batch_file")"
     printf '  "split_reason": "%s",\n' "$(json_escape "$split_reason")"
     printf '  "result_path": "%s",\n' "$result_rel"
     printf '  "status_path": "%s"\n' "$status_rel"
     printf '}\n'
   } > "$batch_path.tmp"
   mv "$batch_path.tmp" "$batch_path"
+
+  write_status "$RUN_DIR/results/$batch_id.status.json" "$batch_id" "$planned_loc" "$planned_files" "$planned_cost"
 }
 
 if [ ! -d "$PROJECT_DIR" ]; then
@@ -283,13 +611,19 @@ RUN_TIMESTAMP="${CC_CODE_REVIEWER_RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"
 RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE-full-large-maven"
 RUNS_ROOT="${CC_CODE_REVIEWER_RUNS_ROOT:-$PROJECT_DIR/.cc-code-reviewer/runs}"
 RUN_DIR="$RUNS_ROOT/$RUN_ID"
-MODULES_TSV="$RUN_DIR/modules.tsv"
+UNITS_TSV="$RUN_DIR/work-units.tsv"
+CONTEXT_TSV="$RUN_DIR/context-units.tsv"
+SORTED_UNITS_TSV="$RUN_DIR/work-units.sorted.tsv"
 EDGES_TSV="$RUN_DIR/module-edges.tsv"
+DRAFT_DIR="$RUN_DIR/drafts"
 
-mkdir -p "$RUN_DIR/batches" "$RUN_DIR/results"
-: > "$MODULES_TSV"
+mkdir -p "$RUN_DIR/batches" "$RUN_DIR/results" "$DRAFT_DIR"
+: > "$UNITS_TSV"
+: > "$CONTEXT_TSV"
 : > "$EDGES_TSV"
 
+TOTAL_JAVA_LOC=0
+TOTAL_JAVA_FILE_COUNT=0
 while IFS= read -r module; do
   [ -n "$module" ] || continue
   module_dir="$PROJECT_DIR/$module"
@@ -297,104 +631,67 @@ while IFS= read -r module; do
   if [ ! -f "$pom_path" ]; then
     continue
   fi
-  artifact="$(artifact_id_for_pom "$pom_path")"
-  if [ -z "$artifact" ]; then
-    artifact="$module"
-  fi
-  loc="$(module_loc "$module_dir")"
-  files="$(module_files "$module_dir")"
-  printf '%s\t%s\t%s\t%s\t%s\t0\n' "$module" "$module" "$artifact" "$loc" "$files" >> "$MODULES_TSV"
-done < <(extract_modules)
+  module_loc="$(java_loc "$module_dir")"
+  module_files="$(java_files "$module_dir")"
+  TOTAL_JAVA_LOC=$((TOTAL_JAVA_LOC + module_loc))
+  TOTAL_JAVA_FILE_COUNT=$((TOTAL_JAVA_FILE_COUNT + module_files))
+  generate_work_units "$module" "$module"
+done < <(extract_modules_from_pom "$PROJECT_DIR/pom.xml")
 
-if [ ! -s "$MODULES_TSV" ]; then
+if [ ! -s "$UNITS_TSV" ] && [ ! -s "$CONTEXT_TSV" ]; then
   echo "NO_MAVEN_MODULES=$PROJECT_DIR" >&2
-  rm -f "$MODULES_TSV" "$EDGES_TSV"
+  rm -f "$UNITS_TSV" "$CONTEXT_TSV" "$EDGES_TSV" "$SORTED_UNITS_TSV"
+  rm -rf "$DRAFT_DIR"
   exit 1
 fi
 
-while IFS="$(printf '\t')" read -r module _path artifact _loc _files _risk; do
-  pom_path="$PROJECT_DIR/$module/pom.xml"
+if [ ! -s "$UNITS_TSV" ]; then
+  echo "NO_MAVEN_MODULES=$PROJECT_DIR" >&2
+  rm -f "$UNITS_TSV" "$CONTEXT_TSV" "$EDGES_TSV" "$SORTED_UNITS_TSV"
+  rm -rf "$DRAFT_DIR"
+  exit 1
+fi
+
+while IFS="$(printf '\t')" read -r unit name path kind artifact _loc _files _cost _split_reason; do
+  if [ "$kind" != "maven-module" ] && [ "$kind" != "context-module" ]; then
+    continue
+  fi
+  pom_path="$PROJECT_DIR/$path/pom.xml"
+  [ -f "$pom_path" ] || continue
   while IFS= read -r dep_artifact; do
     [ -n "$dep_artifact" ] || continue
-    dep_module="$(awk -F '\t' -v artifact="$dep_artifact" '$3 == artifact {print $1; exit}' "$MODULES_TSV")"
-    if [ -n "$dep_module" ]; then
-      printf '%s\t%s\t%s\t%s\n' "$module" "$artifact" "$dep_artifact" "$dep_module" >> "$EDGES_TSV"
+    dep_unit="$(awk -F '\t' -v artifact="$dep_artifact" '$5 == artifact {print $1; exit}' "$UNITS_TSV")"
+    if [ -n "$dep_unit" ]; then
+      printf '%s\t%s\t%s\n' "$unit" "$dep_unit" "$dep_artifact" >> "$EDGES_TSV"
     fi
   done < <(dependencies_for_pom "$pom_path")
-done < "$MODULES_TSV"
+done < <(cat "$UNITS_TSV" "$CONTEXT_TSV")
 
-RISK_TSV="$RUN_DIR/modules.risk.tsv"
-while IFS="$(printf '\t')" read -r module path artifact loc files _risk; do
-  outgoing="$(awk -F '\t' -v module="$module" '$1 == module {count++} END {print count + 0}' "$EDGES_TSV")"
-  incoming="$(awk -F '\t' -v module="$module" '$4 == module {count++} END {print count + 0}' "$EDGES_TSV")"
-  name_risk=0
-  case "$module" in
-    *api*|*gateway*|*controller*) name_risk=$((name_risk + 100)) ;;
-  esac
-  case "$module" in
-    *service*) name_risk=$((name_risk + 60)) ;;
-  esac
-  case "$module" in
-    *dao*|*repository*) name_risk=$((name_risk + 30)) ;;
-  esac
-  risk=$((name_risk + outgoing * 20 + incoming * 5 + loc / 1000))
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$module" "$path" "$artifact" "$loc" "$files" "$risk" >> "$RISK_TSV"
-done < "$MODULES_TSV"
-mv "$RISK_TSV" "$MODULES_TSV"
+awk -F '\t' '{print $8 "\t" NR "\t" $1}' "$UNITS_TSV" | sort -rn -k1,1 -k2,2n > "$SORTED_UNITS_TSV"
 
-TOTAL_JAVA_LOC="$(awk -F '\t' '{sum += $4} END {print sum + 0}' "$MODULES_TSV")"
-TOTAL_JAVA_FILE_COUNT="$(awk -F '\t' '{sum += $5} END {print sum + 0}' "$MODULES_TSV")"
-
-ASSIGNED_MODULES="|"
-BATCH_COUNT=0
-while [ "$(awk 'END {print NR + 0}' "$MODULES_TSV")" -gt "$(printf '%s' "$ASSIGNED_MODULES" | awk -F '|' '{print NF - 2}')" ]; do
-  seed="$(next_unassigned_by_risk)"
+ASSIGNED_UNITS="|"
+DRAFT_COUNT=0
+while [ "$(awk 'END {print NR + 0}' "$UNITS_TSV")" -gt "$(printf '%s' "$ASSIGNED_UNITS" | awk -F '|' '{print NF - 2}')" ]; do
+  seed="$(next_unassigned_unit)"
   [ -n "$seed" ] || break
-
-  CURRENT_BATCH=()
-  CURRENT_LOC=0
-  CURRENT_FILES=0
-  add_to_batch "$seed"
-
-  if [ "$CURRENT_LOC" -le "$HARD_MAX_BATCH_LOC" ]; then
-    changed=1
-    while [ "$changed" -eq 1 ]; do
-      changed=0
-      for module in "${CURRENT_BATCH[@]}"; do
-        while IFS="$(printf '\t')" read -r dep_module dep_loc; do
-          [ -n "$dep_module" ] || continue
-          if ! is_assigned "$dep_module" && [ $((CURRENT_LOC + dep_loc)) -le "$SOFT_MAX_BATCH_LOC" ]; then
-            add_to_batch "$dep_module"
-            changed=1
-          fi
-        done < <(awk -F '\t' -v module="$module" 'FNR == NR {loc[$1] = $4; next} $1 == module {print $4 "\t" loc[$4]}' "$MODULES_TSV" "$EDGES_TSV")
-      done
-    done
+  DRAFT_COUNT=$((DRAFT_COUNT + 1))
+  draft_file="$DRAFT_DIR/draft-$(printf '%03d' "$DRAFT_COUNT").tsv"
+  : > "$draft_file"
+  add_unit_to_draft "$seed" "$draft_file"
+  try_fill_draft "$draft_file" "$TARGET_BATCH_COST"
+  if [ "$(batch_sum_field "$draft_file" cost)" -lt "$SOFT_MIN_BATCH_COST" ]; then
+    try_fill_draft "$draft_file" "$SOFT_MAX_BATCH_COST"
   fi
+done
 
-  if [ "$CURRENT_LOC" -lt "$SOFT_MIN_BATCH_LOC" ]; then
-    nearest="$(awk -F '\t' '{print $6 "\t" NR "\t" $1 "\t" $4}' "$MODULES_TSV" | sort -rn -k1,1 -k2,2n |
-      while IFS="$(printf '\t')" read -r _risk _line module loc; do
-        if ! is_assigned "$module" && [ $((CURRENT_LOC + loc)) -le "$SOFT_MAX_BATCH_LOC" ]; then
-          printf '%s\n' "$module"
-          break
-        fi
-      done)"
-    if [ -n "$nearest" ]; then
-      add_to_batch "$nearest"
-    fi
-  fi
+rebalance_tiny_batches
 
+BATCH_COUNT=0
+for draft_file in "$DRAFT_DIR"/draft-*.tsv; do
+  [ -s "$draft_file" ] || continue
   BATCH_COUNT=$((BATCH_COUNT + 1))
   batch_id="$(printf 'batch-%03d' "$BATCH_COUNT")"
-  large_batch=false
-  split_reason="maven_module_dependency_group"
-  if [ "$CURRENT_LOC" -gt "$HARD_MAX_BATCH_LOC" ]; then
-    large_batch=true
-    split_reason="oversized_module_needs_package_split"
-  fi
-  write_batch "$batch_id" "$RUN_DIR/batches/$batch_id.json" "$large_batch" "$split_reason"
-  write_status "$RUN_DIR/results/$batch_id.status.json" "$batch_id" "$CURRENT_LOC" "$CURRENT_FILES"
+  write_batch "$batch_id" "$RUN_DIR/batches/$batch_id.json" "$draft_file"
 done
 
 CREATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -407,12 +704,19 @@ cat > "$RUN_DIR/plan.json.tmp" <<JSON
   "review_mode": "$(json_escape "$REVIEW_MODE")",
   "review_scope": "全量代码",
   "branch": "$(json_escape "$BRANCH_NAME")",
-  "strategy": "maven-module-batching",
+  "strategy": "semantic-cost-batching",
   "semantic_level": "$(json_escape "$SEMANTIC_LEVEL")",
   "total_java_loc": $TOTAL_JAVA_LOC,
   "total_java_file_count": $TOTAL_JAVA_FILE_COUNT,
   "batch_count": $BATCH_COUNT,
   "budget": {
+    "target_batch_cost": $TARGET_BATCH_COST,
+    "soft_min_batch_cost": $SOFT_MIN_BATCH_COST,
+    "soft_max_batch_cost": $SOFT_MAX_BATCH_COST,
+    "hard_max_batch_cost": $HARD_MAX_BATCH_COST,
+    "tiny_batch_loc": $TINY_BATCH_LOC,
+    "tiny_batch_cost": $TINY_BATCH_COST,
+    "context_cost_ratio_percent": $CONTEXT_COST_RATIO_PERCENT,
     "target_batch_loc": $TARGET_BATCH_LOC,
     "soft_min_batch_loc": $SOFT_MIN_BATCH_LOC,
     "soft_max_batch_loc": $SOFT_MAX_BATCH_LOC,
@@ -426,7 +730,8 @@ mv "$RUN_DIR/plan.json.tmp" "$RUN_DIR/plan.json"
 printf '{"event":"run_created","run_id":"%s","batch_count":%s,"created_at":"%s"}\n' \
   "$(json_escape "$RUN_ID")" "$BATCH_COUNT" "$CREATED_AT" > "$RUN_DIR/progress.jsonl"
 
-rm -f "$MODULES_TSV" "$EDGES_TSV"
+rm -f "$UNITS_TSV" "$CONTEXT_TSV" "$EDGES_TSV" "$SORTED_UNITS_TSV"
+rm -rf "$DRAFT_DIR"
 
 echo "RUN_ID=$RUN_ID"
 echo "RUN_DIR=$RUN_DIR"

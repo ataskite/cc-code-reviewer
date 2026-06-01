@@ -71,7 +71,7 @@ maxTurns: 50
   - 增量审查时：`最近N次提交`（同时会提供增量提交记录）
 - **审查模式**（`REVIEW_MODE`）：`fast` / `standard` / `deep` / `security`
 - **飞书上传选项**（`FEISHU_UPLOAD_OPTION`）：
-  - `仅显示报告`、`lark-cli未安装` 或 `飞书上传不可用`：不执行飞书上传步骤
+  - `本地 Markdown 报告`、`lark-cli未安装` 或 `飞书上传不可用`：不执行飞书上传步骤
   - `上传到云文档`：执行第四步（上传云文档）
   - `上传到多维表格`：执行第五步（创建多维表格）
   - `同时上传两者`：执行第四步和第五步
@@ -136,9 +136,15 @@ maxTurns: 50
 
 当参数中包含 `BATCH_PLAN_PATH`、`BATCH_STATUS_PATH`、`BATCH_RESULT_PATH` 时，进入大型仓库批次模式。
 
+阶段处理：
+- **阶段 A（文件收集）**：读取 `BATCH_PLAN_PATH` 中 `scan_roots`，自行扫描各目录下 Java 文件作为本批审查范围。不使用外部注入的 `BATCH_FILE_LIST`。
+- **阶段 B（风险排序）**：对 `scan_roots` 内扫描到的文件执行风险排序。
+
 执行规则：
 - 必须先读取 `BATCH_PLAN_PATH`，以其中的 `scan_roots` 作为本批正式审查边界。
-- 正式问题的位置必须位于 `scan_roots` 内。
+- 批次计划中的 `units[].path` / `units[].scan_roots` 和顶层 `scan_roots` 是正式审查边界。
+- `context_roots are read-only context`，只能作为只读上下文使用，不得计入已审查 Java 文件，不得从 context_roots 产出正式问题。
+- Formal findings must point to locations inside scan_roots。正式问题的位置必须位于 `scan_roots` 内。
 - 允许使用 jdtls 跨目录查询 definition、references、implementations、call hierarchy 来理解调用链。
 - `scan_roots` 外的代码只能作为外部依赖上下文，不得作为本批正式问题位置。
 - 如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」，不计入正式问题数量。
@@ -176,7 +182,7 @@ maxTurns: 50
 }
 ```
 
-当 `REVIEW_OUTPUT_MODE=仅发现清单` 时，执行流程调整如下：
+当 `REVIEW_OUTPUT_MODE=仅发现清单` 且未提供 `BATCH_PLAN_PATH` 时，执行旧版文件列表分批流程，调整如下：
 - **阶段 A（文件收集）跳过**：直接使用 `BATCH_FILE_LIST` 注入的文件列表
 - **阶段 B（风险排序）跳过**：文件已由主 skill 按风险排序后分批注入
 - **阶段 C（逐文件审查）正常执行**：按注入的文件列表逐文件读取 + 多维度评估
@@ -187,6 +193,8 @@ maxTurns: 50
 - **第四步（上传飞书云文档）跳过**
 - **第五步（创建飞书多维表格）跳过**
 - **第六步（输出最终汇总）替换**：仅输出简要完成信息 `✅ Batch {BATCH_INDEX}/{BATCH_COUNT} 完成：发现 {问题数} 个问题`，不输出完整报告
+
+当同时提供 `BATCH_PLAN_PATH` 与 `REVIEW_OUTPUT_MODE=仅发现清单` 时，`BATCH_PLAN_PATH` 优先级更高：必须读取计划文件并扫描 `scan_roots` / `units[].path`，不得使用 `BATCH_FILE_LIST` 覆盖或跳过阶段 A。
 
 ---
 
@@ -508,7 +516,7 @@ date +"%Y%m%d-%H%M%S"
 
 #### 策略 B：未上传飞书 → 展示本地文件 + 完整报告输出
 
-当 `FEISHU_UPLOAD_OPTION` 为 `仅显示报告`、`lark-cli未安装` 或 `飞书上传不可用` 时，使用第三步之后已保存的报告文件路径，然后输出完整报告供用户查看。
+当 `FEISHU_UPLOAD_OPTION` 为 `本地 Markdown 报告`、`lark-cli未安装` 或 `飞书上传不可用` 时，使用第三步之后已保存的报告文件路径，然后输出完整报告供用户查看。
 
 保存成功后，在对话中输出完整报告并附上文件路径：
 
