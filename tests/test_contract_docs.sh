@@ -91,6 +91,10 @@ grep -q "IGNORE_RULES_PATH" "$AGENT_FILE"
 grep -q "IGNORE_RULES_CONTENT" "$AGENT_FILE"
 grep -q "先应用项目 ignore 规则" "$AGENT_FILE"
 grep -q "命中 ignore.skip_when 的同类问题，不得输出" "$AGENT_FILE"
+require_literal "$SKILL_FILE" "已忽略 {IGNORE_RULE_COUNT} 个问题" "scan preflight summary must show project ignore issue count"
+require_literal "$SKILL_FILE" '只统计 `ignore:` 下缩进 2 个空格的 `- name:`' "ignore count must exclude nested applies_to list items"
+require_literal "$AGENT_FILE" "不包含 applies_to 下的子列表项" "agent ignore count docs must exclude nested applies_to list items"
+require_literal "$EXAMPLES_FILE" "已忽略 2 个问题" "scan examples must show project ignore issue count"
 
 grep -q "项目/技术栈扫描" "$README_FILE"
 grep -q "扫描 → 人工确认 → 修复 → 验证 → 报告/写回" "$README_FILE"
@@ -422,6 +426,7 @@ fi
 grep -q "scan_roots" "$SKILL_FILE"
 grep -q "正式问题.*scan_roots" "$SKILL_FILE"
 grep -q "jdtls.*跨目录" "$SKILL_FILE"
+grep -q "jdtls-lsp 可用时必须使用" "$SKILL_FILE"
 grep -q "跨批依赖待复核" "$SKILL_FILE"
 
 grep -q "BATCH_PLAN_PATH" "$AGENT_FILE"
@@ -429,6 +434,9 @@ grep -q "BATCH_STATUS_PATH" "$AGENT_FILE"
 grep -q "BATCH_RESULT_PATH" "$AGENT_FILE"
 grep -q "scan_roots" "$AGENT_FILE"
 grep -q "正式问题.*scan_roots" "$AGENT_FILE"
+grep -q "jdtls-lsp 可用时必须使用" "$AGENT_FILE"
+grep -q "definition、references、implementations、call hierarchy" "$AGENT_FILE"
+grep -q "语义增强使用情况" "$AGENT_FILE"
 grep -q "跨批依赖待复核" "$AGENT_FILE"
 
 # Agent must support batch output mode
@@ -449,14 +457,58 @@ grep -q "BATCH_MODE" "$SKILL_FILE"
 grep -q "estimated_tokens" "$SKILL_FILE"
 grep -q "100000" "$SKILL_FILE"
 
+# Stock review entry must expose full and selected-module choices directly.
+require_literal "$SKILL_FILE" 'label: "增量审查"' "review entry must keep incremental review"
+require_literal "$SKILL_FILE" 'label: "全量审查"' "review entry must expose full stock review directly"
+require_literal "$SKILL_FILE" 'label: "指定模块"' "review entry must expose selected-module stock review directly"
+require_literal "$SKILL_FILE" "STOCK_REVIEW_STRATEGY" "stock review flow must capture the selected batching strategy"
+require_literal "$SKILL_FILE" "module-sequential" "stock review flow must support per-module sequential batching"
+require_literal "$SKILL_FILE" "ai-planned" "stock review flow must support AI planned batching"
+require_literal "$SKILL_FILE" "按所选模块依次启动" "stock review strategy must describe per-module execution"
+require_literal "$SKILL_FILE" "AI 智能规划分批" "stock review strategy must describe smart batching"
+require_literal "$SKILL_FILE" "不得把每个模块都作为 AskUserQuestion option" "module selection must avoid oversized AskUserQuestion payloads"
+require_literal "$SKILL_FILE" "最多 3 个固定选项" "module selection AskUserQuestion must stay bounded"
+require_literal "$SKILL_FILE" "Other/free-form" "module selection must allow manual free-form module paths"
+if grep -q "模块超过 10 个时展示前 9 个" "$SKILL_FILE"; then
+  echo "module selection must not dynamically add many module options" >&2
+  exit 1
+fi
+require_literal "$SKILL_FILE" "Maven 多模块项目不得使用内联 Bash 数组分批" "Maven batch planning must use deterministic planner scripts"
+require_literal "$SKILL_FILE" "phase11-plan-large-batches.sh" "Maven batch planning must call phase11 planner"
+require_literal "$SKILL_FILE" "phase11-plan-file-batches.sh" "single-module and non-Maven batching must call deterministic file planner"
+require_literal "$SKILL_FILE" 'Maven 多模块存量分批绝不调用 `phase11-plan-file-batches.sh`' "Maven selected-module batching must never fall back to whole-project file planner"
+require_literal "$SKILL_FILE" "即使只选择一个模块" "single selected Maven module must still use the scoped Maven planner"
+require_literal "$SKILL_FILE" "简要分批计划" "file batching must show a concise batch plan before concurrency selection"
+require_literal "$SKILL_FILE" "BATCH_FILE_LIST_DIR" "file batching must expose batch file list directory for batch agents"
+if grep -q "当 BATCH_MODE=true 时，主 skill 在 prompt 中执行以下步骤（不使用脚本）" "$SKILL_FILE"; then
+  echo "batch calculation must not instruct the agent to improvise inline shell batching" >&2
+  exit 1
+fi
+if grep -q "current_batch_tokens" "$SKILL_FILE" || grep -q "batch_file_counts" "$SKILL_FILE" || grep -q "python3 << 'EOF'" "$SKILL_FILE"; then
+  echo "batch calculation must not contain fragile inline shell array/token batching variables" >&2
+  exit 1
+fi
+
+MODE_PICK_LINE="$(grep -n 'question: "请选择审查模式"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+UPLOAD_PICK_LINE="$(grep -n 'question: "检测到飞书上传能力可用，请选择审查结果的处理方式"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+ENTRY_PICK_LINE="$(grep -n 'question: "请选择本次审查入口"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+if [ -z "$MODE_PICK_LINE" ] || [ -z "$UPLOAD_PICK_LINE" ] || [ -z "$ENTRY_PICK_LINE" ] || [ "$MODE_PICK_LINE" -ge "$UPLOAD_PICK_LINE" ] || [ "$UPLOAD_PICK_LINE" -ge "$ENTRY_PICK_LINE" ]; then
+  echo "review mode and report handling must be selected before the review entry" >&2
+  exit 1
+fi
+
 # Skill must have concurrency step
 grep -q "选择并发数" "$SKILL_FILE"
 grep -q "CONCURRENCY" "$SKILL_FILE"
 grep -q "串行执行" "$SKILL_FILE"
 grep -q "2 路并发" "$SKILL_FILE"
 grep -q "3 路并发" "$SKILL_FILE"
-grep -q '默认 `2`' "$SKILL_FILE"
+grep -q '默认 `1`' "$SKILL_FILE"
 grep -q '1.*2.*3' "$SKILL_FILE"
+require_literal "$SKILL_FILE" "并发数必须小于等于本轮实际执行批次数" "concurrency choices must be capped by selected batch count"
+require_literal "$SKILL_FILE" "RUN_BATCH_COUNT=1" "single selected batch must force serial concurrency"
+require_literal "$SKILL_FILE" "自动设置 `CONCURRENCY=1`" "single selected batch must not ask for concurrency"
+require_literal "$SKILL_FILE" "RUN_BATCH_COUNT=2" "two selected batches must hide 3-way concurrency"
 if grep -q "5 路并发" "$SKILL_FILE"; then
   echo "batch concurrency options must be 1/2/3, not 1/3/5" >&2
   exit 1
@@ -475,7 +527,34 @@ if [ -z "$BATCH_SHOW_LINE" ] || [ -z "$BATCH_PICK_LINE" ] || [ -z "$CONCURRENCY_
   echo "large repo flow must show batch status, then select execution batches, then select concurrency" >&2
   exit 1
 fi
-grep -q "原样输出到控制台" "$SKILL_FILE"
+grep -q "普通助手消息" "$SKILL_FILE"
+grep -q "| 批次 | 状态 | 行数 | 文件数 | 模块 |" "$EXAMPLES_FILE"
+grep -q "|------|------|------:|------:|------|" "$EXAMPLES_FILE"
+grep -q "用户可见的 Markdown 表格" "$SKILL_FILE"
+require_literal "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "| 批次 | 状态 | 行数 | 文件数 | 模块 |" "phase13 status script must render a Markdown batch table"
+require_literal "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "|------|------|------:|------:|------|" "phase13 table separator should match user-facing Markdown table style"
+require_literal "$SKILL_FILE" "模块列必须使用缩略名展示" "batch module column must abbreviate common engineering prefixes"
+require_literal "$SKILL_FILE" "去掉共同前缀" "batch module abbreviation must remove shared prefixes"
+require_literal "$SKILL_FILE" "不得只依赖 Bash 工具输出" "batch status must be visible in assistant message, not only collapsed Bash output"
+require_literal "$SKILL_FILE" "普通助手消息" "batch status table must be reprinted as normal assistant content"
+require_literal "$SKILL_FILE" "不得放入代码块" "batch status table must render like tech-stack table"
+if grep -q "批次 状态 行数 成本 文件 模块 原因" "$EXAMPLES_FILE" "$SKILL_FILE"; then
+  echo "large repo batch status examples must use Markdown table syntax" >&2
+  exit 1
+fi
+require_literal "$SKILL_FILE" "必须根据本轮可执行批次数动态生成" "batch execution options must be dynamic"
+require_literal "$SKILL_FILE" "RUNNABLE_COUNT=1" "single runnable batch must skip batch-selection question"
+require_literal "$SKILL_FILE" "不调用 AskUserQuestion" "single runnable batch must not ask for batch selection"
+require_literal "$SKILL_FILE" "不得出现“执行 5 批”但描述里又显示“最多 3 批”" "batch options must not show impossible fixed limits"
+require_literal "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "display_dynamic_plan_rows" "phase13 status script must render dynamic execution plans"
+require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "large planner run dir must be timestamp-branch-mode only"
+require_literal "$ROOT_DIR/scripts/phase11-plan-file-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "file planner run dir must be timestamp-branch-mode only"
+require_literal "$SKILL_FILE" '`RUN_DIR` 目录名固定为 `{YYYYMMDD-HHMMSS}-{branch_slug}-{REVIEW_MODE}`' "skill contract must document concise run directory naming"
+require_literal "$SKILL_FILE" '审查范围、分批策略和任务类型必须从 `plan.json` 读取' "scope and strategy must live in plan.json instead of run dir name"
+if grep -q 'RUN_ID=.*large-maven\|RUN_ID=.*file-batches\|RUN_SCOPE_SLUG\|RUN_STRATEGY_SLUG' "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$ROOT_DIR/scripts/phase11-plan-file-batches.sh"; then
+  echo "run directory name must not include scope, strategy, or batch-type suffixes" >&2
+  exit 1
+fi
 grep -q "自行输入批次号" "$SKILL_FILE"
 grep -q "BATCH_SELECTION" "$SKILL_FILE"
 grep -q "RUN_BATCH_IDS" "$SKILL_FILE"

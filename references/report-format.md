@@ -198,6 +198,7 @@ Maven 大仓库分批审查报告必须额外包含本节。阶段性报告和�
 - 审查分支
 - 审查模式
 - 语义增强：`jdtls-lsp` 或 `maven-static`
+- 语义增强使用情况：当语义增强为 `jdtls-lsp` 时，必须列出实际使用的 definition / references / implementations / call hierarchy 能力、覆盖的关键类/接口/入口点，以及失败或降级说明；当语义增强为 `maven-static` 时，说明使用 Maven 静态依赖与文本检索
 - 批次完成情况：已完成 / 失败待重试 / 待执行
 - Java 行覆盖率
 - Java 文件覆盖率

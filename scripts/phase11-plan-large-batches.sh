@@ -5,6 +5,8 @@ PROJECT_DIR="${1:?请输入项目路径}"
 REVIEW_MODE="${2:?请输入审查模式}"
 BRANCH_NAME="${3:-no-branch}"
 SEMANTIC_LEVEL="${4:-maven-static}"
+REVIEW_SCOPE_INPUT="${5:-全量代码}"
+PLANNING_STRATEGY="${6:-semantic-cost-batching}"
 
 TARGET_BATCH_COST=32000
 SOFT_MIN_BATCH_COST=18000
@@ -18,6 +20,9 @@ HARD_MAX_BATCH_LOC=35000
 TARGET_BATCH_LOC=25000
 SOFT_MIN_BATCH_LOC=15000
 SOFT_MAX_BATCH_LOC=30000
+
+SELECTED_MODULES=()
+SELECTED_MODULES_RAW=()
 
 json_escape() {
   printf '%s' "$1" | perl -0pe 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g; s/\t/\\t/g; s/\r/\\r/g'
@@ -160,6 +165,98 @@ append_legacy_unit() {
   append_unit "$unit_id" "$name" "$path" "$kind" "$artifact" "$loc" "$files" "$cost" "$split_reason"
 }
 
+top_segment() {
+  local path="$1"
+  printf '%s\n' "${path%%/*}"
+}
+
+scope_is_full() {
+  case "$REVIEW_SCOPE_INPUT" in
+    ""|"全量代码"|"全量审查"|"all"|"ALL") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+normalize_strategy() {
+  case "$PLANNING_STRATEGY" in
+    module-sequential|module-sequential-batching|按模块依次审查)
+      printf 'module-sequential-batching\n'
+      ;;
+    ai-planned|semantic-cost-batching|AI智能规划分批|"AI 智能规划分批"|"")
+      printf 'semantic-cost-batching\n'
+      ;;
+    *)
+      echo "UNKNOWN_PLANNING_STRATEGY=$PLANNING_STRATEGY" >&2
+      exit 1
+      ;;
+  esac
+}
+
+module_already_selected() {
+  local candidate="$1"
+  local selected
+  if [ "${#SELECTED_MODULES[@]}" -eq 0 ]; then
+    return 1
+  fi
+  for selected in "${SELECTED_MODULES[@]}"; do
+    if [ "$selected" = "$candidate" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+add_selected_module() {
+  local module="$1"
+  [ -n "$module" ] || return 0
+  if module_already_selected "$module"; then
+    return 0
+  fi
+  SELECTED_MODULES+=("$module")
+}
+
+parse_selected_modules() {
+  local normalized module
+  SELECTED_MODULES=()
+  if scope_is_full; then
+    while IFS= read -r module; do
+      [ -n "$module" ] || continue
+      add_selected_module "$module"
+    done < <(extract_modules_from_pom "$PROJECT_DIR/pom.xml")
+    return
+  fi
+
+  normalized="$(printf '%s' "$REVIEW_SCOPE_INPUT" | perl -CS -Mutf8 -pe 's/[，、\s]+/,/g; s/^,+//; s/,+$//')"
+  IFS=',' read -r -a SELECTED_MODULES_RAW <<< "$normalized"
+  for module in "${SELECTED_MODULES_RAW[@]}"; do
+    module="$(printf '%s' "$module" | sed 's#^\./##; s#//*#/#g; s#/$##')"
+    [ -n "$module" ] || continue
+    add_selected_module "$module"
+  done
+}
+
+validate_selected_modules() {
+  local module
+  if [ "${#SELECTED_MODULES[@]}" -eq 0 ]; then
+    echo "NO_SELECTED_MODULES=$REVIEW_SCOPE_INPUT" >&2
+    exit 1
+  fi
+  if scope_is_full; then
+    return
+  fi
+  for module in "${SELECTED_MODULES[@]}"; do
+    if [ ! -f "$PROJECT_DIR/$module/pom.xml" ]; then
+      echo "SELECTED_MODULE_NOT_FOUND=$module" >&2
+      exit 1
+    fi
+  done
+}
+
+is_selected_module() {
+  local candidate="$1"
+  module_already_selected "$candidate"
+}
+
 child_module_count() {
   local dir="$1"
   if [ ! -f "$dir/pom.xml" ]; then
@@ -200,7 +297,11 @@ split_package_dir() {
   children="$(java_child_dirs "$abs_dir")"
 
   if [ "$loc" -le "$HARD_MAX_BATCH_LOC" ] && [ "$cost" -le "$HARD_MAX_BATCH_COST" ]; then
-    append_unit "java-package:$unit_path" "$top_name:$package_rel" "$unit_path" "java-package" "$artifact" "$loc" "$files" "$cost" "oversized_module_package_split"
+    local display_name="$top_name"
+    if [ -n "$package_rel" ]; then
+      display_name="$top_name:$package_rel"
+    fi
+    append_unit "java-package:$unit_path" "$display_name" "$unit_path" "java-package" "$artifact" "$loc" "$files" "$cost" "oversized_module_package_split"
     return
   fi
 
@@ -238,6 +339,7 @@ split_package_units() {
 generate_work_units() {
   local module_rel="$1"
   local top_name="$2"
+  local force_scan="${3:-false}"
   local module_dir="$PROJECT_DIR/$module_rel"
   local pom_path="$module_dir/pom.xml"
   [ -f "$pom_path" ] || return
@@ -253,7 +355,7 @@ generate_work_units() {
   cost="$(review_cost "$loc" "$files")"
   child_count="$(child_module_count "$module_dir")"
 
-  if is_support_context "$name" "$loc" "$module_rel"; then
+  if [ "$force_scan" != "true" ] && is_support_context "$name" "$loc" "$module_rel"; then
     append_context "context-module:$module_rel" "$name" "$module_rel" "context-module" "$artifact" "$loc" "$files" "$cost" "tiny_or_zero_support_context"
     return
   fi
@@ -262,7 +364,7 @@ generate_work_units() {
     if [ "$child_count" -gt 0 ]; then
       while IFS= read -r child; do
         [ -n "$child" ] || continue
-        generate_work_units "$(path_join "$module_rel" "$child")" "$top_name"
+        generate_work_units "$(path_join "$module_rel" "$child")" "$top_name" "false"
       done < <(extract_modules_from_pom "$pom_path")
       return
     fi
@@ -271,6 +373,51 @@ generate_work_units() {
   fi
 
   append_unit "maven-module:$module_rel" "$name" "$module_rel" "maven-module" "$artifact" "$loc" "$files" "$cost" "maven_module"
+}
+
+generate_module_sequential_unit() {
+  local module_rel="$1"
+  local module_dir="$PROJECT_DIR/$module_rel"
+  local pom_path="$module_dir/pom.xml"
+  [ -f "$pom_path" ] || return
+
+  local artifact name loc files cost
+  artifact="$(artifact_id_for_pom "$pom_path")"
+  if [ -z "$artifact" ]; then
+    artifact="$(basename_path "$module_rel")"
+  fi
+  name="$module_rel"
+  loc="$(java_loc "$module_dir")"
+  files="$(java_files "$module_dir")"
+  cost="$(review_cost "$loc" "$files")"
+
+  if [ "$loc" -eq 0 ]; then
+    append_context "context-module:$module_rel" "$name" "$module_rel" "context-module" "$artifact" "$loc" "$files" "$cost" "zero_loc_selected_module_context"
+    return
+  fi
+
+  append_unit "maven-module:$module_rel" "$name" "$module_rel" "maven-module" "$artifact" "$loc" "$files" "$cost" "module_sequential_user_selected"
+}
+
+collect_support_context_candidate() {
+  local module_rel="$1"
+  local module_dir="$PROJECT_DIR/$module_rel"
+  local pom_path="$module_dir/pom.xml"
+  [ -f "$pom_path" ] || return
+  is_selected_module "$module_rel" && return
+
+  local artifact name loc files cost
+  artifact="$(artifact_id_for_pom "$pom_path")"
+  if [ -z "$artifact" ]; then
+    artifact="$(basename_path "$module_rel")"
+  fi
+  name="$(basename_path "$module_rel")"
+  loc="$(java_loc "$module_dir")"
+  files="$(java_files "$module_dir")"
+  cost="$(review_cost "$loc" "$files")"
+  if is_support_context "$name" "$loc" "$module_rel"; then
+    append_context "context-module:$module_rel" "$name" "$module_rel" "context-module" "$artifact" "$loc" "$files" "$cost" "tiny_or_zero_support_context"
+  fi
 }
 
 unit_field() {
@@ -509,8 +656,12 @@ write_batch() {
     printf '  "schema_version": 1,\n'
     printf '  "run_id": "%s",\n' "$(json_escape "$RUN_ID")"
     printf '  "batch_id": "%s",\n' "$batch_id"
-    printf '  "strategy": "semantic-cost-batching",\n'
+    printf '  "strategy": "%s",\n' "$(json_escape "$PLAN_STRATEGY")"
     printf '  "semantic_level": "%s",\n' "$(json_escape "$SEMANTIC_LEVEL")"
+    printf '  "review_scope": "%s",\n' "$(json_escape "$REVIEW_SCOPE_INPUT")"
+    printf '  "selected_modules": '
+    write_json_string_array "${SELECTED_MODULES[@]}"
+    printf ',\n'
     printf '  "planned_java_loc": %s,\n' "$planned_loc"
     printf '  "planned_java_file_count": %s,\n' "$planned_files"
     printf '  "planned_review_cost": %s,\n' "$planned_cost"
@@ -607,8 +758,11 @@ fi
 
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
+PLAN_STRATEGY="$(normalize_strategy)"
+parse_selected_modules
+validate_selected_modules
 RUN_TIMESTAMP="${CC_CODE_REVIEWER_RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}"
-RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE-full-large-maven"
+RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"
 RUNS_ROOT="${CC_CODE_REVIEWER_RUNS_ROOT:-$PROJECT_DIR/.cc-code-reviewer/runs}"
 RUN_DIR="$RUNS_ROOT/$RUN_ID"
 UNITS_TSV="$RUN_DIR/work-units.tsv"
@@ -624,8 +778,14 @@ mkdir -p "$RUN_DIR/batches" "$RUN_DIR/results" "$DRAFT_DIR"
 
 TOTAL_JAVA_LOC=0
 TOTAL_JAVA_FILE_COUNT=0
-while IFS= read -r module; do
-  [ -n "$module" ] || continue
+if ! scope_is_full; then
+  while IFS= read -r module; do
+    [ -n "$module" ] || continue
+    collect_support_context_candidate "$module"
+  done < <(extract_modules_from_pom "$PROJECT_DIR/pom.xml")
+fi
+
+for module in "${SELECTED_MODULES[@]}"; do
   module_dir="$PROJECT_DIR/$module"
   pom_path="$module_dir/pom.xml"
   if [ ! -f "$pom_path" ]; then
@@ -635,8 +795,16 @@ while IFS= read -r module; do
   module_files="$(java_files "$module_dir")"
   TOTAL_JAVA_LOC=$((TOTAL_JAVA_LOC + module_loc))
   TOTAL_JAVA_FILE_COUNT=$((TOTAL_JAVA_FILE_COUNT + module_files))
-  generate_work_units "$module" "$module"
-done < <(extract_modules_from_pom "$PROJECT_DIR/pom.xml")
+  if [ "$PLAN_STRATEGY" = "module-sequential-batching" ]; then
+    generate_module_sequential_unit "$module"
+  else
+    force_scan="false"
+    if ! scope_is_full; then
+      force_scan="true"
+    fi
+    generate_work_units "$module" "$(top_segment "$module")" "$force_scan"
+  fi
+done
 
 if [ ! -s "$UNITS_TSV" ] && [ ! -s "$CONTEXT_TSV" ]; then
   echo "NO_MAVEN_MODULES=$PROJECT_DIR" >&2
@@ -671,20 +839,30 @@ awk -F '\t' '{print $8 "\t" NR "\t" $1}' "$UNITS_TSV" | sort -rn -k1,1 -k2,2n > 
 
 ASSIGNED_UNITS="|"
 DRAFT_COUNT=0
-while [ "$(awk 'END {print NR + 0}' "$UNITS_TSV")" -gt "$(printf '%s' "$ASSIGNED_UNITS" | awk -F '|' '{print NF - 2}')" ]; do
-  seed="$(next_unassigned_unit)"
-  [ -n "$seed" ] || break
-  DRAFT_COUNT=$((DRAFT_COUNT + 1))
-  draft_file="$DRAFT_DIR/draft-$(printf '%03d' "$DRAFT_COUNT").tsv"
-  : > "$draft_file"
-  add_unit_to_draft "$seed" "$draft_file"
-  try_fill_draft "$draft_file" "$TARGET_BATCH_COST"
-  if [ "$(batch_sum_field "$draft_file" cost)" -lt "$SOFT_MIN_BATCH_COST" ]; then
-    try_fill_draft "$draft_file" "$SOFT_MAX_BATCH_COST"
-  fi
-done
+if [ "$PLAN_STRATEGY" = "module-sequential-batching" ]; then
+  while IFS="$(printf '\t')" read -r unit _name _path _kind _artifact _loc _files _cost _split_reason; do
+    [ -n "$unit" ] || continue
+    DRAFT_COUNT=$((DRAFT_COUNT + 1))
+    draft_file="$DRAFT_DIR/draft-$(printf '%03d' "$DRAFT_COUNT").tsv"
+    : > "$draft_file"
+    awk -F '\t' -v unit="$unit" '$1 == unit {print; exit}' "$UNITS_TSV" >> "$draft_file"
+  done < "$UNITS_TSV"
+else
+  while [ "$(awk 'END {print NR + 0}' "$UNITS_TSV")" -gt "$(printf '%s' "$ASSIGNED_UNITS" | awk -F '|' '{print NF - 2}')" ]; do
+    seed="$(next_unassigned_unit)"
+    [ -n "$seed" ] || break
+    DRAFT_COUNT=$((DRAFT_COUNT + 1))
+    draft_file="$DRAFT_DIR/draft-$(printf '%03d' "$DRAFT_COUNT").tsv"
+    : > "$draft_file"
+    add_unit_to_draft "$seed" "$draft_file"
+    try_fill_draft "$draft_file" "$TARGET_BATCH_COST"
+    if [ "$(batch_sum_field "$draft_file" cost)" -lt "$SOFT_MIN_BATCH_COST" ]; then
+      try_fill_draft "$draft_file" "$SOFT_MAX_BATCH_COST"
+    fi
+  done
 
-rebalance_tiny_batches
+  rebalance_tiny_batches
+fi
 
 BATCH_COUNT=0
 for draft_file in "$DRAFT_DIR"/draft-*.tsv; do
@@ -702,9 +880,10 @@ cat > "$RUN_DIR/plan.json.tmp" <<JSON
   "project_name": "$(json_escape "$PROJECT_NAME")",
   "project_dir": "$(json_escape "$PROJECT_DIR")",
   "review_mode": "$(json_escape "$REVIEW_MODE")",
-  "review_scope": "全量代码",
+  "review_scope": "$(json_escape "$REVIEW_SCOPE_INPUT")",
+  "selected_modules": $(write_json_string_array "${SELECTED_MODULES[@]}"),
   "branch": "$(json_escape "$BRANCH_NAME")",
-  "strategy": "semantic-cost-batching",
+  "strategy": "$(json_escape "$PLAN_STRATEGY")",
   "semantic_level": "$(json_escape "$SEMANTIC_LEVEL")",
   "total_java_loc": $TOTAL_JAVA_LOC,
   "total_java_file_count": $TOTAL_JAVA_FILE_COUNT,

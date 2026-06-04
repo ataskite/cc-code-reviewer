@@ -56,9 +56,9 @@ fi
 JDTLS_PATH="$(command -v jdtls 2>/dev/null || true)"
 if [ -n "$JDTLS_PATH" ]; then
   JDTLS_INSTALLED=true
-  if perl -e 'alarm 5; exec @ARGV' "$JDTLS_PATH" --version >/dev/null 2>&1; then
-    JDTLS_READY=true
-  fi
+  # jdtls is an LSP server; some installations do not implement a quick,
+  # read-only --version path and will start the server instead.
+  JDTLS_READY=true
 fi
 
 if plugin_installed; then

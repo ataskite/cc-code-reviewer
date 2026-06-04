@@ -47,6 +47,8 @@ maxTurns: 50
 | 报告格式路径 | ... |
 | 项目 ignore 文件路径 | ... |
 | 项目 ignore 是否启用 | ... |
+| 项目 ignore 问题数量 | ... |
+| 语义增强 | ... |
 | 批次编号 | {BATCH_INDEX}/{BATCH_COUNT} |
 | 审查输出模式 | {REVIEW_OUTPUT_MODE} |
 | 本批审查文件列表 | {逐行列出文件路径} |
@@ -81,6 +83,8 @@ maxTurns: 50
 - **报告格式路径**（`REPORT_FORMAT_PATH`）：`report-format.md` 的绝对路径。必须优先读取主 agent 注入的绝对路径。
 - **项目 ignore 文件路径**（`IGNORE_RULES_PATH`）：项目内 `.cc-code-reviewer/ignore/issues.yml` 的绝对路径；未配置时为 `未配置`。
 - **项目 ignore 是否启用**（`IGNORE_RULES_ENABLED`）：`true` / `false`。启用时主 agent 会在独立章节注入 `IGNORE_RULES_CONTENT`。
+- **项目 ignore 问题数量**（`IGNORE_RULE_COUNT`）：主 agent 从 `ignore:` 下一级 `- name:` 规则项统计出的条目数，仅用于展示当前项目已沉淀的 ignore 问题数量，不包含 applies_to 下的子列表项。
+- **语义增强**（`SEMANTIC_LEVEL`）：`jdtls-lsp` 或 `maven-static`。当值为 `jdtls-lsp` 时表示 jdtls-lsp 可用时必须使用；子 agent 必须用 jdtls 查询 definition、references、implementations、call hierarchy，并在报告或批次结果中披露「语义增强使用情况」。当值为 `maven-static` 时才允许回退 Maven 静态依赖与文本检索。
 - **批次编号**（`BATCH_INDEX`/`BATCH_COUNT`）：格式为 `N/M`，表示第 N 批共 M 批。仅在分批模式下提供。未提供时视为单 agent 全量模式
 - **审查输出模式**（`REVIEW_OUTPUT_MODE`）：
   - `完整报告`（默认）：按 REPORT_FORMAT_PATH 输出完整审查报告
@@ -145,7 +149,9 @@ maxTurns: 50
 - 批次计划中的 `units[].path` / `units[].scan_roots` 和顶层 `scan_roots` 是正式审查边界。
 - `context_roots are read-only context`，只能作为只读上下文使用，不得计入已审查 Java 文件，不得从 context_roots 产出正式问题。
 - Formal findings must point to locations inside scan_roots。正式问题的位置必须位于 `scan_roots` 内。
-- 允许使用 jdtls 跨目录查询 definition、references、implementations、call hierarchy 来理解调用链。
+- `SEMANTIC_LEVEL=jdtls-lsp` 或外部参数显示 jdtls-lsp 可用时，jdtls-lsp 可用时必须使用：必须用 jdtls 查询 definition、references、implementations、call hierarchy 来理解跨目录调用链，不能只依赖文本搜索或 Maven 静态依赖推断。
+- 使用 jdtls-lsp 后，批次结果必须写明「语义增强使用情况」：至少列出已使用的能力（definition / references / implementations / call hierarchy）、覆盖的关键类/接口/入口点，以及是否存在查询失败或降级。
+- 只有 `SEMANTIC_LEVEL=maven-static` 或明确注入 jdtls-lsp 不可用时，才允许回退 Maven 静态依赖分批、包名推断和文本检索。
 - `scan_roots` 外的代码只能作为外部依赖上下文，不得作为本批正式问题位置。
 - 如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」，不计入正式问题数量。
 - 批次是原子的；不要写其他运行状态，也不要写文件级 reviewed 状态。

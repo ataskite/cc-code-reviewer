@@ -74,7 +74,10 @@ create_module "svc&core" "svc-core" "" 10
 
 OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-010203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "standard" "main" "jdtls-lsp")"
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
+RUN_ID="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_ID=//p')"
 
+test "$RUN_ID" = "20260528-010203-main-standard"
+test "$(basename "$RUN_DIR")" = "$RUN_ID"
 test -f "$RUN_DIR/plan.json"
 test -f "$RUN_DIR/batches/batch-001.json"
 test -f "$RUN_DIR/results/batch-001.status.json"
@@ -223,6 +226,55 @@ if jq -r '.split_reason' "$RUN_DIR"/batches/batch-*.json | grep -qE '^[0-9]+$'; 
 fi
 if ! jq -r '.split_reason' "$RUN_DIR"/batches/batch-*.json | grep -qE 'oversized_module_package_split|maven_module|tiny_tail_context'; then
   echo "semantic batch split_reason should expose planner reasoning" >&2
+  exit 1
+fi
+
+OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-020203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "yudao-module-mall")"
+RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
+
+jq -e '.review_scope == "yudao-module-mall"' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.selected_modules == ["yudao-module-mall"]' "$RUN_DIR/plan.json" >/dev/null
+if jq -r '.scan_roots[]' "$RUN_DIR"/batches/batch-*.json | grep -v '^yudao-module-mall/' | grep -q .; then
+  echo "selected-module smart batching must keep scan_roots inside the selected module" >&2
+  exit 1
+fi
+if jq -r '.units[].name? // empty' "$RUN_DIR"/batches/batch-*.json | grep -q "yudao-module-mes"; then
+  echo "selected-module smart batching must not include unselected module units" >&2
+  exit 1
+fi
+
+OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-030203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "yudao-module-mes,yudao-framework" "module-sequential")"
+RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
+
+jq -e '.strategy == "module-sequential-batching"' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.selected_modules == ["yudao-module-mes", "yudao-framework"]' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.batch_count == 2' "$RUN_DIR/plan.json" >/dev/null
+jq -e 'select(.split_reason == "module_sequential_user_selected")' "$RUN_DIR"/batches/batch-*.json >/dev/null
+if ! jq -r '.units[].name? // empty' "$RUN_DIR"/batches/batch-*.json | grep -Fxq "yudao-module-mes"; then
+  echo "module-sequential batching must keep the selected oversized module as one batch" >&2
+  exit 1
+fi
+if ! jq -e 'select(.large_batch == true and (.units[].name == "yudao-module-mes"))' "$RUN_DIR"/batches/batch-*.json >/dev/null; then
+  echo "module-sequential oversized modules must be flagged but not blocked" >&2
+  exit 1
+fi
+
+OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-040203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "yudao-module-mall" "module-sequential")"
+RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
+RUN_ID="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_ID=//p')"
+
+test "$RUN_ID" = "20260601-040203-main-deep"
+test "$(basename "$RUN_DIR")" = "$RUN_ID"
+jq -e '.strategy == "module-sequential-batching"' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.review_scope == "yudao-module-mall"' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.selected_modules == ["yudao-module-mall"]' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.batch_count == 1' "$RUN_DIR/plan.json" >/dev/null
+if jq -r '.scan_roots[]' "$RUN_DIR"/batches/batch-*.json | grep -v '^yudao-module-mall$' | grep -q .; then
+  echo "single selected module-sequential batch must not include other module scan_roots" >&2
+  exit 1
+fi
+if jq -r '.units[].name? // empty' "$RUN_DIR"/batches/batch-*.json | grep -v '^yudao-module-mall$' | grep -q .; then
+  echo "single selected module-sequential batch must only include the selected module unit" >&2
   exit 1
 fi
 

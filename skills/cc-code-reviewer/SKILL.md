@@ -86,10 +86,24 @@ IGNORE_RULES_PATH="$PROJECT_DIR/.cc-code-reviewer/ignore/issues.yml"
 ```
 
 读取规则：
-- 文件存在且可读：读取完整内容到 `IGNORE_RULES_CONTENT`，设置 `IGNORE_RULES_ENABLED=true`
-- 文件不存在：设置 `IGNORE_RULES_ENABLED=false`、`IGNORE_RULES_CONTENT=""`
-- 文件存在但不可读：设置 `IGNORE_RULES_ENABLED=false`，在预扫描摘要中提示不可读原因，但不得阻塞扫描
-- 不解析 YAML，不做脚本级过滤；过滤由 scan agent 基于 `skip_when` 语义执行
+- 文件存在且可读：读取完整内容到 `IGNORE_RULES_CONTENT`，设置 `IGNORE_RULES_ENABLED=true`，统计 `ignore:` 下一级规则条目数到 `IGNORE_RULE_COUNT`
+- 文件不存在：设置 `IGNORE_RULES_ENABLED=false`、`IGNORE_RULES_CONTENT=""`、`IGNORE_RULE_COUNT=0`
+- 文件存在但不可读：设置 `IGNORE_RULES_ENABLED=false`、`IGNORE_RULE_COUNT=0`，在预扫描摘要中提示不可读原因，但不得阻塞扫描
+- 只统计 `ignore:` 下缩进 2 个空格的 `- name:` 规则项数量用于展示；不得统计 `applies_to:` 下缩进更深的子列表项
+- 不做脚本级过滤，不校验规则语义；过滤由 scan agent 基于 `skip_when` 语义执行
+
+推荐统计方式：
+
+```bash
+IGNORE_RULE_COUNT="$(
+  awk '
+    /^ignore:[[:space:]]*$/ { in_ignore=1; next }
+    in_ignore && /^[^[:space:]]/ { in_ignore=0 }
+    in_ignore && /^  -[[:space:]]+name:/ { count++ }
+    END { print count + 0 }
+  ' "$IGNORE_RULES_PATH"
+)"
+```
 
 ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI 指令型 ignore 文件，不存报告编号，只描述同类问题的跳过规则。
 
@@ -135,7 +149,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 
 🧠 代码智能：{CODE_INTELLIGENCE_AVAILABLE=true 时显示 "✅ jdtls-lsp 可用，可用于跨目录调用链理解" / false 时显示 "⚠️ 未启用 jdtls-lsp，将使用 Maven 静态依赖分批；建议安装 jdtls 并启用 jdtls-lsp 提升跨模块理解质量"}
 
-🧩 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "✅ 已启用：.cc-code-reviewer/ignore/issues.yml" / false 且文件不存在时显示 "未配置" / false 且不可读时显示 "⚠️ 文件存在但不可读：{原因}"}
+🧩 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "✅ 已启用：.cc-code-reviewer/ignore/issues.yml（已忽略 {IGNORE_RULE_COUNT} 个问题）" / false 且文件不存在时显示 "未配置" / false 且不可读时显示 "⚠️ 文件存在但不可读：{原因}"}
 ```
 
 **技术栈扫描展示规则**：
@@ -148,12 +162,16 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 
 ### 第四步之后：分批判定
 
-**时机**：在步骤 1（选择审查类型）确定 REVIEW_TYPE 后、步骤 5 前执行判定。
+**时机**：在步骤 3（选择审查入口）确定 REVIEW_ENTRY 后、步骤 5 前执行判定。
 
 **公式**：
 ```
 estimated_tokens = REVIEW_FILE_COUNT × 500 + REVIEW_LINE_COUNT × 3
-BATCH_MODE = estimated_tokens > 100000 AND REVIEW_TYPE = 存量审查
+BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
+  estimated_tokens > 100000
+  OR STOCK_REVIEW_STRATEGY=module-sequential
+  OR STOCK_REVIEW_STRATEGY=ai-planned
+)
 ```
 
 **前提**：分批模式仅对存量审查生效。增量审查的变更文件数通常远低于阈值；即使超过阈值，batch agent 缺少增量上下文（GIT_LOG/CHANGED_FILES），无法判断问题是变更引入还是存量，因此不进入分批。
@@ -168,15 +186,18 @@ BATCH_MODE = estimated_tokens > 100000 AND REVIEW_TYPE = 存量审查
 - `BATCH_MODE=false` → 走现有单 agent 流程，不做任何改动
 - `BATCH_MODE=true` → 进入分批模式
 
-**执行要求**：分批判定至少延迟到步骤 1 确定审查类型后执行；如果审查范围会影响 `REVIEW_FILE_COUNT` / `REVIEW_LINE_COUNT`，必须在步骤 2 确定范围后按所选范围重新计算。
+**执行要求**：分批判定至少延迟到步骤 3 确定审查入口后执行；如果审查范围会影响 `REVIEW_FILE_COUNT` / `REVIEW_LINE_COUNT`，必须在步骤 4 确定范围后按所选范围重新计算。
 
 ### Maven 大仓库模式判定
 
 仅当以下条件全部满足时进入 Maven 大仓库模式：
 - `PROJECT_TYPE=maven-multi`（Maven 多模块）
 - `REVIEW_TYPE=存量审查`
-- `REVIEW_SCOPE=全量代码`
-- `TOTAL_JAVA_LOC >= 120000`
+- `REVIEW_SCOPE=全量代码` 或 指定模块路径列表
+- `STOCK_REVIEW_STRATEGY=ai-planned` 或 `module-sequential`
+- `TOTAL_JAVA_LOC >= 120000`，或用户已在存量审查方式中明确选择分批策略
+
+只要 `PROJECT_TYPE=maven-multi` 且用户已经选择 `STOCK_REVIEW_STRATEGY=ai-planned` 或 `module-sequential`，就必须进入 Maven 大仓库模式。即使只选择一个模块、即使所选模块低于 `TOTAL_JAVA_LOC >= 120000` 自动阈值，也必须调用 `phase11-plan-large-batches.sh`，并把 `REVIEW_SCOPE` 原样作为第 5 个参数传入。Maven 多模块存量分批绝不调用 `phase11-plan-file-batches.sh`；该文件级 planner 只服务 Maven 单模块、Gradle 或未知 Java 项目。
 
 判定公式：
 ```text
@@ -200,9 +221,9 @@ Maven 大仓库规划使用 semantic-cost batching：
 - tiny tail batches 必须合并、转为 context，或写明无法合法合并的原因
 - `context_roots` 只用于理解，受 context cost 上限约束，不计入 Java 文件覆盖率
 
-Maven 大仓库模式仍然只对存量审查生效。增量审查、Gradle 项目、单模块项目、局部模块审查继续走现有流程。
+Maven 大仓库模式仍然只对存量审查生效。增量审查、Gradle 项目、单模块项目继续走现有流程。指定模块审查可以进入 Maven 大仓库模式：`ai-planned` 使用 semantic-cost batching 在所选模块内智能拆分，`module-sequential` 按所选模块依次启动批次；模块过大时必须提醒用户但不阻断。
 
-Maven 大仓库模式必须在步骤 3 确定 `REVIEW_MODE` 后、步骤 5 选择本轮执行批次前完成规划；规划完成后必须立即展示分批表格和推荐计划，再进入 AskUserQuestion。
+Maven 大仓库模式必须在步骤 1 确定 `REVIEW_MODE` 且步骤 3/4 确定审查入口与范围后、步骤 5 选择本轮执行批次前完成规划；规划完成后必须立即展示分批表格和推荐计划，再进入 AskUserQuestion。
 
 批次状态值固定为：
 ```text
@@ -218,6 +239,8 @@ failed 失败待重试
 - `pending` 和 `failed` 批次按用户本轮执行批次数调度
 - 重新规划必须由用户明确选择，并创建新的 `RUN_DIR`
 
+`RUN_DIR` 目录名固定为 `{YYYYMMDD-HHMMSS}-{branch_slug}-{REVIEW_MODE}`，例如 `20260603-143000-master-deep`。目录名不得包含审查范围、分批策略、`large-maven` 或 `file-batches` 后缀；审查范围、分批策略和任务类型必须从 `plan.json` 读取。
+
 规划命令：
 ```bash
 SEMANTIC_LEVEL="maven-static"
@@ -225,7 +248,7 @@ if [ "$CODE_INTELLIGENCE_AVAILABLE" = "true" ]; then
   SEMANTIC_LEVEL="jdtls-lsp"
 fi
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "$SEMANTIC_LEVEL"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "$SEMANTIC_LEVEL" "$REVIEW_SCOPE" "$STOCK_REVIEW_STRATEGY"
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR"
 ```
 
@@ -319,17 +342,20 @@ test -r "$REPORT_FORMAT_PATH"
 | 报告格式路径 | {REPORT_FORMAT_PATH} |
 | 项目 ignore 文件路径 | {IGNORE_RULES_PATH 或 未配置} |
 | 项目 ignore 是否启用 | {IGNORE_RULES_ENABLED} |
+| 项目 ignore 问题数量 | {IGNORE_RULE_COUNT} |
 | 运行目录 | {RUN_DIR} |
 | 批次计划文件 | {BATCH_PLAN_PATH} |
 | 批次状态文件 | {BATCH_STATUS_PATH} |
 | 批次结果文件 | {BATCH_RESULT_PATH} |
 | 批次编号 | {BATCH_INDEX}/{BATCH_COUNT}（仅旧批次模式） |
+| 语义增强 | {SEMANTIC_LEVEL} |
 | 审查输出模式 | 仅发现清单 |
 
 ### 本批审查边界
 请读取 `BATCH_PLAN_PATH`，以其中 `scan_roots` 作为正式审查边界。
 若批次计划包含 `units`，以 `units[].path` / `units[].scan_roots` 对应的 `scan_roots` 为准；`context_roots` are read-only context，只能用于理解依赖关系。
-允许使用 jdtls 跨目录理解调用链，但正式问题必须位于 `scan_roots` 内。
+`SEMANTIC_LEVEL=jdtls-lsp` 时表示 jdtls-lsp 可用时必须使用：本批子 agent 必须用 jdtls 查询 definition、references、implementations、call hierarchy 来理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `scan_roots` 内。
+`SEMANTIC_LEVEL=maven-static` 时才允许回退 Maven 静态依赖与文本检索。
 如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」。
 
 ### 项目概况（预扫描结果）
@@ -373,28 +399,68 @@ test -r "$REPORT_FORMAT_PATH"
 > - 不允许在一次回复中包含多个交互步骤的动作
 > - 用户响应后，处理结果、设置变量，然后才能进入下一步
 
-> **注意**：分支选择已在第二步（项目识别与分支检测）完成，本步骤从选择审查类型开始。
+> **注意**：分支选择已在第二步（项目识别与分支检测）完成，本步骤从选择审查模式开始；审查模式和报告处理方式必须在审查入口前确认。
 
-### 步骤 1：选择审查类型
+### 步骤 1：选择审查模式
+
+当 `RUN_BATCH_COUNT>=2` 时，**必须调用 AskUserQuestion 工具，参数如下**：
+- question: "请选择审查模式"
+- header: "审查模式"
+- options:
+  - label: "fast"
+    description: "快速扫雷，聚焦关键风险，约 5 分钟内出结果"
+  - label: "standard（推荐）"
+    description: "标准审查，覆盖常规核心维度 + API设计 + 缓存基础 + 核心测试缺失，日常迭代推荐"
+  - label: "deep"
+    description: "深度审查，全量 15 维度，适合大版本上线前"
+  - label: "security"
+    description: "安全专项，聚焦安全核心维度"
+- multiSelect: false
+
+### 步骤 2：选择飞书上传选项（条件步骤）
+
+**触发条件**：LARK_PLUGIN_INSTALLED=true。不满足时跳过，设 FEISHU_UPLOAD_OPTION=飞书上传不可用。
 
 **必须调用 AskUserQuestion 工具，参数如下**：
-- question: "请选择审查类型"
-- header: "审查类型"
+- question: "检测到飞书上传能力可用，请选择审查结果的处理方式"
+- header: "飞书上传"
+- options:
+  - label: "本地 Markdown 报告"
+    description: "生成并保存本地 Markdown 完整审查报告"
+  - label: "上传到云文档"
+    description: "审查报告上传到飞书云文档，聊天中显示精简摘要"
+  - label: "上传到多维表格"
+    description: "问题清单录入飞书多维表格，聊天中显示精简摘要"
+  - label: "同时上传两者"
+    description: "同时上传云文档和多维表格，聊天中显示精简摘要"
+- multiSelect: false
+
+### 步骤 3：选择审查入口
+
+**必须调用 AskUserQuestion 工具，参数如下**：
+- question: "请选择本次审查入口"
+- header: "审查入口"
 - options:
   - label: "增量审查"
     description: "审查最近 N 次提交的变更文件及其关联代码"
-  - label: "存量审查"
-    description: "审查指定模块或全量代码"
+  - label: "全量审查"
+    description: "审查当前分支的全部 Java 代码，适合上线前或周期性巡检"
+  - label: "指定模块"
+    description: "只审查本次选择的一个或多个模块，适合大仓库分阶段推进"
 - multiSelect: false
 
-**变量赋值**：增量审查 → REVIEW_TYPE=增量审查，存量审查 → REVIEW_TYPE=存量审查
+**变量赋值**：
+- 增量审查 → REVIEW_ENTRY=增量审查，REVIEW_TYPE=增量审查
+- 全量审查 → REVIEW_ENTRY=全量审查，REVIEW_TYPE=存量审查，REVIEW_SCOPE=全量代码
+- 指定模块 → REVIEW_ENTRY=指定模块，REVIEW_TYPE=存量审查
 
-### 步骤 2：选择审查范围（条件步骤）
+### 步骤 4：选择审查范围（条件步骤）
 
 **触发条件**：
 - 增量审查时 → 必须执行
-- 存量审查 + 多模块 → 必须执行
-- 存量审查 + 单模块 → 跳过，自动设 REVIEW_SCOPE=全量代码
+- 指定模块 + 多模块 → 必须执行
+- 指定模块 + 单模块 → 跳过，自动设 REVIEW_SCOPE=全量代码
+- 全量审查 → 跳过，已在步骤 3 设 REVIEW_SCOPE=全量代码
 
 **增量审查时，必须先扫描并展示最近提交，再调用 AskUserQuestion 工具**：
 
@@ -423,9 +489,9 @@ test -r "$REPORT_FORMAT_PATH"
     description: "审查列表中的第 1-10 条提交"
 - multiSelect: false
 
-**存量审查 + 多模块时，先展示模块树，再调用 AskUserQuestion 工具**：
+**指定模块 + 多模块时，先展示模块树，再调用 AskUserQuestion 工具**：
 
-**展示模块树**（在调用 AskUserQuestion 之前，用文本输出）：
+**展示模块树**（在调用 AskUserQuestion 之前，用文本输出；完整模块列表只能作为普通文本展示，不得放入 AskUserQuestion options）：
 ```
 📊 项目模块概览：
 
@@ -439,56 +505,55 @@ test -r "$REPORT_FORMAT_PATH"
 
 数据来源：解析阶段四预扫描输出的 `MODULE:` 行，提取每个模块的名称、Java 文件数、代码行数。
 
-**然后调用 AskUserQuestion 工具，参数如下**：
-- question: "请选择要审查的模块"
-- header: "审查范围"
-- options: 从预扫描结果动态生成，每个模块的 description 中标注类数和行数（如 `12 类 · 1,580 行`）；模块超过 10 个时展示前 9 个 + "其他模块"
-- multiSelect: true
+**AskUserQuestion payload 约束**：
+- 不得把每个模块都作为 AskUserQuestion option；大仓库模块数量可能很多，容易触发 Invalid tool parameters
+- 该步骤最多 3 个固定选项，模块路径通过 Other/free-form 或后续输入步骤收集
+- 模块列表越长，越应该只在普通文本概览中展示，并引导用户输入模块相对路径
 
-**存量审查 + 多模块用户响应后**：
-- 选择"全量代码" → REVIEW_SCOPE=全量代码，并忽略其他模块选项
-- 选择一个或多个具体模块 → REVIEW_SCOPE=模块相对路径列表（逗号分隔）
-- 选择"其他模块" → 不得把字面值作为模块名；必须读取用户提供的模块相对路径，支持逗号分隔多个模块。若 AskUserQuestion 当前交互不支持自定义文本，追加一次 AskUserQuestion 收集模块路径，header 使用 "输入模块"。
+**然后调用 AskUserQuestion 工具，参数如下**：
+- question: "请选择本次希望 AI 扫描的模块"
+- header: "扫描模块"
+- options:
+  - label: "全部模块"
+    description: "扫描当前多模块项目的全部模块"
+  - label: "手动输入模块路径"
+    description: "在 Other/free-form 中输入一个或多个模块相对路径，逗号分隔"
+  - label: "前 5 个大模块"
+    description: "按 Java 行数选择预扫描结果中最大的 5 个模块，适合先覆盖主要复杂度"
+- multiSelect: false
+
+**指定模块 + 多模块用户响应后**：
+- 选择"全部模块" → REVIEW_SCOPE=全量代码
+- 选择"前 5 个大模块" → REVIEW_SCOPE=按 `MODULE:` 行 Java 行数降序取前 5 个模块路径，逗号分隔
+- 选择"手动输入模块路径" 或 Other/free-form → 读取用户提供的模块相对路径，支持逗号、中文逗号、顿号、空格或换行分隔多个模块；若 AskUserQuestion 当前交互没有返回自定义文本，追加一次 AskUserQuestion 收集模块路径，header 使用 "输入模块"，仍只提供固定选项并要求用户在 Other/free-form 填写模块路径
 - 自定义模块路径必须逐个校验是否存在于预扫描结果的 `MODULE:` 行中；不存在时提示有效模块列表并重新收集，最多重试 3 次
 
 **变量赋值**：
-- 全量代码 → REVIEW_SCOPE=全量代码
-- 具体模块 → REVIEW_SCOPE=模块路径（逗号分隔）
-- 自定义数字 → REVIEW_SCOPE=最近N次提交
+- 全部模块 → REVIEW_SCOPE=全量代码
+- 前 5 个大模块 → REVIEW_SCOPE=模块路径（逗号分隔）
+- 自定义模块路径 → REVIEW_SCOPE=模块路径（逗号分隔）
 
-### 步骤 3：选择审查模式
+### 步骤 4B：选择存量审查方式（条件步骤）
 
-**必须调用 AskUserQuestion 工具，参数如下**：
-- question: "请选择审查模式"
-- header: "审查模式"
-- options:
-  - label: "fast"
-    description: "快速扫雷，聚焦关键风险，约 5 分钟内出结果"
-  - label: "standard（推荐）"
-    description: "标准审查，覆盖常规核心维度 + API设计 + 缓存基础 + 核心测试缺失，日常迭代推荐"
-  - label: "deep"
-    description: "深度审查，全量 15 维度，适合大版本上线前"
-  - label: "security"
-    description: "安全专项，聚焦安全核心维度"
-- multiSelect: false
-
-### 步骤 4：选择飞书上传选项（条件步骤）
-
-**触发条件**：LARK_PLUGIN_INSTALLED=true。不满足时跳过，设 FEISHU_UPLOAD_OPTION=飞书上传不可用。
+**触发条件**：
+- REVIEW_TYPE=存量审查
+- PROJECT_TYPE=maven-multi
 
 **必须调用 AskUserQuestion 工具，参数如下**：
-- question: "检测到飞书上传能力可用，请选择审查结果的处理方式"
-- header: "飞书上传"
+- question: "请选择存量审查方式"
+- header: "审查方式"
 - options:
-  - label: "本地 Markdown 报告"
-    description: "生成并保存本地 Markdown 完整审查报告"
-  - label: "上传到云文档"
-    description: "审查报告上传到飞书云文档，聊天中显示精简摘要"
-  - label: "上传到多维表格"
-    description: "问题清单录入飞书多维表格，聊天中显示精简摘要"
-  - label: "同时上传两者"
-    description: "同时上传云文档和多维表格，聊天中显示精简摘要"
+  - label: "按所选模块依次启动"
+    description: "每个所选模块对应一个批次；模块过大时提醒但不阻断，适合按业务域推进"
+  - label: "AI 智能规划分批"
+    description: "按语义单元和 review cost 自动拆分，适合超大模块或希望批次更均衡时使用"
 - multiSelect: false
+
+**变量赋值**：
+- 按所选模块依次启动 → STOCK_REVIEW_STRATEGY=module-sequential
+- AI 智能规划分批 → STOCK_REVIEW_STRATEGY=ai-planned
+
+当用户选择 `module-sequential` 且任一所选模块超过 `HARD_MAX_BATCH_LOC` 或 `HARD_MAX_BATCH_COST` 时，必须在确认计划前提示该模块为大批次，可能耗时更长或消耗更多 token，但不得阻断执行。
 
 ### 步骤 5：选择本轮执行批次（Maven 大仓库模式）
 
@@ -496,34 +561,43 @@ test -r "$REPORT_FORMAT_PATH"
 
 触发此步骤前，必须先完成 Maven 大仓库分批规划，生成或恢复 `RUN_DIR/plan.json` 和 `RUN_DIR/batches/*.json`。
 
-在调用 AskUserQuestion 之前，必须先展示当前 run 状态、批次表、可执行批次和预估时间计划，并把脚本输出原样输出到控制台：
+在调用 AskUserQuestion 之前，必须先展示当前 run 状态、批次表、可执行批次和预估时间计划。`phase13-show-large-batch-status.sh` 只作为数据来源；不得只依赖 Bash 工具输出，因为 Claude Code 会折叠工具输出，导致用户必须按 `ctrl+o` 才能看到。主 skill 必须读取脚本输出，并在普通助手消息中重新展示完整 Markdown 表格和推荐计划，像技术栈扫描摘要一样直接展示给用户。
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR"
 ```
 
 该输出必须包含：
-- 批次状态表：批次号、状态、行数、文件数、模块
+- 批次状态表：使用用户可见的 Markdown 表格，表头固定为 `| 批次 | 状态 | 行数 | 文件数 | 模块 |`，下一行必须为 `|------|------|------:|------:|------|`
+- 模块列必须使用缩略名展示；当同一批次内模块存在共同工程前缀（例如 `yudao-module-`）时，去掉共同前缀，只展示真正的业务模块含义名称，例如 `trade-server,statistics-api`。
 - 本轮可执行批次：`pending` 和 `failed` 批次；`completed` 批次只展示不调度
-- 推荐执行计划：执行 3 批、执行 5 批（推荐）、执行 10 批、执行全部未完成批次
+- 推荐执行计划：必须根据本轮可执行批次数动态生成，不能固定展示 3 / 5 / 10 批选项
 - 预估耗时：按当前 `REVIEW_MODE` 和 1 / 2 / 3 路并发给出参考
 - 自行输入批次号提示：允许用户根据表格在 Other/free-form 中输入若干批次号，例如 `batch-002,batch-004` 或 `2,4,7`
+
+**展示要求**：
+- 普通助手消息必须包含 `大仓库审查任务` 摘要、Markdown 批次表、`本轮可执行批次` 和 `推荐执行计划`。
+- 批次表不得放入代码块，不得只留在 Bash 工具输出中，不得只说“分批规划完成，展示批次状态”。
+- 可以保留 Bash 工具调用用于读取数据，但用户可见的表格必须由主 skill 重新输出。
+
+**动态选项规则**：
+- 先从状态表计算 `RUNNABLE_BATCH_IDS` 和 `RUNNABLE_COUNT`，只包含 `pending` / `failed` 批次。
+- `RUNNABLE_COUNT=0` → 不调用 AskUserQuestion；输出没有可执行批次，进入合并或结束提示。
+- `RUNNABLE_COUNT=1` → 不调用 AskUserQuestion；自动设置 `RUN_BATCH_IDS` 为唯一可执行批次，`RUN_BATCH_COUNT=1`，直接进入步骤 5B 选择并发数。
+- `RUNNABLE_COUNT=2` → options 只包含 `执行 1 批`、`执行全部 2 批（推荐）` 和 Other/free-form；不得出现 `执行 3 批`、`执行 5 批` 或 `执行 10 批`。
+- `RUNNABLE_COUNT=3` → options 只包含 `执行 1 批`、`执行 2 批`、`执行全部 3 批（推荐）` 和 Other/free-form；不得出现 `执行 5 批` 或 `执行 10 批`。
+- `RUNNABLE_COUNT=4|5` → options 只包含 `执行 2 批`、`执行 3 批（推荐）`、`执行全部 {RUNNABLE_COUNT} 批` 和 Other/free-form。
+- `RUNNABLE_COUNT=6..10` → options 只包含 `执行 3 批`、`执行 5 批（推荐）`、`执行全部 {RUNNABLE_COUNT} 批` 和 Other/free-form；不得出现 `执行 10 批`。
+- `RUNNABLE_COUNT>10` → options 只包含 `执行 3 批`、`执行 5 批（推荐）`、`执行 10 批`、`执行全部 {RUNNABLE_COUNT} 批` 和 Other/free-form。
+- 固定选项描述中的批次数和预估耗时必须使用实际 `RUNNABLE_COUNT` 截断后的数量；不得出现“执行 5 批”但描述里又显示“最多 3 批”。
 
 **必须调用 AskUserQuestion 工具，参数如下**：
 - question: "请选择本轮执行批次"
 - header: "执行批次"
-- options:
-  - label: "执行 3 批"
-    description: "适合额度紧张或先试跑，按状态表顺序执行前 3 个未完成批次"
-  - label: "执行 5 批（推荐）"
-    description: "适合大多数 50 万行级项目，便于跨天继续"
-  - label: "执行 10 批"
-    description: "适合当前额度充足时加速推进"
-  - label: "执行全部未完成批次"
-    description: "一次性执行所有待执行和失败待重试批次"
+- options: 按上方「动态选项规则」生成，不得写死 3 / 5 / 10 / 全部四个选项
 - multiSelect: false
 
 **用户响应后**：
-- 固定选项 → 设置 `CURRENT_RUN_BATCH_LIMIT=3|5|10|all`
+- 固定选项 → 设置 `CURRENT_RUN_BATCH_LIMIT` 为该选项对应的实际批次数，`执行全部 {RUNNABLE_COUNT} 批` 设置为 `all`
 - Other/free-form 批次号 → 设置 `BATCH_SELECTION` 为用户输入的批次号列表；支持 `batch-002,batch-004`、`2,4,7`、空格或中文顿号/逗号分隔
 - 解析 `BATCH_SELECTION` 时必须标准化为 `batch-XXX` 格式，并校验这些批次存在且状态为 `pending` 或 `failed`
 - 输入包含不存在、已完成或执行中的批次时，不得继续执行；必须再次调用 AskUserQuestion 让用户重新选择
@@ -534,40 +608,58 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJEC
 
 **触发条件**：BATCH_MODE=true。不满足时跳过此步骤。
 
-**前置计算**：触发此步骤前，必须先完成分批计算（见「分批计算」章节），得到 BATCH_COUNT。若同时满足 Maven 大仓库模式，必须先完成步骤 5 的批次表展示和本轮执行批次选择。
+**前置计算**：触发此步骤前，必须先完成分批计算（见「分批计算」章节），得到 BATCH_COUNT。
+- 若 `PROJECT_TYPE=maven-multi` 且 `STOCK_REVIEW_STRATEGY=module-sequential|ai-planned`，必须先完成 Maven 大仓库模式的步骤 5 批次表展示和本轮执行批次选择；不得改走文件级 planner。
+- 若不满足 Maven 大仓库模式但 `BATCH_MODE=true`（包括 Maven 单模块、Gradle 或其他 Java 项目），必须先调用 `phase11-plan-file-batches.sh` 生成文件级批次，并把脚本输出的 `简要分批计划` 原样展示到控制台；不得只输出总批次数后直接询问并发数。
 
 在调用 AskUserQuestion 之前，先输出并发策略摘要：
 ```
 📊 分批并行扫描
 
-本轮将执行：{CURRENT_RUN_BATCH_LIMIT 或 BATCH_SELECTION 或 BATCH_COUNT} 批
+本轮将执行：{RUN_BATCH_COUNT 或 BATCH_COUNT} 批
 总批次数：{BATCH_COUNT} 批
 代码行数：{REVIEW_LINE_COUNT 或 TOTAL_JAVA_LOC} 行
 ```
 
+并发数必须小于等于本轮实际执行批次数，即 `CONCURRENCY <= RUN_BATCH_COUNT`。生成并发选项前必须先计算 `RUN_BATCH_COUNT`：
+- Maven 大仓库模式：根据步骤 5 的 `RUN_BATCH_IDS` 得到 `RUN_BATCH_COUNT`
+- 文件级分批模式：默认 `RUN_BATCH_COUNT=BATCH_COUNT`
+- 如果用户通过 Other/free-form 选择具体批次，`RUN_BATCH_COUNT` 为标准化后有效批次号数量
+
+**动态并发规则**：
+- `RUN_BATCH_COUNT=1` → 不调用 AskUserQuestion；自动设置 `CONCURRENCY=1`，直接进入步骤 6 确认执行计划。
+- `RUN_BATCH_COUNT=2` → AskUserQuestion options 只包含 `串行执行（默认）` 和 `2 路并发`；不得出现 `3 路并发`。
+- `RUN_BATCH_COUNT>=3` → AskUserQuestion options 包含 `串行执行（默认）`、`2 路并发`、`3 路并发`。
+- 任意路径下都不得提供大于 `RUN_BATCH_COUNT` 的并发选项；例如只执行 1 批时不能展示 2 / 3 路，只执行 2 批时不能展示 3 路。
+
 **必须调用 AskUserQuestion 工具，参数如下**：
 - question: "请选择并发扫描策略"
 - header: "并发数"
-- options:
-  - label: "串行执行"
-    description: "逐批扫描，最稳定但最慢，约 {total_min} 分钟"
-  - label: "2 路并发（推荐）"
-    description: "同时扫描 2 批，速度与稳定性更均衡，约 {total_min} 分钟"
+- options: 按上方「动态并发规则」生成
+  - label: "串行执行（默认）"
+    description: "逐批扫描，token 消耗最可控，约 {total_min} 分钟"
+  - label: "2 路并发"
+    description: "同时扫描 2 批，速度更快但 token 消耗更集中，约 {total_min} 分钟"
   - label: "3 路并发"
-    description: "同时扫描 3 批，需要较好硬件，约 {total_min} 分钟"
+    description: "同时扫描 3 批，最大并发，token 消耗最快，约 {total_min} 分钟"
 - multiSelect: false
 
 **耗时预估公式**：
 ```
-每批耗时 = 根据现有模式×规模估算表（见步骤 6 中的预估时间参考表）
-total_min = ceil(本轮执行批次数 / CONCURRENCY) × 每批耗时
+单批成本 = batch JSON 中的 planned_review_cost；缺失时回退 planned_java_loc + planned_java_file_count × 25
+目标批次成本 = 32000
+目标批次耗时 = fast 4 分钟 / standard 8 分钟 / deep 15 分钟 / security 10 分钟
+单批耗时 = ceil(单批成本 × 目标批次耗时 / 目标批次成本)，最低 1 分钟
+total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 lane 后的最大 lane 耗时
 ```
 
+不得使用 `ceil(本轮执行批次数 / CONCURRENCY) × 大型项目固定耗时` 作为分批预估；固定模式耗时表是单 agent 参考，不适合作为每个 batch 的固定耗时。
+
 **用户响应后变量赋值**：
-- 串行执行 → CONCURRENCY=1
+- 串行执行（默认） → CONCURRENCY=1
 - 2 路并发 → CONCURRENCY=2
 - 3 路并发 → CONCURRENCY=3
-- 并发数仅允许 1 / 2 / 3，默认 `2`
+- 并发数仅允许 `1..min(3, RUN_BATCH_COUNT)`，默认 `1`
 
 ### 步骤 6：确认执行计划
 
@@ -582,7 +674,7 @@ total_min = ceil(本轮执行批次数 / CONCURRENCY) × 每批耗时
 - 审查范围：{REVIEW_SCOPE}
 - 审查模式：{REVIEW_MODE}
 - 启用维度：{根据模式 × 维度矩阵列出具体维度名称}
-- 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "已启用 .cc-code-reviewer/ignore/issues.yml"；否则显示 "未配置"}
+- 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "已启用 .cc-code-reviewer/ignore/issues.yml（已忽略 {IGNORE_RULE_COUNT} 个问题）"；否则显示 "未配置"}
 - 飞书上传：{FEISHU_UPLOAD_OPTION}
 - 扫描策略：分批并行扫描（本轮 {RUN_BATCH_COUNT 或 BATCH_COUNT} / 总 {BATCH_COUNT} 批 / {CONCURRENCY} 路并发）  ← 仅 BATCH_MODE=true 时显示
 - 预计耗时：约 {total_min} 分钟  ← 仅 BATCH_MODE=true 时显示
@@ -644,49 +736,58 @@ total_min = ceil(本轮执行批次数 / CONCURRENCY) × 每批耗时
 
 ## 分批计算
 
-当 BATCH_MODE=true 时，主 skill 在 prompt 中执行以下步骤（不使用脚本）：
+当 `BATCH_MODE=true` 时，主 skill 必须优先使用确定性脚本生成批次计划，不得临时拼接 Bash 数组或在 shell 中即兴实现 token 打包。
 
-### 文件收集与排序
+### Maven 多模块分批
 
-1. **收集文件路径和行数**：用 Bash 执行以下命令获取每个文件的路径和行数：
-   ```bash
-   find "$PROJECT_DIR" -name '*.java' -not -path '*/target/*' -not -path '*/build/*' -not -path '*/.git/*' -exec wc -l {} + 2>/dev/null | sort -rn
-   ```
-   增量审查时不执行此步（已由触发条件排除）
+Maven 多模块项目不得使用内联 Bash 数组分批，必须统一调用 `phase11-plan-large-batches.sh`：
 
-2. **风险排序**：按文件名模式排序，高风险优先。通过 Bash 按文件名后缀分组实现：
-   - P0 热点：`*Controller.java`、`*Service.java`、`*Security*.java`、`*Filter.java`、`*Interceptor.java`
-   - P1 重点：`*Client.java`、`*Pool.java`、`*Scheduler.java`、`*Handler.java`、`*Consumer.java`、`*Producer.java`
-   - P2 常规：其余文件（`*DTO.java`、`*VO.java`、`*Entity.java`、`*Util*.java` 等）
+```bash
+SEMANTIC_LEVEL="maven-static"
+if [ "$CODE_INTELLIGENCE_AVAILABLE" = "true" ]; then
+  SEMANTIC_LEVEL="jdtls-lsp"
+fi
 
-   实现方式：对 find 结果按文件名后缀排序，P0 关键词匹配的文件排前，P1 次之，P2 最后
-
-### Token 预算打包
-
-```
-batch_token_budget = 100000
-current_batch_tokens = 0
-current_batch_files = []
-
-for each file in sorted_list:
-    file_tokens = file_line_count × 3 + 500
-    if current_batch_tokens + file_tokens > batch_token_budget:
-        封装 current_batch 为一个批次
-        开始新批次
-        current_batch_tokens = 0
-        current_batch_files = []
-    current_batch_files.append(file)
-    current_batch_tokens += file_tokens
-
-封装最后一批
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-large-batches.sh" \
+  "$PROJECT_DIR" \
+  "$REVIEW_MODE" \
+  "{TARGET_BRANCH 或 CURRENT_BRANCH}" \
+  "$SEMANTIC_LEVEL" \
+  "$REVIEW_SCOPE" \
+  "$STOCK_REVIEW_STRATEGY"
 ```
 
-### 输出
+适用范围：
+- 全量审查：`REVIEW_SCOPE=全量代码`
+- 指定模块：`REVIEW_SCOPE` 为模块相对路径列表，例如 `yudao-module-mes,yudao-framework`
+- 按模块依次：`STOCK_REVIEW_STRATEGY=module-sequential`
+- AI 智能规划：`STOCK_REVIEW_STRATEGY=ai-planned`
 
-得到 `BATCH_COUNT`、`CONCURRENCY` 和每个批次的文件列表。每个批次记录：
-- 文件路径列表
-- 文件数（BATCH_FILE_COUNT）
-- 行数（BATCH_LINE_COUNT）
+脚本输出的 `RUN_DIR`、`plan.json`、`batches/*.json` 和 `results/*.status.json` 是后续批次展示、选择本轮执行批次、启动 batch agent 和合并报告的唯一数据来源。
+
+### 非 Maven 兼容分批
+
+仅当 `PROJECT_TYPE` 不是 Maven 多模块且 `BATCH_MODE=true` 时，必须统一调用 `phase11-plan-file-batches.sh` 生成简单文件级批次，覆盖 Maven 单模块、Gradle 项目和未知 Java 项目：
+
+Maven 多模块存量分批绝不调用 `phase11-plan-file-batches.sh`。即使只选择一个模块，也必须使用 Maven 多模块 planner，以便 `REVIEW_SCOPE` 限定在所选模块内，避免生成全项目批次。
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-file-batches.sh" \
+  "$PROJECT_DIR" \
+  "$REVIEW_MODE" \
+  "{TARGET_BRANCH 或 CURRENT_BRANCH}"
+```
+
+脚本必须输出并由主 skill 原样展示：
+- `RUN_DIR`、`BATCH_COUNT`、`TOTAL_JAVA_LOC`、`TOTAL_JAVA_FILE_COUNT`
+- `BATCH_FILE_LIST_DIR`，其中每个 `batch-XXX.files` 是注入 batch agent 的 `BATCH_FILE_LIST`
+- `简要分批计划` 表：批次号、行数、文件数、每批代表性文件或目录概要
+
+执行要求：
+- 禁止在主 skill 中临时拼接 Bash 数组、Python heredoc 或手写 token 打包逻辑
+- 批次清单必须来自 `BATCH_FILE_LIST_DIR/batch-XXX.files`
+- 每个批次的 `BATCH_FILE_COUNT` 和 `BATCH_LINE_COUNT` 从对应 `batch-XXX.json` 或 `.files` 清单统计
+- 增量审查不执行此分批路径
 
 ---
 
@@ -721,6 +822,8 @@ for each file in sorted_list:
 | 报告格式路径 | {REPORT_FORMAT_PATH} |
 | 项目 ignore 文件路径 | {IGNORE_RULES_PATH 或 未配置} |
 | 项目 ignore 是否启用 | {IGNORE_RULES_ENABLED} |
+| 项目 ignore 问题数量 | {IGNORE_RULE_COUNT} |
+| 语义增强 | {SEMANTIC_LEVEL} |
 
 ### 项目概况（预扫描结果）
 {PROJECT_SCAN_RESULT}
@@ -748,11 +851,14 @@ for each file in sorted_list:
 | `PROJECT_SOURCE` | phase1 脚本输出 | `local` / `git-cache` |
 | `PROJECT_NAME` | `basename "$PROJECT_DIR"` | `spring-ai-agent-utils` |
 | `PROJECT_TYPE` | phase3 脚本输出 | `maven-single` 等 |
-| `REVIEW_TYPE` | 交互步骤2 | `增量审查` / `存量审查` |
-| `REVIEW_SCOPE` | 交互步骤3 | `最近5次提交` / `全量代码` |
-| `REVIEW_MODE` | 交互步骤4 | `fast` / `standard` 等 |
-| `FEISHU_UPLOAD_OPTION` | 交互步骤4 | `本地 Markdown 报告` 等 |
+| `REVIEW_MODE` | 交互步骤1 | `fast` / `standard` 等 |
+| `FEISHU_UPLOAD_OPTION` | 交互步骤2 | `本地 Markdown 报告` 等 |
+| `REVIEW_ENTRY` | 交互步骤3 | `增量审查` / `全量审查` / `指定模块` |
+| `REVIEW_TYPE` | 交互步骤3 | `增量审查` / `存量审查` |
+| `REVIEW_SCOPE` | 交互步骤4 | `最近5次提交` / `全量代码` / `yudao-module-mes,yudao-framework` |
+| `STOCK_REVIEW_STRATEGY` | 交互步骤4B（仅 Maven 多模块存量） | `module-sequential` / `ai-planned` |
 | `PROJECT_SCAN_RESULT` | phase3 完整输出 | 项目概况、模块结构 |
+| `SEMANTIC_LEVEL` | phase10 输出转换：`CODE_INTELLIGENCE_AVAILABLE=true` 时为 `jdtls-lsp`，否则为 `maven-static` | `jdtls-lsp` |
 | `DETECTED_TECH_STACK` | 从 `PROJECT_SCAN_RESULT` 的 `TECH_STACK:` 行解析，来源为 Maven/Gradle 依赖指纹 | `Spring Boot, MyBatis, Redis/Cache` |
 | `REVIEW_FILE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `76` |
 | `REVIEW_LINE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `16637` |
@@ -911,9 +1017,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merge-large-batches.sh" "$RUN_DIR"
 
 ### 条件步骤规则
 
-- **单模块项目自动跳过步骤3**：`PROJECT_TYPE` 为 `*-single` 且选择存量审查时，自动设 `REVIEW_SCOPE=全量代码`
+- **单模块项目自动跳过步骤4**：`PROJECT_TYPE` 为 `*-single` 且选择存量审查时，自动设 `REVIEW_SCOPE=全量代码`
 - **lark-cli 检测**：lark-cli、lark-doc、lark-base 任一不可用时自动设 `FEISHU_UPLOAD_OPTION=飞书上传不可用`
-- **Git 分支选择**：仅在 Git 仓库且多分支时执行步骤1
+- **Git 分支选择**：仅在 Git 仓库且多分支时执行前置分支选择步骤
 - **飞书上传执行**：子 agent 使用 `lark-doc`/`lark-base` skill，通过 `lark-cli` 执行
 
 ---

@@ -6,7 +6,7 @@ TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/phase13-large.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 PROJECT_DIR="$TMP_DIR/maven-large"
-RUN_ID="20260528-010203-main-standard-full-large-maven"
+RUN_ID="20260528-010203-main-standard"
 RUN_DIR="$PROJECT_DIR/.cc-code-reviewer/runs/$RUN_ID"
 mkdir -p "$RUN_DIR/batches" "$RUN_DIR/results"
 
@@ -55,13 +55,13 @@ cat > "$RUN_DIR/batches/batch-002.json" <<'JSON'
   "planned_java_loc": 25200,
   "planned_review_cost": 31800,
   "planned_java_file_count": 190,
-  "scan_roots": ["order-service"],
+  "scan_roots": ["order-service/src/main/java/com/example/order/api"],
   "context_roots": ["server/bootstrap"],
   "units": [
-    {"name": "order-service", "path": "order-service"}
+    {"name": "order-service:com/example/order/api", "path": "order-service/src/main/java/com/example/order/api", "kind": "java-package"}
   ],
   "modules": [
-    {"name": "order-service", "path": "order-service"}
+    {"name": "order-service:com/example/order/api", "path": "order-service/src/main/java/com/example/order/api"}
   ],
   "split_reason": "dependency_affinity_group"
 }
@@ -91,23 +91,117 @@ JSON
 OUTPUT="$(bash "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR")"
 
 printf '%s\n' "$OUTPUT" | grep -q "大仓库审查任务"
-printf '%s\n' "$OUTPUT" | grep -q "批次 状态 行数 成本 文件 模块 原因"
+printf '%s\n' "$OUTPUT" | grep -q "| 批次 | 状态 | 行数 | 文件数 | 模块 |"
+printf '%s\n' "$OUTPUT" | grep -q "|------|------|------:|------:|------|"
+printf '%s\n' "$OUTPUT" | grep -q "| batch-001 | 已完成 | 24,800 | 210 | user-api,user-service |"
+printf '%s\n' "$OUTPUT" | grep -q "| batch-002 | 失败待重试 | 25,200 | 190 | order-service（部分） |"
+if printf '%s\n' "$OUTPUT" | grep -q "批次 状态 行数"; then
+  echo "status table must use a Markdown table, not whitespace-separated columns" >&2
+  printf '%s\n' "$OUTPUT" >&2
+  exit 1
+fi
 printf '%s\n' "$OUTPUT" | grep -q "已完成"
 printf '%s\n' "$OUTPUT" | grep -q "失败待重试"
 printf '%s\n' "$OUTPUT" | grep -q "user-api,user-service"
-printf '%s\n' "$OUTPUT" | grep -q "dependency_affinity_group"
-printf '%s\n' "$OUTPUT" | grep -q "context:server/bootstrap"
+printf '%s\n' "$OUTPUT" | grep -q "order-service（部分）"
+if printf '%s\n' "$OUTPUT" | grep -q "dependency_affinity_group"; then
+  echo "status table must not show split reasons" >&2
+  printf '%s\n' "$OUTPUT" >&2
+  exit 1
+fi
+if printf '%s\n' "$OUTPUT" | grep -q "context:server/bootstrap"; then
+  echo "status table module column must not include context roots" >&2
+  printf '%s\n' "$OUTPUT" >&2
+  exit 1
+fi
 printf '%s\n' "$OUTPUT" | grep -q "Java 行覆盖: 24,800 / 500,000"
 printf '%s\n' "$OUTPUT" | grep -q "本轮可执行批次"
 printf '%s\n' "$OUTPUT" | grep -q "batch-002"
 printf '%s\n' "$OUTPUT" | grep -q "推荐执行计划"
-printf '%s\n' "$OUTPUT" | grep -q "执行 5 批（推荐）"
+printf '%s\n' "$OUTPUT" | grep -q "仅 1 个可执行批次，将自动选择 batch-002，并自动设置并发数为 1。"
+if printf '%s\n' "$OUTPUT" | grep -q "执行 5 批"; then
+  echo "single runnable batch must not show fixed 5-batch option" >&2
+  printf '%s\n' "$OUTPUT" >&2
+  exit 1
+fi
+if printf '%s\n' "$OUTPUT" | grep -qE "2 路约|3 路约"; then
+  echo "single runnable batch must not show impossible 2/3-way concurrency estimates" >&2
+  printf '%s\n' "$OUTPUT" >&2
+  exit 1
+fi
 printf '%s\n' "$OUTPUT" | grep -q "预估耗时"
 printf '%s\n' "$OUTPUT" | grep -q "也可以自行输入批次号"
 
 if printf '%s\n' "$OUTPUT" | grep -qE '(^|[[:space:]])(pending|running|completed|failed)([[:space:]]|$)'; then
   echo "status output must not expose internal enum values" >&2
   printf '%s\n' "$OUTPUT" >&2
+  exit 1
+fi
+
+THREE_RUN_ID="20260528-020203-main-deep"
+THREE_RUN_DIR="$PROJECT_DIR/.cc-code-reviewer/runs/$THREE_RUN_ID"
+mkdir -p "$THREE_RUN_DIR/batches" "$THREE_RUN_DIR/results"
+
+cat > "$THREE_RUN_DIR/plan.json" <<JSON
+{
+  "schema_version": 1,
+  "run_id": "$THREE_RUN_ID",
+  "project_name": "maven-large",
+  "project_dir": "$PROJECT_DIR",
+  "review_mode": "deep",
+  "review_scope": "yudao-module-mall",
+  "semantic_level": "jdtls-lsp",
+  "total_java_loc": 51817,
+  "total_java_file_count": 842,
+  "batch_count": 3
+}
+JSON
+
+for batch_id in batch-001 batch-002 batch-003; do
+  cat > "$THREE_RUN_DIR/batches/$batch_id.json" <<JSON
+{
+  "schema_version": 1,
+  "batch_id": "$batch_id",
+  "strategy": "semantic-cost-batching",
+  "planned_java_loc": 17000,
+  "planned_review_cost": 32000,
+  "planned_java_file_count": 250,
+  "scan_roots": ["yudao-module-mall"],
+  "units": [
+    {"name": "yudao-module-trade-server", "path": "yudao-module-mall/yudao-module-trade-server"},
+    {"name": "yudao-module-statistics-server", "path": "yudao-module-mall/yudao-module-statistics-server"},
+    {"name": "yudao-module-statistics-api", "path": "yudao-module-mall/yudao-module-statistics-api"}
+  ]
+}
+JSON
+done
+
+THREE_OUTPUT="$(bash "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR")"
+printf '%s\n' "$THREE_OUTPUT" | grep -q "| batch-001 | 待执行 | 17,000 | 250 | trade-server,statistics-server,statistics-api |"
+if printf '%s\n' "$THREE_OUTPUT" | grep -q "yudao-module-trade-server"; then
+  echo "batch module display should drop the shared yudao-module- prefix" >&2
+  printf '%s\n' "$THREE_OUTPUT" >&2
+  exit 1
+fi
+printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 1 批"
+printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 2 批"
+printf '%s\n' "$THREE_OUTPUT" | grep -q "执行全部 3 批（推荐）"
+printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 1 批 最多 1 批 预估耗时: 串行约 15 分钟"
+printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 2 批 最多 2 批 预估耗时: 串行约 30 分钟 / 2 路约 15 分钟"
+printf '%s\n' "$THREE_OUTPUT" | grep -q "执行全部 3 批（推荐） 最多 3 批 预估耗时: 串行约 45 分钟 / 2 路约 30 分钟 / 3 路约 15 分钟"
+if printf '%s\n' "$THREE_OUTPUT" | grep -qE "执行 1 批 .*2 路|执行 1 批 .*3 路|执行 2 批 .*3 路"; then
+  echo "batch-plan estimates must not show concurrency greater than the selected batch count" >&2
+  printf '%s\n' "$THREE_OUTPUT" >&2
+  exit 1
+fi
+if printf '%s\n' "$THREE_OUTPUT" | grep -q "串行约 180 分钟"; then
+  echo "deep batch estimate must use planned review cost instead of fixed 60 minutes per batch" >&2
+  printf '%s\n' "$THREE_OUTPUT" >&2
+  exit 1
+fi
+if printf '%s\n' "$THREE_OUTPUT" | grep -qE "执行 (5|10) 批"; then
+  echo "three runnable batches must not show fixed 5/10-batch options" >&2
+  printf '%s\n' "$THREE_OUTPUT" >&2
   exit 1
 fi
 

@@ -62,6 +62,19 @@ fi
 printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=false"
 printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PLUGIN_INSTALLED=false"
 
+HANGING_BIN="$TMP_DIR/hanging-bin"
+mkdir -p "$HANGING_BIN"
+cat > "$HANGING_BIN/jdtls" <<'SH'
+#!/bin/sh
+sleep 10
+SH
+chmod +x "$HANGING_BIN/jdtls"
+
+OUTPUT="$(CLAUDE_CODE_PLUGIN_ROOTS="$FAKE_PLUGIN_ROOT" PATH="$HANGING_BIN:/usr/bin:/bin" HOME="$TMP_DIR/home-no-plugin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR")"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=true"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PROVIDER=jdtls-lsp"
+printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_JDTLS_READY=true"
+
 OUTPUT="$(CLAUDE_CODE_PLUGIN_ROOTS="$FAKE_PLUGIN_ROOT" PATH="$FAKE_BIN:/usr/bin:/bin" HOME="$TMP_DIR/home-no-plugin" bash "$ROOT_DIR/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR")"
 printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_AVAILABLE=true"
 printf '%s\n' "$OUTPUT" | grep -q "CODE_INTELLIGENCE_PROVIDER=jdtls-lsp"

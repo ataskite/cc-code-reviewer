@@ -27,7 +27,7 @@ flowchart TD
     OptionalSuperpowers["Optional Superpowers route<br/>brainstorming / subagent-driven-development"]
 
     subgraph ScanPhase["Scan phase"]
-      ReviewSkill --> ScanScripts["phase1-5 scripts<br/>project / branches / stack / lark / incremental diff"]
+      ReviewSkill --> ScanScripts["phase1-5 + phase10-13 scripts<br/>project / branches / stack / code intelligence / batch plans"]
       IgnoreRules -.read.-> ReviewSkill
       ScanScripts -->|"small repo"| ReviewAgent
       ReviewAgent --> Reports
@@ -63,14 +63,16 @@ flowchart TD
 **Main Skill (`skills/cc-code-reviewer/SKILL.md`)**:
 - Pre-scan: project detection → branch detection → project scan → jdtls/code-intelligence detection → lark-cli detection
 - Reads `.cc-code-reviewer/ignore/issues.yml` after pre-scan and injects AI-readable skip rules into the scan agent
-- Interactive mode: Collect user config via AskUserQuestion (up to 7 steps; step 6 concurrency selection only when BATCH_MODE=true)
-- Batch mode: Auto-triggered for large stock reviews; splits files into batches, dispatches parallel sub-agents, merges results
-- Maven large-repo mode: for Maven multi-module stock full-code reviews above `TOTAL_JAVA_LOC >= 120000`, creates `.cc-code-reviewer/runs/{RUN_ID}` with atomic module/directory batches, status files, resumable execution, and staged/full merge reports
+- Interactive mode: Collect user config via AskUserQuestion after pre-scan: review mode → report handling → review entry → scope → optional stock strategy → optional batch selection/concurrency → final confirmation
+- Batch mode: Auto-triggered for large stock reviews or when a Maven multi-module stock strategy is selected; uses deterministic planner scripts, dispatches parallel sub-agents, merges completed results
+- Maven large-repo mode: for Maven multi-module stock full-code or selected-module reviews using `module-sequential` or `ai-planned`, creates `.cc-code-reviewer/runs/{RUN_ID}` with atomic module/directory batches, status files, resumable execution, and staged/full merge reports
+- File batch mode: for Maven single-module, Gradle, or unknown Java projects when `BATCH_MODE=true`, uses `phase11-plan-file-batches.sh` and `file-token-batching`
 - **Never** execute code review itself
 
 **Review Agent (`agents/cc-code-reviewer.md`)**:
 - Execute actual code review with injected parameters
 - Apply project ignore rules before generating the final issue list, and disclose matched rules / filtered issue counts
+- In Maven large-repo batches, read `BATCH_PLAN_PATH`, keep formal findings inside `scan_roots`, and use `jdtls-lsp` semantic queries when `SEMANTIC_LEVEL=jdtls-lsp`
 - Generate structured report
 - Upload to Feishu (if requested)
 - **Never** interact with user via AskUserQuestion
@@ -124,11 +126,17 @@ scripts/
   ├── phase2-switch-branch.sh         # Branch switching
   ├── phase3-project-scan.sh          # Project structure scan
   ├── phase4-detect-lark-plugin.sh    # lark-cli detection
+  ├── phase5-preview-recent-commits.sh # Recent commit preview for incremental scope choices
   ├── phase5-prepare-incremental.sh   # Incremental review preparation
   ├── phase6-detect-fix-input.sh      # Local Markdown fix input path validation
   ├── phase7-detect-superpowers.sh    # Optional Superpowers capability detection
   ├── phase8-prepare-fix-workspace.sh # Fix branch/worktree preparation
-  └── phase9-collect-fix-metadata.sh  # Fix completion time, branch, and git user
+  ├── phase9-collect-fix-metadata.sh  # Fix completion time, branch, and git user
+  ├── phase10-detect-code-intelligence.sh # jdtls/code-intelligence detection
+  ├── phase11-plan-large-batches.sh   # Maven multi-module stock batch planner
+  ├── phase11-plan-file-batches.sh    # File-token batch planner for non Maven-multi projects
+  ├── phase12-merge-large-batches.sh  # Large batch report merge
+  └── phase13-show-large-batch-status.sh # User-visible batch status and dynamic execution plan
 ```
 
 ## Common Development Tasks
@@ -146,7 +154,13 @@ The suite runs every `tests/test_*.sh` file and then `git diff --check`. It cove
 - `phase2-detect-branches.sh` / `phase2-switch-branch.sh`: branch discovery, clean local checkout, dirty local workspace protection
 - `phase3-project-scan.sh`: Maven multi-module scans, module paths with spaces, unknown-project line counts
 - `phase4-detect-lark-plugin.sh`: lark-cli detection output contract
+- `phase5-preview-recent-commits.sh`: recent commit preview for incremental AskUserQuestion choices
 - `phase5-prepare-incremental.sh`: incremental diff ranges that include the root commit
+- `phase10-detect-code-intelligence.sh`: jdtls-lsp availability and fallback messaging
+- `phase11-plan-large-batches.sh`: scoped Maven module planning, concise `RUN_DIR`, semantic-cost and module-sequential strategies
+- `phase11-plan-file-batches.sh`: deterministic file-token batching for Maven single-module, Gradle, and unknown Java projects
+- `phase12-merge-large-batches.sh`: completed-batch-only staged/full report merge and coverage accounting
+- `phase13-show-large-batch-status.sh`: Markdown batch table, dynamic execution plans, and cost-based time estimates
 - `phase6-detect-fix-input.sh`: local Markdown path validation only; Feishu Doc/Base inputs are read through `lark-doc` / `lark-base`
 - `phase7-detect-superpowers.sh`: optional Superpowers route capability detection
 - `phase8-prepare-fix-workspace.sh`: current/branch/worktree strategies and dirty workspace protection
@@ -162,11 +176,16 @@ bash scripts/phase1-detect-project.sh "/path/to/project"
 bash scripts/phase2-detect-branches.sh "/path/to/project"
 bash scripts/phase3-project-scan.sh "/path/to/project"
 bash scripts/phase4-detect-lark-plugin.sh
+bash scripts/phase5-preview-recent-commits.sh "/path/to/project"
 bash scripts/phase5-prepare-incremental.sh "/path/to/project" 5
 bash scripts/phase6-detect-fix-input.sh "/path/to/report.md"
 bash scripts/phase7-detect-superpowers.sh
 bash scripts/phase8-prepare-fix-workspace.sh "/path/to/project" worktree "fix/review-findings"
 bash scripts/phase9-collect-fix-metadata.sh "/path/to/project"
+bash scripts/phase10-detect-code-intelligence.sh "/path/to/project"
+bash scripts/phase11-plan-large-batches.sh "/path/to/project" standard main jdtls-lsp "全量代码" ai-planned
+bash scripts/phase11-plan-file-batches.sh "/path/to/project" standard main
+bash scripts/phase13-show-large-batch-status.sh "/path/to/project"
 ```
 
 ### Modifying Review Logic
@@ -177,6 +196,8 @@ bash scripts/phase9-collect-fix-metadata.sh "/path/to/project"
 4. **Agent prompt**: Edit `agents/cc-code-reviewer.md`
 
 **Critical**: Keep mode × dimension matrix consistent between `review-framework.md` and `cc-code-reviewer.md`.
+
+**Critical**: When changing scan flow or batch behavior, keep `README.md`, `AGENTS.md`, `CLAUDE.md`, `references/examples.md`, `skills/cc-code-reviewer/SKILL.md`, `agents/cc-code-reviewer.md`, and `tests/test_contract_docs.sh` synchronized.
 
 ### Modifying Fix Logic
 
@@ -201,8 +222,19 @@ Verify installation by triggering the skill with a Java review request such as `
 ### Scan Interaction Contract
 
 - Scan always runs the AskUserQuestion flow after pre-scan.
-- The flow has up to 7 steps; step 6 concurrency selection only appears when BATCH_MODE=true.
+- The flow confirms review mode and report handling before review entry; then it confirms entry, scope, optional Maven stock strategy, optional batch execution count, optional concurrency, and final execution.
+- Module selection for large Maven projects must keep AskUserQuestion payloads bounded: show module trees as normal text, keep fixed options small, and collect module paths through Other/free-form when needed.
 - Do not preserve command-line compatibility that bypasses interaction.
+
+### Batch Planning Contract
+
+- Maven multi-module stock batching always uses `phase11-plan-large-batches.sh`, including selected-module reviews and single selected-module reviews.
+- `phase11-plan-large-batches.sh` receives `PROJECT_DIR`, `REVIEW_MODE`, branch, `SEMANTIC_LEVEL`, `REVIEW_SCOPE`, and `STOCK_REVIEW_STRATEGY`.
+- `STOCK_REVIEW_STRATEGY` is `module-sequential` for one batch per selected module or `ai-planned` for semantic-cost planning.
+- Maven multi-module stock batching must never fall back to `phase11-plan-file-batches.sh`; that planner is only for Maven single-module, Gradle, or unknown Java projects.
+- `RUN_DIR` names are fixed as `{YYYYMMDD-HHMMSS}-{branch_slug}-{REVIEW_MODE}`. Scope, strategy, task type, selected modules, and totals must be read from `plan.json`, not inferred from the directory name.
+- Batch status must be shown as normal assistant-visible Markdown, not only as collapsed shell output. The table header is `| 批次 | 状态 | 行数 | 文件数 | 模块 |`.
+- Batch execution options and concurrency options are dynamic. Do not show impossible options such as 5 batches when only 3 are runnable, and never offer concurrency greater than `RUN_BATCH_COUNT`.
 
 ### Fix Mode Detection
 
@@ -225,8 +257,8 @@ Sub agent receives parameters via prompt injection, including:
 - Project path, type, scope, mode
 - Pre-scan results (project structure, modules)
 - Incremental data (git log, changed files, diff stats)
-- Legacy batch parameters when BATCH_MODE=true: file list per batch, batch index, output mode
-- Maven large-repo batch parameters: `RUN_DIR`, `BATCH_PLAN_PATH`, `BATCH_STATUS_PATH`, `BATCH_RESULT_PATH`, and `scan_roots`; formal findings must stay inside `scan_roots`, while jdtls may be used across directories for call-chain understanding
+- File batch parameters when `strategy=file-token-batching`: `BATCH_FILE_LIST_DIR`, per-batch file list, batch index, output mode
+- Maven large-repo batch parameters: `RUN_DIR`, `BATCH_PLAN_PATH`, `BATCH_STATUS_PATH`, `BATCH_RESULT_PATH`, `scan_roots`, and `SEMANTIC_LEVEL`; formal findings must stay inside `scan_roots`, while jdtls must be used for semantic lookup when `SEMANTIC_LEVEL=jdtls-lsp`
 
 **Sub agent must**: Use these parameters directly, never re-ask user.
 
