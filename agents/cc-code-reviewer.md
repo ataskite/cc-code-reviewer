@@ -47,9 +47,15 @@ maxTurns: 50
 | 报告格式路径 | ... |
 | 项目 ignore 文件路径 | ... |
 | 项目 ignore 是否启用 | ... |
+| 项目 ignore 问题数量 | ... |
+| 语义增强 | ... |
 | 批次编号 | {BATCH_INDEX}/{BATCH_COUNT} |
 | 审查输出模式 | {REVIEW_OUTPUT_MODE} |
 | 本批审查文件列表 | {逐行列出文件路径} |
+| 运行目录 | {RUN_DIR} |
+| 批次计划文件 | {BATCH_PLAN_PATH} |
+| 批次状态文件 | {BATCH_STATUS_PATH} |
+| 批次结果文件 | {BATCH_RESULT_PATH} |
 ```
 
 **你必须**：
@@ -67,7 +73,7 @@ maxTurns: 50
   - 增量审查时：`最近N次提交`（同时会提供增量提交记录）
 - **审查模式**（`REVIEW_MODE`）：`fast` / `standard` / `deep` / `security`
 - **飞书上传选项**（`FEISHU_UPLOAD_OPTION`）：
-  - `仅显示报告`、`lark-cli未安装` 或 `飞书上传不可用`：不执行飞书上传步骤
+  - `本地 Markdown 报告`、`lark-cli未安装` 或 `飞书上传不可用`：不执行飞书上传步骤
   - `上传到云文档`：执行第四步（上传云文档）
   - `上传到多维表格`：执行第五步（创建多维表格）
   - `同时上传两者`：执行第四步和第五步
@@ -77,11 +83,17 @@ maxTurns: 50
 - **报告格式路径**（`REPORT_FORMAT_PATH`）：`report-format.md` 的绝对路径。必须优先读取主 agent 注入的绝对路径。
 - **项目 ignore 文件路径**（`IGNORE_RULES_PATH`）：项目内 `.cc-code-reviewer/ignore/issues.yml` 的绝对路径；未配置时为 `未配置`。
 - **项目 ignore 是否启用**（`IGNORE_RULES_ENABLED`）：`true` / `false`。启用时主 agent 会在独立章节注入 `IGNORE_RULES_CONTENT`。
+- **项目 ignore 问题数量**（`IGNORE_RULE_COUNT`）：主 agent 从 `ignore:` 下一级 `- name:` 规则项统计出的条目数，仅用于展示当前项目已沉淀的 ignore 问题数量，不包含 applies_to 下的子列表项。
+- **语义增强**（`SEMANTIC_LEVEL`）：`jdtls-lsp` 或 `maven-static`。当值为 `jdtls-lsp` 时表示 jdtls-lsp 可用时必须使用；子 agent 必须用 jdtls 查询 definition、references、implementations、call hierarchy，并在报告或批次结果中披露「语义增强使用情况」。当值为 `maven-static` 时才允许回退 Maven 静态依赖与文本检索。
 - **批次编号**（`BATCH_INDEX`/`BATCH_COUNT`）：格式为 `N/M`，表示第 N 批共 M 批。仅在分批模式下提供。未提供时视为单 agent 全量模式
 - **审查输出模式**（`REVIEW_OUTPUT_MODE`）：
   - `完整报告`（默认）：按 REPORT_FORMAT_PATH 输出完整审查报告
   - `仅发现清单`：只输出结构化发现列表，不生成完整报告，不执行飞书上传。用于分批审查时的单批输出
 - **本批审查文件列表**（`BATCH_FILE_LIST`）：分批模式下外部注入的文件路径列表，每行一个绝对路径。提供此参数时，阶段 A（文件收集）和阶段 B（风险排序）跳过，直接使用注入的文件列表从阶段 C 开始执行
+- **运行目录**（`RUN_DIR`）：Maven 大仓库分批任务的持久化目录，仅大型仓库批次模式提供
+- **批次计划文件**（`BATCH_PLAN_PATH`）：本批 `batch-XXX.json` 的绝对路径，仅大型仓库批次模式提供
+- **批次状态文件**（`BATCH_STATUS_PATH`）：本批 `batch-XXX.status.json` 的绝对路径，仅大型仓库批次模式提供
+- **批次结果文件**（`BATCH_RESULT_PATH`）：本批局部审查报告的绝对路径，仅大型仓库批次模式提供
 
 **参考文件读取规则**：
 - 在执行审查前，先读取 `REVIEW_FRAMEWORK_PATH` 和 `REPORT_FORMAT_PATH`。
@@ -124,7 +136,59 @@ maxTurns: 50
 
 **审查输出模式分支**：
 
-当 `REVIEW_OUTPUT_MODE=仅发现清单` 时，执行流程调整如下：
+### 大型仓库批次模式
+
+当参数中包含 `BATCH_PLAN_PATH`、`BATCH_STATUS_PATH`、`BATCH_RESULT_PATH` 时，进入大型仓库批次模式。
+
+阶段处理：
+- **阶段 A（文件收集）**：读取 `BATCH_PLAN_PATH` 中 `scan_roots`，自行扫描各目录下 Java 文件作为本批审查范围。不使用外部注入的 `BATCH_FILE_LIST`。
+- **阶段 B（风险排序）**：对 `scan_roots` 内扫描到的文件执行风险排序。
+
+执行规则：
+- 必须先读取 `BATCH_PLAN_PATH`，以其中的 `scan_roots` 作为本批正式审查边界。
+- 批次计划中的 `units[].path` / `units[].scan_roots` 和顶层 `scan_roots` 是正式审查边界。
+- `context_roots are read-only context`，只能作为只读上下文使用，不得计入已审查 Java 文件，不得从 context_roots 产出正式问题。
+- Formal findings must point to locations inside scan_roots。正式问题的位置必须位于 `scan_roots` 内。
+- `SEMANTIC_LEVEL=jdtls-lsp` 或外部参数显示 jdtls-lsp 可用时，jdtls-lsp 可用时必须使用：必须用 jdtls 查询 definition、references、implementations、call hierarchy 来理解跨目录调用链，不能只依赖文本搜索或 Maven 静态依赖推断。
+- 使用 jdtls-lsp 后，批次结果必须写明「语义增强使用情况」：至少列出已使用的能力（definition / references / implementations / call hierarchy）、覆盖的关键类/接口/入口点，以及是否存在查询失败或降级。
+- 只有 `SEMANTIC_LEVEL=maven-static` 或明确注入 jdtls-lsp 不可用时，才允许回退 Maven 静态依赖分批、包名推断和文本检索。
+- `scan_roots` 外的代码只能作为外部依赖上下文，不得作为本批正式问题位置。
+- 如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」，不计入正式问题数量。
+- 批次是原子的；不要写其他运行状态，也不要写文件级 reviewed 状态。
+- 完整写入 `BATCH_RESULT_PATH` 后，才能把 `BATCH_STATUS_PATH` 写为 `completed`。
+- 无法完整完成时，把 `BATCH_STATUS_PATH` 写为 `failed`，并写明错误原因。
+
+状态文件写为完成时使用以下结构：
+
+```json
+{
+  "schema_version": 1,
+  "batch_id": "batch-001",
+  "status": "completed",
+  "planned_java_loc": 24800,
+  "planned_java_file_count": 186,
+  "finding_count": 12,
+  "result_path": "results/batch-001.md",
+  "error": null
+}
+```
+
+状态文件写为失败时使用以下结构：
+
+```json
+{
+  "schema_version": 1,
+  "batch_id": "batch-001",
+  "status": "failed",
+  "planned_java_loc": 24800,
+  "planned_java_file_count": 186,
+  "finding_count": 0,
+  "result_path": null,
+  "error": "上次执行中断，需要整批重跑"
+}
+```
+
+当 `REVIEW_OUTPUT_MODE=仅发现清单` 且未提供 `BATCH_PLAN_PATH` 时，执行旧版文件列表分批流程，调整如下：
 - **阶段 A（文件收集）跳过**：直接使用 `BATCH_FILE_LIST` 注入的文件列表
 - **阶段 B（风险排序）跳过**：文件已由主 skill 按风险排序后分批注入
 - **阶段 C（逐文件审查）正常执行**：按注入的文件列表逐文件读取 + 多维度评估
@@ -135,6 +199,8 @@ maxTurns: 50
 - **第四步（上传飞书云文档）跳过**
 - **第五步（创建飞书多维表格）跳过**
 - **第六步（输出最终汇总）替换**：仅输出简要完成信息 `✅ Batch {BATCH_INDEX}/{BATCH_COUNT} 完成：发现 {问题数} 个问题`，不输出完整报告
+
+当同时提供 `BATCH_PLAN_PATH` 与 `REVIEW_OUTPUT_MODE=仅发现清单` 时，`BATCH_PLAN_PATH` 优先级更高：必须读取计划文件并扫描 `scan_roots` / `units[].path`，不得使用 `BATCH_FILE_LIST` 覆盖或跳过阶段 A。
 
 ---
 
@@ -456,7 +522,7 @@ date +"%Y%m%d-%H%M%S"
 
 #### 策略 B：未上传飞书 → 展示本地文件 + 完整报告输出
 
-当 `FEISHU_UPLOAD_OPTION` 为 `仅显示报告`、`lark-cli未安装` 或 `飞书上传不可用` 时，使用第三步之后已保存的报告文件路径，然后输出完整报告供用户查看。
+当 `FEISHU_UPLOAD_OPTION` 为 `本地 Markdown 报告`、`lark-cli未安装` 或 `飞书上传不可用` 时，使用第三步之后已保存的报告文件路径，然后输出完整报告供用户查看。
 
 保存成功后，在对话中输出完整报告并附上文件路径：
 

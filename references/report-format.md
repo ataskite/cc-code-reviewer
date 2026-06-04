@@ -188,3 +188,22 @@
 **审查人**: Claude Code 代码审查 Agent (`cc-code-reviewer`)
 **报告版本**: 5.4
 **审查模式**: [fast / standard / deep / security]
+
+## 大仓库审查执行摘要
+
+Maven 大仓库分批审查报告必须额外包含本节。阶段性报告和完整报告都需要展示，区别在标题和覆盖率说明。
+
+分批审查报告必须包含：
+- Run ID
+- 审查分支
+- 审查模式
+- 语义增强：`jdtls-lsp` 或 `maven-static`
+- 语义增强使用情况：当语义增强为 `jdtls-lsp` 时，必须列出实际使用的 definition / references / implementations / call hierarchy 能力、覆盖的关键类/接口/入口点，以及失败或降级说明；当语义增强为 `maven-static` 时，说明使用 Maven 静态依赖与文本检索
+- 批次完成情况：已完成 / 失败待重试 / 待执行
+- Java 行覆盖率
+- Java 文件覆盖率
+- 未完成批次说明
+
+阶段性报告标题必须包含 `[阶段性]`。
+
+完整报告仅在所有批次为 `已完成` 后生成。阶段性报告只合并已完成批次发现，未完成批次不得进入正式问题结论。

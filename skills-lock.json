@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "keep-codex-fast": {
+      "source": "vibeforge1111/keep-codex-fast",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "23ff629c719f75d0563fb72cb1e41440cc99b03e88d617a2e9a481d2d90348b3"
+    }
+  }
+}

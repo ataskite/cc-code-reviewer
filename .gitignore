@@ -13,3 +13,6 @@ test-output/
 
 # Claude Code 配置目录
 .claude/
+
+# 进程锁定文件
+.in_use/
