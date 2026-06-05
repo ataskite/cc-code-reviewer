@@ -7,7 +7,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 PROJECT_DIR="$TMP_DIR/demo project"
 MODULE_DIR="$PROJECT_DIR/user service"
-mkdir -p "$MODULE_DIR/src/main/java/com/example"
+mkdir -p "$MODULE_DIR/src/main/java/com/example" "$MODULE_DIR/src/test/java/com/example"
 
 cat > "$PROJECT_DIR/pom.xml" <<'POM'
 <project>
@@ -27,6 +27,16 @@ package com.example;
 public class UserService {
     public String name() {
         return "demo";
+    }
+}
+JAVA
+
+cat > "$MODULE_DIR/src/test/java/com/example/UserServiceTest.java" <<'JAVA'
+package com.example;
+
+public class UserServiceTest {
+    public void testName() {
+        new UserService().name();
     }
 }
 JAVA

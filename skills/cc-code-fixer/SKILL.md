@@ -92,8 +92,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase7-detect-superpowers.sh"
 - 工作区状态：{干净 / 存在未提交改动 / 未知}
 
 📊 规模：
-- Java 文件：{N} 个
-- 代码行数：{M} 行
+- Java 文件（src/main/java）：{N} 个
+- 代码行数（src/main/java）：{M} 行
 
 🔌 lark-cli：
 - {LARK_PLUGIN_INSTALLED=true 时显示 "✅ 可用，支持读取飞书问题清单和回写修复结果" / false 时显示 "⚠️ 不可用：{LARK_PLUGIN_REASON}，只能使用本地 Markdown 清单并输出本地报告"}

@@ -124,8 +124,8 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 - 可用分支：{分支数量} 个{分支数 > 1 时显示"（需选择）"，否则显示"（自动使用）"}
 
 📊 规模：
-- Java 文件：{N} 个
-- 代码行数：{M} 行
+- Java 文件（src/main/java）：{N} 个
+- 代码行数（src/main/java）：{M} 行
 {多模块时追加以下行}
 - 模块数量：{K} 个
 - 模块列表：{模块1名称}({n1}类), {模块2名称}({n2}类), ...
@@ -177,7 +177,7 @@ BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
 **前提**：分批模式仅对存量审查生效。增量审查的变更文件数通常远低于阈值；即使超过阈值，batch agent 缺少增量上下文（GIT_LOG/CHANGED_FILES），无法判断问题是变更引入还是存量，因此不进入分批。
 
 **参数来源**：
-- `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 从 phase3-project-scan.sh 输出中解析（`Java文件总数` 和 `代码总行数`）
+- `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 从 phase3-project-scan.sh 输出中解析（`Java文件总数` 和 `代码总行数`），口径仅包含 `src/main/java` 生产源码
 - `500`：每个文件的工具调用 + agent 评估开销（token）
 - `3`：每行 Java 代码平均 token 数
 - `100000`：单批留给文件内容 + 开销的上限（200k 总上下文 - 25k 系统 prompt - 50k agent 输出 ≈ 125k，取 100k 留余量）
@@ -202,15 +202,15 @@ BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
 判定公式：
 ```text
 TOTAL_JAVA_LOC >= 120000
-TARGET_BATCH_LOC = 25000
-SOFT_MIN_BATCH_LOC = 15000
-SOFT_MAX_BATCH_LOC = 30000
-HARD_MAX_BATCH_LOC = 35000
+TARGET_BATCH_LOC = 50000
+SOFT_MIN_BATCH_LOC = 30000
+SOFT_MAX_BATCH_LOC = 50000
+HARD_MAX_BATCH_LOC = 50000
 review_cost = java_loc + java_file_count * 25
-TARGET_BATCH_COST = 32000
-SOFT_MIN_BATCH_COST = 18000
-SOFT_MAX_BATCH_COST = 38000
-HARD_MAX_BATCH_COST = 45000
+TARGET_BATCH_COST = 52000
+SOFT_MIN_BATCH_COST = 32000
+SOFT_MAX_BATCH_COST = 60000
+HARD_MAX_BATCH_COST = 65000
 ```
 
 Maven 大仓库规划使用 semantic-cost batching：
@@ -354,7 +354,8 @@ test -r "$REPORT_FORMAT_PATH"
 ### 本批审查边界
 请读取 `BATCH_PLAN_PATH`，以其中 `scan_roots` 作为正式审查边界。
 若批次计划包含 `units`，以 `units[].path` / `units[].scan_roots` 对应的 `scan_roots` 为准；`context_roots` are read-only context，只能用于理解依赖关系。
-`SEMANTIC_LEVEL=jdtls-lsp` 时表示 jdtls-lsp 可用时必须使用：本批子 agent 必须用 jdtls 查询 definition、references、implementations、call hierarchy 来理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `scan_roots` 内。
+正式扫描文件必须限定为 `scan_roots` 内的 `src/main/java` 生产源码；`src/test/java` 只能作为测试质量判断的只读上下文，不计入已审查 Java 文件，也不得作为正式问题位置。
+`SEMANTIC_LEVEL=jdtls-lsp` 时表示 jdtls-lsp 可用时必须使用：本批子 agent 必须用 jdtls 查询 definition、references、implementations、call hierarchy 来理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `scan_roots` 内的 `src/main/java` 生产源码。
 `SEMANTIC_LEVEL=maven-static` 时才允许回退 Maven 静态依赖与文本检索。
 如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」。
 
@@ -385,9 +386,10 @@ test -r "$REPORT_FORMAT_PATH"
 
 | 场景 | 处理方式 |
 |------|----------|
-| 某个 batch agent 超时/失败 | 该批次标记为"未完成"，其余批次继续。合并时标注该批次未覆盖 |
-| 所有 batch 均失败 | 输出失败报告，提示用户重试 |
-| 合并时某 batch 文件不存在 | 跳过该批次，报告中标注缺失 |
+| 某个 batch agent 超时/失败 | 该批次状态写为 `failed` 并记录错误；其余批次可以继续执行 |
+| 本轮批次仍为 pending/running | 合并脚本等待本轮批次进入终态；等待超时后生成 `[合并阻塞]` 报告 |
+| 本轮批次 failed 或 completed 但结果文件缺失 | 合并脚本不得静默跳过；生成 `[合并阻塞]` 报告，提示失败/缺失批次 |
+| 非本轮批次未执行 | 合并脚本生成 `[阶段性]` 报告，并在批次状态总览中列为遗留 |
 
 ---
 
@@ -618,7 +620,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJEC
 
 本轮将执行：{RUN_BATCH_COUNT 或 BATCH_COUNT} 批
 总批次数：{BATCH_COUNT} 批
-代码行数：{REVIEW_LINE_COUNT 或 TOTAL_JAVA_LOC} 行
+生产代码行数：{REVIEW_LINE_COUNT 或 TOTAL_JAVA_LOC} 行
 ```
 
 并发数必须小于等于本轮实际执行批次数，即 `CONCURRENCY <= RUN_BATCH_COUNT`。生成并发选项前必须先计算 `RUN_BATCH_COUNT`：
@@ -647,7 +649,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJEC
 **耗时预估公式**：
 ```
 单批成本 = batch JSON 中的 planned_review_cost；缺失时回退 planned_java_loc + planned_java_file_count × 25
-目标批次成本 = 32000
+目标批次成本 = 52000
 目标批次耗时 = fast 4 分钟 / standard 8 分钟 / deep 15 分钟 / security 10 分钟
 单批耗时 = ceil(单批成本 × 目标批次耗时 / 目标批次成本)，最低 1 分钟
 total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 lane 后的最大 lane 耗时
@@ -881,31 +883,34 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-file-batches.sh" \
 
 ### 第五步之后：报告合并（仅 BATCH_MODE=true 时执行）
 
-所有 batch agent 完成后，主 skill 执行合并（不启动额外 agent）。
+所有本轮 batch agent 完成或进入终态后，主 skill 执行合并（不启动额外 agent）。
 
-Maven 大仓库模式必须通过确定性脚本合并，只读取 `RUN_DIR` 下状态为 `completed` 的批次：
+Maven 大仓库模式必须通过确定性脚本合并，并把本轮主任务批次通过 `RUN_BATCH_IDS` 传给脚本：
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merge-large-batches.sh" "$RUN_DIR"
+RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merge-large-batches.sh" "$RUN_DIR"
 ```
 
-该脚本会生成 `summary.json` 和 `final/code-review-report-*`。当并非所有批次都完成时，报告必须标记为 `[阶段性]`；只有所有批次均为 `completed` 时才称为完整报告。
+该脚本会生成 `summary.json` 和 `final/code-review-report-*`，并在报告中写入“批次状态总览”，列明本轮主任务批次、已纳入合并的批次、失败/缺失/等待超时遗留批次，以及未纳入本轮的遗留批次。
+
+合并门禁：
+- `RUN_BATCH_IDS` 为空时，默认检查 `plan.json` 中的全部批次；Maven 大仓库模式正常执行时必须传入本轮 `RUN_BATCH_IDS`。
+- 本轮批次处于 `pending` / `running` 时，脚本等待其进入终态；等待超时后生成 `[合并阻塞]` 报告并以非 0 退出。
+- 本轮批次为 `failed`，或 `completed` 但结果文件缺失时，不得静默跳过；生成 `[合并阻塞]` 报告并以非 0 退出。
+- 本轮批次均 `completed` 且结果文件存在时，才合并这些批次的审查结果。
+- 若 `plan.json` 中仍有未纳入本轮的批次，报告标记为 `[阶段性]`；只有全部批次均已完成并纳入合并时才称为完整报告。
 
 #### 合并步骤
 
-1. **读取所有 batch 文件**：逐个 Read `/tmp/review-batch-{i}-{PROJECT_NAME}.md`（i = 1..BATCH_COUNT）
-2. **提取所有问题**：从每个 batch 的发现列表中解析出结构化问题（严重级别、维度、标题、位置、证据、建议）
-3. **跨批去重**：同一文件 + 同一行 + 同一维度的问题只保留一条，取更高严重级别
-4. **聚合同类问题**：相同根因的多处出现合并为一条，标注总数和代表位置
-5. **按严重程度排序**：P0 → P1 → P2 → P3 → 待确认
-6. **汇总覆盖率**：
-   ```
-   总扫描文件数 = Σ 各批 BATCH_FILE_COUNT
-   总扫描行数 = Σ 各批 BATCH_LINE_COUNT
-   文件覆盖率 = 总扫描文件数 / REVIEW_FILE_COUNT × 100%
-   行覆盖率 = 总扫描行数 / REVIEW_LINE_COUNT × 100%
-   综合覆盖率 = (文件覆盖率 + 行覆盖率) / 2
-   ```
-7. **按完整报告格式输出**：复用 `references/report-format.md` 格式，生成最终报告
+1. **确定本轮批次集合**：读取 `RUN_BATCH_IDS`；为空时回退到 `RUN_DIR/batches/batch-*.json` 全量批次。
+2. **等待本轮批次终态**：检查 `results/batch-XXX.status.json`，对 `pending` / `running` 批次按脚本超时配置等待。
+3. **阻塞判断**：本轮存在 `failed`、结果缺失或等待超时，生成 `[合并阻塞]` 报告，提示用户重试或补齐对应批次。
+4. **批次状态总览**：在报告中列出所有批次的状态、本轮主任务标记、合并处理、文件数、行数、模块和错误信息。
+5. **合并已完成本轮批次**：只把本轮 `completed` 且结果文件存在的批次纳入正式发现；非本轮批次列为遗留。
+6. **跨批线索汇总**：抽取各批 `跨批依赖待复核` 段落，集中列在报告中。
+7. **跨批去重**：对已纳入本次合并的发现按文件、行号、维度和根因去重；未完成或遗留批次不得参与正式结论。
+8. **聚合同类问题**：对同一根因的多处出现聚合为一条，保留代表位置和影响范围。
+9. **汇总覆盖率**：Java 文件覆盖率只统计已纳入合并的批次文件数；LOC 与 review cost 仅作为规划规模参考。
+10. **按完整报告格式输出**：复用 `references/report-format.md` 格式，生成阻塞、阶段性或完整报告。
 
 #### 合并后输出
 

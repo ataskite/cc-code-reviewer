@@ -18,7 +18,7 @@ java_stats() {
     count=$((count + 1))
     file_lines=$(wc -l < "$file" | tr -d ' ')
     lines=$((lines + file_lines))
-  done < <(find "$root_dir" -name '*.java' -not -path "$build_exclude" -not -path '*/.git/*' -print0 2>/dev/null)
+  done < <(find "$root_dir" -path '*/src/main/java/*' -name '*.java' -not -path "$build_exclude" -not -path '*/.git/*' -print0 2>/dev/null)
 
   echo "$count|$lines"
 }

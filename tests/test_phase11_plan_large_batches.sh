@@ -71,6 +71,13 @@ create_module "order-dao" "order-dao" "" 5000
 create_module "inventory" "inventory" "" 6000
 create_module "svc space" "svc-space" "" 10
 create_module "svc&core" "svc-core" "" 10
+mkdir -p "$PROJECT_DIR/order-api/src/test/java/com/example/orderapi"
+{
+  echo "package com.example.orderapi;"
+  echo "public class OrderApiTest {"
+  seq 1 20000 | sed 's/.*/  public void test&() {}/'
+  echo "}"
+} > "$PROJECT_DIR/order-api/src/test/java/com/example/orderapi/OrderApiTest.java"
 
 OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-010203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "standard" "main" "jdtls-lsp")"
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
@@ -89,6 +96,7 @@ for json_file in "$RUN_DIR"/batches/*.json "$RUN_DIR"/results/*.status.json; do
 done
 
 jq -e '.strategy == "semantic-cost-batching"' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.total_java_file_count == 6' "$RUN_DIR/plan.json" >/dev/null
 grep -q '"semantic_level": "jdtls-lsp"' "$RUN_DIR/plan.json"
 grep -q '"status": "pending"' "$RUN_DIR/results/batch-001.status.json"
 grep -q '"scan_roots"' "$RUN_DIR/batches/batch-001.json"
@@ -151,6 +159,7 @@ cat > "$YUDAO_DIR/pom.xml" <<'XML'
     <module>yudao-module-mall</module>
     <module>yudao-framework</module>
     <module>yudao-gateway</module>
+    <module>yudao-module-inspection</module>
     <module>yudao-module-report</module>
     <module>yudao-dependencies</module>
     <module>yudao-server</module>
@@ -171,6 +180,7 @@ create_nested_module "$YUDAO_DIR" "yudao-module-mall/promotion" "promotion" "com
 
 create_nested_module "$YUDAO_DIR" "yudao-framework" "yudao-framework" "com/example/framework" 23000
 create_nested_module "$YUDAO_DIR" "yudao-gateway" "yudao-gateway" "com/example/gateway" 1500
+create_nested_module "$YUDAO_DIR" "yudao-module-inspection" "yudao-module-inspection" "com/example/inspection" 48000
 create_nested_module "$YUDAO_DIR" "yudao-module-report" "yudao-module-report" "com/example/report" 1200
 mkdir -p "$YUDAO_DIR/yudao-dependencies"
 printf '<project><artifactId>yudao-dependencies</artifactId></project>\n' > "$YUDAO_DIR/yudao-dependencies/pom.xml"
@@ -180,10 +190,15 @@ OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-010203 bash "$ROOT_DIR/scripts
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 
 jq -e '.strategy == "semantic-cost-batching"' "$RUN_DIR/plan.json" >/dev/null
-jq -e '.budget.target_batch_cost == 32000' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.budget.target_batch_cost == 52000' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.budget.hard_max_batch_loc == 50000' "$RUN_DIR/plan.json" >/dev/null
 
-if jq -e 'select(.planned_java_loc > 35000 or .planned_review_cost > 45000)' "$RUN_DIR"/batches/batch-*.json >/dev/null; then
+if jq -e 'select(.planned_java_loc > 50000 or .planned_review_cost > 65000)' "$RUN_DIR"/batches/batch-*.json >/dev/null; then
   echo "planner emitted an oversized batch" >&2
+  exit 1
+fi
+if ! jq -r '.units[].name? // empty' "$RUN_DIR"/batches/batch-*.json | grep -Fxq "yudao-module-inspection"; then
+  echo "smart batching should keep a module below 50k Java LOC as one scan unit" >&2
   exit 1
 fi
 
@@ -234,7 +249,7 @@ RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 
 jq -e '.review_scope == "yudao-module-mall"' "$RUN_DIR/plan.json" >/dev/null
 jq -e '.selected_modules == ["yudao-module-mall"]' "$RUN_DIR/plan.json" >/dev/null
-if jq -r '.scan_roots[]' "$RUN_DIR"/batches/batch-*.json | grep -v '^yudao-module-mall/' | grep -q .; then
+if jq -r '.scan_roots[]' "$RUN_DIR"/batches/batch-*.json | grep -vE '^yudao-module-mall(/|$)' | grep -q .; then
   echo "selected-module smart batching must keep scan_roots inside the selected module" >&2
   exit 1
 fi

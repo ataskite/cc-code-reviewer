@@ -141,12 +141,13 @@ maxTurns: 50
 当参数中包含 `BATCH_PLAN_PATH`、`BATCH_STATUS_PATH`、`BATCH_RESULT_PATH` 时，进入大型仓库批次模式。
 
 阶段处理：
-- **阶段 A（文件收集）**：读取 `BATCH_PLAN_PATH` 中 `scan_roots`，自行扫描各目录下 Java 文件作为本批审查范围。不使用外部注入的 `BATCH_FILE_LIST`。
-- **阶段 B（风险排序）**：对 `scan_roots` 内扫描到的文件执行风险排序。
+- **阶段 A（文件收集）**：读取 `BATCH_PLAN_PATH` 中 `scan_roots`，自行扫描各目录下 `src/main/java` 生产 Java 文件作为本批正式审查范围。不使用外部注入的 `BATCH_FILE_LIST`。
+- **阶段 B（风险排序）**：对 `scan_roots` 内扫描到的 `src/main/java` 生产 Java 文件执行风险排序。
 
 执行规则：
 - 必须先读取 `BATCH_PLAN_PATH`，以其中的 `scan_roots` 作为本批正式审查边界。
 - 批次计划中的 `units[].path` / `units[].scan_roots` 和顶层 `scan_roots` 是正式审查边界。
+- `scan_roots` 是目录边界；正式扫描文件必须限定为其中的 `src/main/java` 生产源码。`src/test/java` 只能作为测试质量判断的只读上下文，不计入已审查 Java 文件，也不得作为正式问题位置。
 - `context_roots are read-only context`，只能作为只读上下文使用，不得计入已审查 Java 文件，不得从 context_roots 产出正式问题。
 - Formal findings must point to locations inside scan_roots。正式问题的位置必须位于 `scan_roots` 内。
 - `SEMANTIC_LEVEL=jdtls-lsp` 或外部参数显示 jdtls-lsp 可用时，jdtls-lsp 可用时必须使用：必须用 jdtls 查询 definition、references、implementations、call hierarchy 来理解跨目录调用链，不能只依赖文本搜索或 Maven 静态依赖推断。
@@ -221,18 +222,18 @@ maxTurns: 50
 - **存量审查**（`REVIEW_TYPE=存量审查`）：
   - 单模块项目：默认以 `PROJECT_DIR` 为扫描范围
   - 多模块项目：根据 `REVIEW_SCOPE` 确定范围
-    - `全量代码`：扫描所有模块，使用 `find "$PROJECT_DIR"`
+    - `全量代码`：扫描所有模块，使用 `find "$PROJECT_DIR" -path '*/src/main/java/*' -name '*.java'`
     - 具体模块路径（逗号分隔）：如 `user-service,order-service`
       - 这些路径是相对于 `PROJECT_DIR` 的相对路径
       - 需要为每个模块单独执行 find，例如：
         ```bash
         IFS=',' read -ra MODULES <<< "$REVIEW_SCOPE"
         for module in "${MODULES[@]}"; do
-          find "$PROJECT_DIR/$module" -name '*.java'
+          find "$PROJECT_DIR/$module" -path '*/src/main/java/*' -name '*.java'
         done
         ```
   - 使用 `Glob` 工具或 `find` 命令在确定的范围内定位具体文件路径（文件统计已在项目概况中提供，find 仅用于获取文件路径列表）：
-    - Java 源码：`**/*.java`
+    - Java 源码：`**/src/main/java/**/*.java`
     - 配置文件：`**/*.yml`, `**/*.yaml`, `**/*.properties`, `**/*.xml`
     - 测试文件（standard 检查存在性 / deep 存量审查）：`**/*Test.java`, `**/*Tests.java`, `**/*IT.java`
 - **增量审查**（`REVIEW_TYPE=增量审查`）：

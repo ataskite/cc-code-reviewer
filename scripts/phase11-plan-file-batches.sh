@@ -151,7 +151,7 @@ while IFS= read -r -d '' file; do
   cost=$((loc * LINE_TOKEN_ESTIMATE + FILE_TOKEN_OVERHEAD))
   priority="$(risk_priority "$file_name")"
   printf '%s\t%s\t%s\t%s\t%s\n' "$priority" "$cost" "$loc" "$rel_path" "$file" >> "$FILES_TSV"
-done < <(find "$PROJECT_DIR" -name '*.java' -not -path '*/target/*' -not -path '*/build/*' -not -path '*/.git/*' -print0 2>/dev/null)
+done < <(find "$PROJECT_DIR" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' -not -path '*/build/*' -not -path '*/.git/*' -print0 2>/dev/null)
 
 if [ ! -s "$FILES_TSV" ]; then
   echo "NO_JAVA_FILES=$PROJECT_DIR" >&2

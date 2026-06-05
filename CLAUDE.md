@@ -64,7 +64,7 @@ flowchart TD
 - Pre-scan: project detection → branch detection → project scan → jdtls/code-intelligence detection → lark-cli detection
 - Reads `.cc-code-reviewer/ignore/issues.yml` after pre-scan and injects AI-readable skip rules into the scan agent
 - Interactive mode: Collect user config via AskUserQuestion after pre-scan: review mode → report handling → review entry → scope → optional stock strategy → optional batch selection/concurrency → final confirmation
-- Batch mode: Auto-triggered for large stock reviews or when a Maven multi-module stock strategy is selected; uses deterministic planner scripts, dispatches parallel sub-agents, merges completed results
+- Batch mode: Auto-triggered for large stock reviews or when a Maven multi-module stock strategy is selected; uses deterministic planner scripts, dispatches parallel sub-agents, gates merge on current-run batch status, and reports included/leftover batches
 - Maven large-repo mode: for Maven multi-module stock full-code or selected-module reviews using `module-sequential` or `ai-planned`, creates `.cc-code-reviewer/runs/{RUN_ID}` with atomic module/directory batches, status files, resumable execution, and staged/full merge reports
 - File batch mode: for Maven single-module, Gradle, or unknown Java projects when `BATCH_MODE=true`, uses `phase11-plan-file-batches.sh` and `file-token-batching`
 - **Never** execute code review itself
@@ -159,7 +159,7 @@ The suite runs every `tests/test_*.sh` file and then `git diff --check`. It cove
 - `phase10-detect-code-intelligence.sh`: jdtls-lsp availability and fallback messaging
 - `phase11-plan-large-batches.sh`: scoped Maven module planning, concise `RUN_DIR`, semantic-cost and module-sequential strategies
 - `phase11-plan-file-batches.sh`: deterministic file-token batching for Maven single-module, Gradle, and unknown Java projects
-- `phase12-merge-large-batches.sh`: completed-batch-only staged/full report merge and coverage accounting
+- `phase12-merge-large-batches.sh`: current-run batch status gate, wait/blocked/staged/full report generation, batch status summary, and coverage accounting
 - `phase13-show-large-batch-status.sh`: Markdown batch table, dynamic execution plans, and cost-based time estimates
 - `phase6-detect-fix-input.sh`: local Markdown path validation only; Feishu Doc/Base inputs are read through `lark-doc` / `lark-base`
 - `phase7-detect-superpowers.sh`: optional Superpowers route capability detection
@@ -232,6 +232,7 @@ Verify installation by triggering the skill with a Java review request such as `
 - `phase11-plan-large-batches.sh` receives `PROJECT_DIR`, `REVIEW_MODE`, branch, `SEMANTIC_LEVEL`, `REVIEW_SCOPE`, and `STOCK_REVIEW_STRATEGY`.
 - `STOCK_REVIEW_STRATEGY` is `module-sequential` for one batch per selected module or `ai-planned` for semantic-cost planning.
 - Maven multi-module stock batching must never fall back to `phase11-plan-file-batches.sh`; that planner is only for Maven single-module, Gradle, or unknown Java projects.
+- Pre-scan, batch-planning, and batch-agent formal scan Java file/line counts must include only `src/main/java` production sources; `src/test/java` test sources must not contribute to review scale, file batch manifests, or formal batch findings.
 - `RUN_DIR` names are fixed as `{YYYYMMDD-HHMMSS}-{branch_slug}-{REVIEW_MODE}`. Scope, strategy, task type, selected modules, and totals must be read from `plan.json`, not inferred from the directory name.
 - Batch status must be shown as normal assistant-visible Markdown, not only as collapsed shell output. The table header is `| 批次 | 状态 | 行数 | 文件数 | 模块 |`.
 - Batch execution options and concurrency options are dynamic. Do not show impossible options such as 5 batches when only 3 are runnable, and never offer concurrency greater than `RUN_BATCH_COUNT`.

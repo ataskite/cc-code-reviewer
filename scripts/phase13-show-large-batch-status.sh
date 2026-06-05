@@ -161,7 +161,7 @@ ceil_div() {
   echo $(((numerator + denominator - 1) / denominator))
 }
 
-TARGET_REVIEW_COST=32000
+TARGET_REVIEW_COST=52000
 
 target_batch_minutes() {
   case "${1:-standard}" in

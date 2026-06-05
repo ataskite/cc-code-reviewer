@@ -8,18 +8,18 @@ SEMANTIC_LEVEL="${4:-maven-static}"
 REVIEW_SCOPE_INPUT="${5:-全量代码}"
 PLANNING_STRATEGY="${6:-semantic-cost-batching}"
 
-TARGET_BATCH_COST=32000
-SOFT_MIN_BATCH_COST=18000
-SOFT_MAX_BATCH_COST=38000
-HARD_MAX_BATCH_COST=45000
+TARGET_BATCH_COST=52000
+SOFT_MIN_BATCH_COST=32000
+SOFT_MAX_BATCH_COST=60000
+HARD_MAX_BATCH_COST=65000
 TINY_BATCH_LOC=5000
 TINY_BATCH_COST=8000
 CONTEXT_COST_RATIO_PERCENT=25
 
-HARD_MAX_BATCH_LOC=35000
-TARGET_BATCH_LOC=25000
-SOFT_MIN_BATCH_LOC=15000
-SOFT_MAX_BATCH_LOC=30000
+HARD_MAX_BATCH_LOC=50000
+TARGET_BATCH_LOC=50000
+SOFT_MIN_BATCH_LOC=30000
+SOFT_MAX_BATCH_LOC=50000
 
 SELECTED_MODULES=()
 SELECTED_MODULES_RAW=()
@@ -44,13 +44,13 @@ java_loc() {
   while IFS= read -r -d '' file; do
     lines="$(wc -l < "$file" | tr -d ' ')"
     total=$((total + lines))
-  done < <(find "$dir" -name '*.java' -not -path '*/target/*' -print0 2>/dev/null)
+  done < <(find "$dir" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' -print0 2>/dev/null)
   printf '%s\n' "$total"
 }
 
 java_files() {
   local dir="$1"
-  find "$dir" -name '*.java' -not -path '*/target/*' -print0 2>/dev/null | tr '\0' '\n' | wc -l | tr -d ' '
+  find "$dir" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' -print0 2>/dev/null | tr '\0' '\n' | wc -l | tr -d ' '
 }
 
 review_cost() {
