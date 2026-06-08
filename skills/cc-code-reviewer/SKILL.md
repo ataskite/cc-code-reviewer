@@ -145,7 +145,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 {未识别专项技术栈时展示}
 - 未识别专项技术栈，仅启用通用 Java 审查规则。
 
-🔌 lark-cli：{LARK_PLUGIN_INSTALLED=true 时显示 "✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书上传" / false 时显示 "⚠️ 飞书上传不可用：{LARK_PLUGIN_REASON}，报告将保存到本地文件"}
+🔌 lark-cli：{LARK_PLUGIN_INSTALLED=true 时显示 "✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书保存" / false 时显示 "⚠️ 飞书保存不可用：{LARK_PLUGIN_REASON}，报告将仅保存到本地文件"}
 
 🧠 代码智能：{CODE_INTELLIGENCE_AVAILABLE=true 时显示 "✅ jdtls-lsp 可用，可用于跨目录调用链理解" / false 时显示 "⚠️ 未启用 jdtls-lsp，将使用 Maven 静态依赖分批；建议安装 jdtls 并启用 jdtls-lsp 提升跨模块理解质量"}
 
@@ -338,7 +338,7 @@ test -r "$REPORT_FORMAT_PATH"
 | 审查范围 | {REVIEW_SCOPE} |
 | 审查模式 | {REVIEW_MODE} |
 | 审查模型 | {REVIEW_MODEL} |
-| 飞书上传选项 | 飞书上传不可用 |
+| 报告保存方式 | 仅本地 Markdown 报告 |
 | 审查文件数量 | {BATCH_FILE_COUNT} |
 | 审查代码行数 | {BATCH_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
@@ -377,13 +377,13 @@ test -r "$REPORT_FORMAT_PATH"
 |------|----------|-------------|
 | 审查文件数量 | REVIEW_FILE_COUNT（总量） | BATCH_FILE_COUNT（本批） |
 | 审查代码行数 | REVIEW_LINE_COUNT（总量） | BATCH_LINE_COUNT（本批） |
-| 飞书上传选项 | 用户选择的值 | 固定"飞书上传不可用" |
+| 报告保存方式 | 用户选择的值 | 固定"仅本地 Markdown 报告" |
 | 批次编号 | 无 | BATCH_INDEX/BATCH_COUNT |
 | 审查输出模式 | 无（默认完整报告） | "仅发现清单" |
 | 文件列表来源 | agent 自行 Glob | 外部注入，agent 不扫描 |
 | 增量数据 | 注入 GIT_LOG 等 | 不注入（分批仅支持存量审查） |
 
-**飞书上传**：batch agent 不执行飞书上传。飞书上传由主 skill 在合并完成后统一处理。
+**飞书保存**：batch agent 不执行飞书保存。飞书保存由主 skill 在合并完成后统一处理。
 
 **错误处理**：
 
@@ -404,7 +404,7 @@ test -r "$REPORT_FORMAT_PATH"
 > - 不允许在一次回复中包含多个交互步骤的动作
 > - 用户响应后，处理结果、设置变量，然后才能进入下一步
 
-> **注意**：分支选择已在第二步（项目识别与分支检测）完成，本步骤从选择审查模式开始；审查模式和报告处理方式必须在审查入口前确认。
+> **注意**：分支选择已在第二步（项目识别与分支检测）完成，本步骤从选择审查模式开始；审查模式和报告保存方式必须在审查入口前确认。审查模型在步骤 5C 最后选择。
 
 ### 步骤 1：选择审查模式
 
@@ -422,47 +422,28 @@ test -r "$REPORT_FORMAT_PATH"
     description: "安全专项，聚焦安全核心维度"
 - multiSelect: false
 
-### 步骤 1B：选择审查模型
+### 步骤 2：选择审查报告保存方式（条件步骤）
+
+**触发条件**：LARK_PLUGIN_INSTALLED=true。不满足时跳过，设 FEISHU_UPLOAD_OPTION=仅本地 Markdown 报告。
+
+报告保存方式为多选。用户可选择本地 Markdown 报告、飞书云文档和飞书多维表格中的任意一个或多个，支持任意组合多选。
 
 **必须调用 AskUserQuestion 工具，参数如下**：
-- question: "请选择审查使用的 AI 模型"
-- header: "审查模型"
-- options:
-  - label: "sonnet（推荐）"
-    description: "平衡速度与质量，适合日常迭代审查"
-  - label: "opus"
-    description: "最强推理能力，深度分析更精准，耗时更长、token 消耗更高"
-  - label: "haiku"
-    description: "最快速度，适合快速扫雷或小项目"
-- multiSelect: false
-
-**用户响应后变量赋值**：
-- sonnet（推荐） → REVIEW_MODEL=sonnet
-- opus → REVIEW_MODEL=opus
-- haiku → REVIEW_MODEL=haiku
-
-### 步骤 2：选择飞书上传选项（条件步骤）
-
-**触发条件**：LARK_PLUGIN_INSTALLED=true。不满足时跳过，设 FEISHU_UPLOAD_OPTION=飞书上传不可用。
-
-报告处理方式为多选。用户可只选择本地 Markdown 报告，也可选择一个或多个飞书输出目标；选择「上传到云文档」和「上传到多维表格」即可同时上传两类飞书产物，不再提供单独的合并上传选项。
-
-**必须调用 AskUserQuestion 工具，参数如下**：
-- question: "检测到飞书上传能力可用，请选择审查结果的处理方式"
-- header: "飞书上传"
+- question: "请选择审查报告的保存方式"
+- header: "报告保存方式"
 - options:
   - label: "本地 Markdown 报告"
     description: "生成并保存本地 Markdown 完整审查报告"
-  - label: "上传到云文档"
-    description: "审查报告上传到飞书云文档，聊天中显示精简摘要"
-  - label: "上传到多维表格"
+  - label: "飞书云文档"
+    description: "审查报告保存到飞书云文档，聊天中显示精简摘要"
+  - label: "飞书多维表格"
     description: "问题清单录入飞书多维表格，聊天中显示精简摘要"
 - multiSelect: true
 
 **用户响应后变量赋值**：
 - 将用户选择的 label 按选择顺序写入 `FEISHU_UPLOAD_OPTION`，多个值用 `, ` 分隔
-- 如果用户同时选择「上传到云文档」和「上传到多维表格」，后续执行云文档上传和多维表格创建两个步骤
-- 如果用户只选择「本地 Markdown 报告」，不执行飞书上传步骤
+- 如果用户同时选择「飞书云文档」和「飞书多维表格」，后续执行云文档上传和多维表格创建两个步骤
+- 如果用户只选择「本地 Markdown 报告」，不执行飞书保存步骤
 - 即使用户未选择「本地 Markdown 报告」，scan agent 仍必须先生成并保存本地 Markdown 完整报告文件，作为上传和降级复用源
 
 ### 步骤 3：选择审查入口
@@ -657,7 +638,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJEC
 - 如果用户通过 Other/free-form 选择具体批次，`RUN_BATCH_COUNT` 为标准化后有效批次号数量
 
 **动态并发规则**：
-- `RUN_BATCH_COUNT=1` → 不调用 AskUserQuestion；自动设置 `CONCURRENCY=1`，直接进入步骤 6 确认执行计划。
+- `RUN_BATCH_COUNT=1` → 不调用 AskUserQuestion；自动设置 `CONCURRENCY=1`，进入步骤 5C 选择审查模型。
 - `RUN_BATCH_COUNT=2` → AskUserQuestion options 只包含 `串行执行（默认）` 和 `2 路并发`；不得出现 `3 路并发`。
 - `RUN_BATCH_COUNT>=3` → AskUserQuestion options 包含 `串行执行（默认）`、`2 路并发`、`3 路并发`。
 - 任意路径下都不得提供大于 `RUN_BATCH_COUNT` 的并发选项；例如只执行 1 批时不能展示 2 / 3 路，只执行 2 批时不能展示 3 路。
@@ -691,6 +672,29 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 - 3 路并发 → CONCURRENCY=3
 - 并发数仅允许 `1..min(3, RUN_BATCH_COUNT)`，默认 `1`
 
+### 步骤 5C：选择审查模型
+
+**触发条件**：无（所有路径必经）。
+
+在确认执行计划之前，最后选择子 agent 审查使用的 AI 模型。此时用户已经了解完整的任务规模（审查范围、批次数量、并发策略），可以据此做出更合适的模型选择。
+
+**必须调用 AskUserQuestion 工具，参数如下**：
+- question: "请选择审查使用的 AI 模型"
+- header: "审查模型"
+- options:
+  - label: "sonnet（推荐）"
+    description: "平衡速度与质量，适合日常迭代审查"
+  - label: "opus"
+    description: "最强推理能力，深度分析更精准，耗时更长、token 消耗更高"
+  - label: "haiku"
+    description: "最快速度，适合快速扫雷或小项目"
+- multiSelect: false
+
+**用户响应后变量赋值**：
+- sonnet（推荐） → REVIEW_MODEL=sonnet
+- opus → REVIEW_MODEL=opus
+- haiku → REVIEW_MODEL=haiku
+
 ### 步骤 6：确认执行计划
 
 先输出完整执行计划：
@@ -706,7 +710,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 - 审查模型：{REVIEW_MODEL}
 - 启用维度：{根据模式 × 维度矩阵列出具体维度名称}
 - 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "已启用 .cc-code-reviewer/ignore/issues.yml（已忽略 {IGNORE_RULE_COUNT} 个问题）"；否则显示 "未配置"}
-- 飞书上传：{FEISHU_UPLOAD_OPTION}
+- 报告保存方式：{FEISHU_UPLOAD_OPTION}
 - 扫描策略：分批并行扫描（本轮 {RUN_BATCH_COUNT 或 BATCH_COUNT} / 总 {BATCH_COUNT} 批 / {CONCURRENCY} 路并发）  ← 仅 BATCH_MODE=true 时显示
 - 预计耗时：约 {total_min} 分钟  ← 仅 BATCH_MODE=true 时显示
 ```
@@ -732,8 +736,8 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 ⏱️ 预估耗时：{预估时间}
 📌 子代理将独立执行完整审查流程，完成后自动返回结果。
 
-{飞书上传时追加}
-📤 审查完成后将自动上传到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
+{选择飞书输出时追加}
+📤 审查完成后将自动保存到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
 
 💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
 ```
@@ -748,8 +752,8 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 ⏱️ 预估耗时：约 {total_min} 分钟
 📌 本轮 {RUN_BATCH_COUNT 或 BATCH_COUNT} 批次将按 {CONCURRENCY} 路并发执行；未调度批次保持 pending，完成后生成阶段性或完整合并结果。
 
-{飞书上传时追加}
-📤 审查完成后将自动上传到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
+{选择飞书输出时追加}
+📤 审查完成后将自动保存到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
 
 💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
 ```
@@ -848,7 +852,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-file-batches.sh" \
 | 审查范围 | {REVIEW_SCOPE} |
 | 审查模式 | {REVIEW_MODE} |
 | 审查模型 | {REVIEW_MODEL} |
-| 飞书上传选项 | {FEISHU_UPLOAD_OPTION} |
+| 报告保存方式 | {FEISHU_UPLOAD_OPTION} |
 | 审查文件数量 | {REVIEW_FILE_COUNT} |
 | 审查代码行数 | {REVIEW_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
@@ -885,8 +889,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-file-batches.sh" \
 | `PROJECT_NAME` | `basename "$PROJECT_DIR"` | `spring-ai-agent-utils` |
 | `PROJECT_TYPE` | phase3 脚本输出 | `maven-single` 等 |
 | `REVIEW_MODE` | 交互步骤1 | `fast` / `standard` 等 |
-| `REVIEW_MODEL` | 交互步骤1B | `sonnet` / `opus` / `haiku` |
-| `FEISHU_UPLOAD_OPTION` | 交互步骤2 | `本地 Markdown 报告` 或 `上传到云文档, 上传到多维表格` 等 |
+| `REVIEW_MODEL` | 交互步骤5C | `sonnet` / `opus` / `haiku` |
+| `FEISHU_UPLOAD_OPTION` | 交互步骤2 | `本地 Markdown 报告` 或 `飞书云文档, 飞书多维表格` 等 |
 | `REVIEW_ENTRY` | 交互步骤3 | `增量审查` / `全量审查` / `指定模块` |
 | `REVIEW_TYPE` | 交互步骤3 | `增量审查` / `存量审查` |
 | `REVIEW_SCOPE` | 交互步骤4 | `最近5次提交` / `全量代码` / `yudao-module-mes,yudao-framework` |
@@ -948,9 +952,9 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 
 使用 Write 工具将合并后的报告保存到 `{PROJECT_DIR}/code-review-report-{PROJECT_NAME}-{timestamp}.md`（与单 agent 模式一致的命名和路径）。
 
-#### 合并后飞书上传
+#### 合并后报告保存
 
-复用现有飞书上传逻辑：根据 FEISHU_UPLOAD_OPTION 执行上传，上传合并后的报告文件。
+复用现有飞书保存逻辑：根据 FEISHU_UPLOAD_OPTION 执行上传，上传合并后的报告文件。
 
 #### 合并后结果展示
 
@@ -1040,7 +1044,7 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 💡 建议：{从报告中提取一句话关键建议}
 ```
 
-**飞书上传失败时**：降级为未上传模式，输出完整报告并说明失败原因。
+**飞书保存失败时**：降级为本地报告模式，输出完整报告并说明失败原因。
 
 ---
 
@@ -1055,9 +1059,9 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 ### 条件步骤规则
 
 - **单模块项目自动跳过步骤4**：`PROJECT_TYPE` 为 `*-single` 且选择存量审查时，自动设 `REVIEW_SCOPE=全量代码`
-- **lark-cli 检测**：lark-cli、lark-doc、lark-base 任一不可用时自动设 `FEISHU_UPLOAD_OPTION=飞书上传不可用`
+- **lark-cli 检测**：lark-cli、lark-doc、lark-base 任一不可用时自动设 `FEISHU_UPLOAD_OPTION=仅本地 Markdown 报告`
 - **Git 分支选择**：仅在 Git 仓库且多分支时执行前置分支选择步骤
-- **飞书上传执行**：子 agent 使用 `lark-doc`/`lark-base` skill，通过 `lark-cli` 执行
+- **飞书保存执行**：子 agent 使用 `lark-doc`/`lark-base` skill，通过 `lark-cli` 执行
 
 ---
 

@@ -37,35 +37,35 @@
    | Spring MVC | spring-boot-starter-web | 1,3,5,8,15 | 启用 Controller/API、输入校验、错误响应和 REST 规范审查 |
    | Validation | spring-boot-starter-validation | 1,3,5,15 | 启用 Bean Validation、输入边界和 API 参数校验审查 |
 
-   🔌 lark-cli：✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书上传
+   🔌 lark-cli：✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书保存
 
    🧩 项目 ignore：✅ 已启用：.cc-code-reviewer/ignore/issues.yml（已忽略 2 个问题）
 
    → AskUserQuestion: "请选择审查模式" [fast | standard | deep | security]
    → 用户选择: standard
 
-[第2次回复：处理步骤1B]
+[第2次回复：处理步骤2]
 我：✅ 已选择：standard
 
-   → AskUserQuestion: "请选择审查使用的 AI 模型" [sonnet（推荐） | opus | haiku]
-   → 用户选择: sonnet（推荐）
+   → AskUserQuestion: "请选择审查报告的保存方式" [本地 Markdown 报告 | 飞书云文档 | 飞书多维表格]（多选）
+   → 用户选择: 飞书云文档、飞书多维表格
 
-[第3次回复：处理步骤2]
-我：✅ 已选择：sonnet
-
-   → AskUserQuestion: "检测到飞书上传能力可用，请选择审查结果的处理方式" [本地 Markdown 报告 | 上传到云文档 | 上传到多维表格]（多选）
-   → 用户选择: 上传到云文档、上传到多维表格
-
-[第4次回复：处理步骤3]
-我：✅ 已选择：上传到云文档、上传到多维表格
+[第3次回复：处理步骤3]
+我：✅ 已选择：飞书云文档、飞书多维表格
 
    → AskUserQuestion: "请选择本次审查入口" [增量审查 | 全量审查 | 指定模块]
    → 用户选择: 全量审查
 
-[第5次回复：处理步骤4 + 步骤6确认]
+[第4次回复：处理步骤4 + 步骤5C]
 我：✅ 已选择：全量审查
 
    Maven 单模块项目，跳过审查范围选择，自动使用「全量代码」。
+
+   → AskUserQuestion: "请选择审查使用的 AI 模型" [sonnet（推荐） | opus | haiku]
+   → 用户选择: sonnet（推荐）
+
+[第5次回复：步骤6确认]
+我：✅ 已选择：sonnet
 
    📋 执行计划：
    - 项目路径：/Users/jiangkun/Documents/github-kb/spring-ai-agent-utils
@@ -76,7 +76,7 @@
    - 审查模式：standard
    - 审查模型：sonnet
    - 启用维度：正确性、代码质量、Spring Boot 规范、数据库/数据访问、安全、性能、资源管理、日志/可观测性、测试质量(核心缺失)、技术债、架构、缓存(基础)、API设计(RESTful+错误处理+分页)
-   - 飞书上传：上传到云文档、上传到多维表格
+   - 报告保存方式：飞书云文档、飞书多维表格
 
    → AskUserQuestion: "确认执行计划（步骤6）" [确认执行 | 取消]
    → 用户选择: 确认执行
@@ -87,7 +87,7 @@
    📋 任务配置：standard 模式（sonnet） · 存量审查 · 全量代码
    ⏱️ 预估耗时：8-15 分钟
    📌 子代理将独立执行完整审查流程，完成后自动返回结果。
-   📤 审查完成后将自动上传到飞书（上传到云文档、上传到多维表格），无需手动操作。
+   📤 审查完成后将自动保存到飞书（飞书云文档、飞书多维表格），无需手动操作。
    💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
 
    → 调用子agent执行代码审查（注入参数 + agent提示词）
@@ -141,7 +141,7 @@
    | Kafka | spring-kafka | 12,13 | 启用消息可靠性、消费者幂等、顺序性、重试和死信审查 |
    | Docker | 文件:Dockerfile | 3,5,7,8,12 | 启用镜像基础版本、运行用户、密钥注入、资源限制、健康检查和优雅停机审查 |
 
-   🔌 lark-cli：⚠️ 飞书上传不可用：lark-cli命令未安装，报告将保存到本地文件
+   🔌 lark-cli：⚠️ 飞书保存不可用：lark-cli命令未安装，报告将仅保存到本地文件
 
    → AskUserQuestion: "检测到 Git 仓库（当前分支：main），请选择要审查的分支" [main(当前) | develop | feature/auth]
    → 用户选择: develop
@@ -152,34 +152,34 @@
    → AskUserQuestion: "请选择审查模式" [fast | standard | deep | security]
    → 用户选择: deep
 
-[第3次回复：步骤1B（审查模型）]
+[第3次回复：步骤2（报告保存方式跳过）]
 我：✅ 已选择：deep
 
-   → AskUserQuestion: "请选择审查使用的 AI 模型" [sonnet（推荐） | opus | haiku]
-   → 用户选择: sonnet（推荐）
-
-[第4次回复：步骤2（飞书上传跳过）]
-我：✅ 已选择：sonnet
-
-   飞书上传不可用，跳过飞书上传选项。
+   飞书保存不可用，自动设为仅本地 Markdown 报告。
 
    → AskUserQuestion: "请选择本次审查入口" [增量审查 | 全量审查 | 指定模块]
    → 用户选择: 指定模块
 
-[第5次回复：步骤4（多模块）]
+[第4次回复：步骤4（多模块）]
 我：✅ 已选择：指定模块
 
    → AskUserQuestion: "请选择本次希望 AI 扫描的模块" [全部模块 | 手动输入模块路径 | 前 5 个大模块]
    → 用户在 Other/free-form 输入: user-service, order-service
 
-[第6次回复：步骤4B（审查方式）]
+[第5次回复：步骤4B（审查方式）]
 我：✅ 已选择：user-service, order-service
 
    → AskUserQuestion: "请选择存量审查方式" [按所选模块依次启动 | AI 智能规划分批]
    → 用户选择: 按所选模块依次启动
 
-[第7次回复：步骤6确认]
+[第6次回复：步骤5C（审查模型）]
 我：✅ 已选择：按所选模块依次启动
+
+   → AskUserQuestion: "请选择审查使用的 AI 模型" [sonnet（推荐） | opus | haiku]
+   → 用户选择: sonnet（推荐）
+
+[第7次回复：步骤6确认]
+我：✅ 已选择：sonnet
 
    📋 执行计划：
    - 项目路径：/tmp/spring-boot-multi-module
@@ -190,7 +190,7 @@
    - 审查模式：deep
    - 审查模型：sonnet
    - 启用维度：全量 15 维度
-   - 飞书上传：飞书上传不可用
+   - 报告保存方式：仅本地 Markdown 报告
 
    → AskUserQuestion: "确认执行计划" [确认执行 | 取消]
    → 用户选择: 确认执行
@@ -253,30 +253,24 @@
    | Docker | 文件:Dockerfile | 3,5,7,8,12 | 启用镜像安全审查 |
    | Kubernetes | 文件:k8s/deployment.yaml | 3,5,7,8,12 | 启用探针、资源限制审查 |
 
-   🔌 lark-cli：✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书上传
+   🔌 lark-cli：✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书保存
 
    → AskUserQuestion: "请选择审查模式" [fast | standard | deep | security]
    → 用户选择: standard
 
-[第2次回复：步骤1B（审查模型）]
+[第2次回复：步骤2（报告保存方式）]
 我：✅ 已选择：standard
 
-   → AskUserQuestion: "请选择审查使用的 AI 模型" [sonnet（推荐） | opus | haiku]
-   → 用户选择: sonnet（推荐）
+   → AskUserQuestion: "请选择审查报告的保存方式" [本地 Markdown 报告 | 飞书云文档 | 飞书多维表格]（多选）
+   → 用户选择: 飞书云文档
 
-[第3次回复：步骤2（审查结果处理方式）]
-我：✅ 已选择：sonnet
-
-   → AskUserQuestion: "检测到飞书上传能力可用，请选择审查结果的处理方式" [本地 Markdown 报告 | 上传到云文档 | 上传到多维表格]（多选）
-   → 用户选择: 上传到云文档
-
-[第4次回复：步骤3（审查入口）]
-我：✅ 已选择：上传到云文档
+[第3次回复：步骤3（审查入口）]
+我：✅ 已选择：飞书云文档
 
    → AskUserQuestion: "请选择本次审查入口" [增量审查 | 全量审查 | 指定模块]
    → 用户选择: 全量审查
 
-[第5次回复：步骤4（范围）]
+[第4次回复：步骤4（范围）]
 我：✅ 已选择：全量审查
 
    📊 项目模块概览：
@@ -292,13 +286,13 @@
 
    全量审查已自动使用「全量代码」，跳过模块选择。
 
-[第6次回复：步骤4B（审查方式）]
+[第5次回复：步骤4B（审查方式）]
 我：✅ 已选择：全量代码
 
    → AskUserQuestion: "请选择存量审查方式" [按所选模块依次启动 | AI 智能规划分批]
    → 用户选择: AI 智能规划分批
 
-[第7次回复：步骤5（本轮执行批次 — 大仓库自动触发）]
+[第6次回复：步骤5（本轮执行批次 — 大仓库自动触发）]
 我：✅ 已选择：AI 智能规划分批
 
    大仓库审查任务
@@ -323,7 +317,7 @@
    → AskUserQuestion: "请选择本轮执行批次" [执行 3 批 | 执行 5 批（推荐） | 执行全部 8 批]
    → 用户选择: 执行 5 批（推荐）
 
-[第8次回复：步骤5B（并发数选择）]
+[第7次回复：步骤5B（并发数选择）]
 我：✅ 已选择：执行 5 批（推荐）
 
    📊 分批并行扫描
@@ -335,8 +329,14 @@
    → AskUserQuestion: "请选择并发扫描策略" [串行执行（默认） | 2 路并发 | 3 路并发]
    → 用户选择: 串行执行（默认）
 
-[第9次回复：步骤6（确认执行计划）]
+[第8次回复：步骤5C（审查模型）]
 我：✅ 已选择：串行执行（默认）
+
+   → AskUserQuestion: "请选择审查使用的 AI 模型" [sonnet（推荐） | opus | haiku]
+   → 用户选择: sonnet（推荐）
+
+[第9次回复：步骤6（确认执行计划）]
+我：✅ 已选择：sonnet
 
    📋 执行计划：
    - 项目路径：/Users/jiangkun/Documents/github-kb/large-enterprise-app
@@ -347,7 +347,7 @@
    - 审查模式：standard
    - 审查模型：sonnet
    - 启用维度：正确性、代码质量、Spring Boot 规范、数据库/数据访问、安全、性能、资源管理、日志/可观测性、测试质量(核心缺失)、技术债、架构、缓存(基础)、API设计(RESTful+错误处理+分页)
-   - 飞书上传：上传到云文档
+   - 报告保存方式：飞书云文档
    - 扫描策略：分批并行扫描（本轮 5 / 总 8 批 / 1 路并发）
    - 预计耗时：约 125 分钟
 
@@ -361,7 +361,7 @@
    📊 扫描策略：本轮 5 / 总 8 批 / 1 路并发
    ⏱️ 预估耗时：约 125 分钟
    📌 本轮批次会先完成状态检查；如有失败或等待超时会生成合并阻塞报告，全部本轮批次完成后生成阶段性或完整合并报告。
-   📤 审查完成后将自动上传到飞书（上传到云文档），无需手动操作。
+   📤 审查完成后将自动保存到飞书（飞书云文档），无需手动操作。
    💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
 
    → 轮次1：Agent(batch-001)
@@ -411,11 +411,8 @@
 → AskUserQuestion: "请选择审查模式" [fast | standard | deep | security]
 → 用户选择：standard
 
-→ AskUserQuestion: "请选择审查使用的 AI 模型" [sonnet（推荐） | opus | haiku]
-→ 用户选择：sonnet（推荐）
-
-→ AskUserQuestion: "检测到飞书上传能力可用，请选择审查结果的处理方式"
-   [本地 Markdown 报告 | 上传到云文档 | 上传到多维表格]（多选）
+→ AskUserQuestion: "请选择审查报告的保存方式"
+   [本地 Markdown 报告 | 飞书云文档 | 飞书多维表格]（多选）
 → 用户选择：本地 Markdown 报告
 
 → AskUserQuestion: "请选择本次审查入口" [增量审查 | 全量审查 | 指定模块]
@@ -459,6 +456,12 @@ Java 文件覆盖: 0 / 4,000 (0%)
 
 → AskUserQuestion: "请选择并发扫描策略" [串行执行（默认） | 2 路并发 | 3 路并发]
 → 用户选择：串行执行（默认）
+
+→ AskUserQuestion: "请选择审查使用的 AI 模型" [sonnet（推荐） | opus | haiku]
+→ 用户选择：sonnet（推荐）
+
+→ AskUserQuestion: "确认执行计划" [确认执行 | 取消]
+→ 用户选择：确认执行
 
 [本轮执行]
 我：

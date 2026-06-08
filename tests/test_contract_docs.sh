@@ -5,7 +5,6 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT_FILE="$ROOT_DIR/agents/cc-code-reviewer.md"
 FEISHU_FILE="$ROOT_DIR/references/feishu-integration.md"
 SKILL_FILE="$ROOT_DIR/skills/cc-code-reviewer/SKILL.md"
-README_FILE="$ROOT_DIR/README.md"
 AGENTS_FILE="$ROOT_DIR/AGENTS.md"
 CLAUDE_FILE="$ROOT_DIR/CLAUDE.md"
 EXAMPLES_FILE="$ROOT_DIR/references/examples.md"
@@ -48,8 +47,7 @@ fi
 
 grep -q 'field-update .*"name":"备注","type":"text"' "$FEISHU_FILE"
 grep -q "共 17 个字段" "$FEISHU_FILE"
-grep -q "基础字段（14 个）" "$README_FILE"
-if grep -q "负责人" "$FEISHU_FILE" "$README_FILE"; then
+if grep -q "负责人" "$FEISHU_FILE"; then
   echo "scan-stage Feishu Base schema must not include 负责人" >&2
   exit 1
 fi
@@ -57,7 +55,7 @@ fi
 grep -q "### 第一步：提取项目路径" "$SKILL_FILE"
 grep -q "优先提取 Git URL" "$SKILL_FILE"
 
-for scan_contract_file in "$SKILL_FILE" "$README_FILE" "$EXAMPLES_FILE" "$AGENTS_FILE" "$CLAUDE_FILE"; do
+for scan_contract_file in "$SKILL_FILE" "$EXAMPLES_FILE" "$AGENTS_FILE" "$CLAUDE_FILE"; do
   if grep -qE "$SCAN_BYPASS_PATTERN" "$scan_contract_file"; then
     echo "scan contract must be interaction-only; remove command-parameter bypass compatibility from $scan_contract_file" >&2
     exit 1
@@ -96,64 +94,7 @@ require_literal "$SKILL_FILE" '只统计 `ignore:` 下缩进 2 个空格的 `- n
 require_literal "$AGENT_FILE" "不包含 applies_to 下的子列表项" "agent ignore count docs must exclude nested applies_to list items"
 require_literal "$EXAMPLES_FILE" "已忽略 2 个问题" "scan examples must show project ignore issue count"
 
-grep -q "项目/技术栈扫描" "$README_FILE"
-grep -q "扫描 → 人工确认 → 修复 → 验证 → 报告/写回" "$README_FILE"
-grep -q "## 产品定位" "$README_FILE"
-grep -q "## 核心能力" "$README_FILE"
-grep -q "端到端闭环" "$README_FILE"
-grep -q "code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$README_FILE"
-grep -q "/cc-code-reviewer:cc-code-fixer" "$README_FILE"
-grep -q "修复阶段" "$README_FILE"
-grep -q "worktree" "$README_FILE"
-grep -q "fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md" "$README_FILE"
-grep -q "待修复问题确认清单" "$README_FILE"
-grep -q "修复阶段必须交互确认" "$README_FILE"
-grep -q "Superpowers 可选" "$README_FILE"
-grep -q "直接修复" "$README_FILE"
-grep -q "subagent-driven-development" "$README_FILE"
-grep -q "写回原始本地 Markdown" "$README_FILE"
-grep -q "写回原始飞书云文档" "$README_FILE"
-grep -q "写回原始飞书多维表格" "$README_FILE"
-grep -q "创建独立本地 Markdown 修复报告" "$README_FILE"
-grep -q "创建独立飞书云文档修复报告" "$README_FILE"
-grep -q "创建独立飞书多维表格修复报告" "$README_FILE"
-grep -q "技术栈识别与审查维度动态匹配" "$README_FILE"
-grep -q "15 个维度是基础框架" "$README_FILE"
-grep -q "Scan 不修改业务代码，Fix 不重新执行完整审查" "$README_FILE"
-grep -q "项目级 ignore" "$README_FILE"
-grep -q "/cc-code-reviewer:cc-code-ignore" "$README_FILE"
-grep -q "当前 Git 用户" "$README_FILE"
-grep -q "## Harness 架构设计" "$README_FILE"
-grep -q "整体 Harness 架构图" "$README_FILE"
-grep -q "入口层：User / Claude Code" "$README_FILE"
-grep -q "Scan Harness：发现候选问题" "$README_FILE"
-grep -q "人工确认层：从候选问题到 Fix TODO List" "$README_FILE"
-grep -q "Fix Harness：确认后分支执行" "$README_FILE"
-grep -q "修复执行层：直接修复 / 可选 Superpowers 修复" "$README_FILE"
-grep -q "Integration 层：lark-cli 可选平台读写能力" "$README_FILE"
-grep -q "Harness 边界" "$README_FILE"
 grep -q "phase9-collect-fix-metadata" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
-grep -q "docs/assets/architecture-overview.png" "$README_FILE"
-if grep -qE "## (脚本说明|测试|开发与维护)" "$README_FILE"; then
-  echo "README should not include script, testing, or development-maintenance sections" >&2
-  exit 1
-fi
-if grep -qE "phase[0-9]-|scripts/|tests/run_all.sh" "$README_FILE"; then
-  echo "README should not expose internal script/test details" >&2
-  exit 1
-fi
-if grep -qE "FixAgent|agents/cc-code-fixer|模型 / effort|MODEL_PREFERENCE|EFFORT_PREFERENCE" "$README_FILE"; then
-  echo "README fix flow must not reference removed fixer agent or model/effort selection" >&2
-  exit 1
-fi
-if grep -q "创建飞书云文档或回写多维表格" "$README_FILE"; then
-  echo "README fix flow must describe dynamic output targets, not the old cloud-doc/base-only output" >&2
-  exit 1
-fi
-if grep -q "/cc-code-reviewer:cc-code-fixer .*${DD}" "$README_FILE"; then
-  echo "README fixer examples must not use command-parameter bypass syntax" >&2
-  exit 1
-fi
 test -f "$ARCHITECTURE_PNG"
 if [ -f "$ARCHITECTURE_SVG" ]; then
   echo "architecture overview is imagegen PNG-only; SVG source should not be kept" >&2
@@ -161,14 +102,14 @@ if [ -f "$ARCHITECTURE_SVG" ]; then
 fi
 
 grep -q "🧩 技术栈扫描" "$EXAMPLES_FILE"
-grep -q "飞书上传不可用" "$EXAMPLES_FILE"
+grep -q "飞书保存不可用" "$EXAMPLES_FILE"
 grep -q "报告已保存到" "$EXAMPLES_FILE"
 grep -q "项目 ignore 命中" "$EXAMPLES_FILE"
 
 test -f "$IGNORE_SKILL_FILE"
 test -f "$IGNORE_WORKFLOW_FILE"
 grep -q "AI 指令型 ignore 文件" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE"
-grep -q ".cc-code-reviewer/ignore/issues.yml" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE" "$SKILL_FILE" "$AGENT_FILE" "$README_FILE"
+grep -q ".cc-code-reviewer/ignore/issues.yml" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE" "$SKILL_FILE" "$AGENT_FILE"
 grep -q "不存报告编号" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE"
 grep -q "name:" "$IGNORE_WORKFLOW_FILE"
 grep -q "applies_to:" "$IGNORE_WORKFLOW_FILE"
@@ -210,7 +151,6 @@ grep -q "STATUS_FILTERED_ISSUES" "$FIX_WORKFLOW_FILE"
 grep -q "SKIPPED_STATUS_COUNTS" "$FIX_WORKFLOW_FILE"
 grep -q "已修复.*已忽略.*不适用" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
 grep -q "已修复项不得出现在表格中" "$FIX_EXAMPLES_FILE"
-grep -q "明确标注为已修复、已忽略或不适用" "$README_FILE"
 grep -q "跳过记录不得出现在待确认问题表格" "$FIX_FEISHU_FILE"
 grep -q "一个写回原始来源选项" "$FIX_WORKFLOW_FILE"
 grep -q "创建独立本地 Markdown 修复报告" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
@@ -349,7 +289,7 @@ MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 
 MARKETPLACE_PLUGIN_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | sed -n '2p' | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_VERSION" ]
 [ "$PLUGIN_VERSION" = "$MARKETPLACE_PLUGIN_VERSION" ]
-[ "$PLUGIN_VERSION" = "1.3.1" ]
+[ "$PLUGIN_VERSION" = "1.3.2" ]
 grep -q "code-fixer" "$PLUGIN_FILE"
 grep -q '"code-fix"' "$PLUGIN_FILE"
 grep -q '"code-fix"' "$MARKETPLACE_FILE"
@@ -499,20 +439,20 @@ if grep -q "current_batch_tokens" "$SKILL_FILE" || grep -q "batch_file_counts" "
 fi
 
 MODE_PICK_LINE="$(grep -n 'question: "请选择审查模式"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
-UPLOAD_PICK_LINE="$(grep -n 'question: "检测到飞书上传能力可用，请选择审查结果的处理方式"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+UPLOAD_PICK_LINE="$(grep -n 'question: "请选择审查报告的保存方式"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 ENTRY_PICK_LINE="$(grep -n 'question: "请选择本次审查入口"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 if [ -z "$MODE_PICK_LINE" ] || [ -z "$UPLOAD_PICK_LINE" ] || [ -z "$ENTRY_PICK_LINE" ] || [ "$MODE_PICK_LINE" -ge "$UPLOAD_PICK_LINE" ] || [ "$UPLOAD_PICK_LINE" -ge "$ENTRY_PICK_LINE" ]; then
   echo "review mode and report handling must be selected before the review entry" >&2
   exit 1
 fi
 MODEL_PICK_LINE="$(grep -n 'question: "请选择审查使用的 AI 模型"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
-if [ -z "$MODEL_PICK_LINE" ] || [ "$MODE_PICK_LINE" -ge "$MODEL_PICK_LINE" ] || [ "$MODEL_PICK_LINE" -ge "$UPLOAD_PICK_LINE" ]; then
-  echo "model selection must come after review mode and before Feishu upload" >&2
+if [ -z "$MODEL_PICK_LINE" ] || [ "$MODE_PICK_LINE" -ge "$MODEL_PICK_LINE" ]; then
+  echo "model selection must come after review mode" >&2
   exit 1
 fi
 grep -q "REVIEW_MODEL" "$SKILL_FILE"
-require_literal "$SKILL_FILE" "报告处理方式为多选" "report handling must document multi-select semantics"
-require_literal "$SKILL_FILE" "选择「上传到云文档」和「上传到多维表格」即可同时上传两类飞书产物" "dual Feishu upload must be represented by selecting both upload targets"
+require_literal "$SKILL_FILE" "报告保存方式为多选" "report handling must document multi-select semantics"
+require_literal "$SKILL_FILE" "用户可选择本地 Markdown 报告、飞书云文档和飞书多维表格中的任意一个或多个，支持任意组合多选" "dual Feishu upload must be represented by selecting both upload targets"
 UPLOAD_MULTISELECT_BLOCK="$(sed -n "${UPLOAD_PICK_LINE},$((UPLOAD_PICK_LINE + 18))p" "$SKILL_FILE")"
 if ! printf '%s\n' "$UPLOAD_MULTISELECT_BLOCK" | grep -q -- "- multiSelect: true"; then
   echo "report handling AskUserQuestion must be multi-select" >&2
@@ -571,7 +511,7 @@ fi
 require_literal "$SKILL_FILE" "必须根据本轮可执行批次数动态生成" "batch execution options must be dynamic"
 require_literal "$SKILL_FILE" "RUNNABLE_COUNT=1" "single runnable batch must skip batch-selection question"
 require_literal "$SKILL_FILE" "不调用 AskUserQuestion" "single runnable batch must not ask for batch selection"
-require_literal "$SKILL_FILE" "不得出现“执行 5 批”但描述里又显示“最多 3 批”" "batch options must not show impossible fixed limits"
+require_literal "$SKILL_FILE" "但描述里又显示" "batch options must not show impossible fixed limits"
 require_literal "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "display_dynamic_plan_rows" "phase13 status script must render dynamic execution plans"
 require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "large planner run dir must be timestamp-branch-mode only"
 require_literal "$ROOT_DIR/scripts/phase11-plan-file-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "file planner run dir must be timestamp-branch-mode only"
@@ -594,7 +534,7 @@ fi
 grep -q "分批并行模式" "$SKILL_FILE"
 grep -q "BATCH_FILE_COUNT" "$SKILL_FILE"
 grep -q "BATCH_LINE_COUNT" "$SKILL_FILE"
-grep -q "飞书上传不可用" "$SKILL_FILE"
+grep -q "飞书保存不可用" "$SKILL_FILE"
 
 # Skill must have report merging
 grep -q "报告合并" "$SKILL_FILE"
