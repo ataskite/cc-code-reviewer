@@ -19,6 +19,7 @@
 - 审查类型
 - 审查范围
 - 审查模式
+- 审查模型
 - 启用维度
 - 跳过维度
 - 模式说明
@@ -188,6 +189,7 @@
 **审查人**: Claude Code 代码审查 Agent (`cc-code-reviewer`)
 **报告版本**: 5.4
 **审查模式**: [fast / standard / deep / security]
+**审查模型**: [sonnet / opus / haiku]
 
 ## 大仓库审查执行摘要
 
@@ -197,6 +199,7 @@ Maven 大仓库分批审查报告必须额外包含本节。合并阻塞报告�
 - Run ID
 - 审查分支
 - 审查模式
+- 审查模型
 - 语义增强：`jdtls-lsp` 或 `maven-static`
 - 语义增强使用情况：当语义增强为 `jdtls-lsp` 时，必须列出实际使用的 definition / references / implementations / call hierarchy 能力、覆盖的关键类/接口/入口点，以及失败或降级说明；当语义增强为 `maven-static` 时，说明使用 Maven 静态依赖与文本检索
 - 本轮主任务批次：本轮 `RUN_BATCH_IDS` 数量 / 总批次数

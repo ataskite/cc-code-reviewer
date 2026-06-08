@@ -1,7 +1,7 @@
 {
   "name": "cc-code-reviewer",
   "description": "Java 代码审查与修复插件 - 15维度智能审查，支持基于报告的 TDD code-fixer 修复流程",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "author": {
     "name": "ataskite"
   },

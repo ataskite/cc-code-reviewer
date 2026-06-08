@@ -2,30 +2,38 @@
 
 本文件定义代码审查报告中飞书上传功能的详细操作规范，供子 agent 在上传云文档和创建多维表格时使用。
 
-所有操作均通过 `lark-cli` 命令行工具完成。**禁止使用 `feishu_create_doc`、`feishu_bitable_*` 等旧版工具。**
+所有操作必须优先按 `lark-doc` / `lark-base` skill 执行，底层通过 `lark-cli` 命令行工具完成。**禁止使用 `feishu_create_doc`、`feishu_bitable_*` 等旧版工具。**
+
+为避免命令试错，scan 阶段飞书上传不得调用 `lark-cli doc create`，不得调用 `lark-cli docs create`，不得使用 `--content-file`，不得使用 `--markdown`。云文档创建固定使用 `lark-cli docs +create --api-version v2 --doc-format markdown --content @相对文件名`。
 
 ---
 
 ## 一、上传报告到飞书云文档
 
-**前置条件**：`FEISHU_UPLOAD_OPTION` 为 `上传到云文档` 或 `同时上传两者`，且审查报告生成完毕。
+**前置条件**：`FEISHU_UPLOAD_OPTION` 包含 `上传到云文档`，且审查报告生成完毕。
 
 ### 1.1 命令格式
 
+必须优先按 `lark-doc` skill 执行云文档创建。若需要直接参考 CLI 命令，固定使用以下格式：
+
 ```bash
-cd "$PROJECT_DIR" && lark-cli docs +create \
-  --title "🛡️ Java 代码审查报告 - {PROJECT_NAME} - {REVIEW_MODE}模式 - {YYYY-MM-DD}" \
-  --markdown @{REPORT_FILENAME}
+cd "{REPORT_DIR}" && lark-cli docs +create \
+  --api-version v2 \
+  --doc-format markdown \
+  --content @{REPORT_BASENAME}
 ```
+
+`REPORT_DIR` 是报告文件所在目录，`REPORT_BASENAME` 是报告文件名。`--content @...` 后必须使用当前目录内的相对文件名，不得传绝对路径。文档标题由 Markdown 报告的一级标题承载。
 
 ### 1.2 已验证的完整示例
 
 ```bash
-# 先 cd 到报告文件所在目录（必须！--markdown 不接受绝对路径）
-cd /path/to/project && \
+# 先 cd 到报告文件所在目录（必须！--content @... 不接受绝对路径）
+cd /path/to/project/.cc-code-reviewer/runs/20260606-135100-master-jdk17-deep/final && \
 lark-cli docs +create \
-  --title "Java 代码审查报告 - agentscope-demo (deep 模式)" \
-  --markdown @code-review-report-agentscope-demo-20260429-041231.md
+  --api-version v2 \
+  --doc-format markdown \
+  --content @code-review-report-yudao-cloud-20260606-135910.md
 ```
 
 ### 1.3 成功响应示例
@@ -47,9 +55,11 @@ lark-cli docs +create \
 
 | 错误 | 原因 | 解决 |
 |------|------|------|
-| `unknown command "doc"` | 命令拼写错误 | 使用 `docs`（有 s），不是 `doc` |
-| `invalid file path ... must be a relative path` | `--markdown @` 不接受绝对路径 | 先 `cd` 到文件所在目录，使用 `@filename` 相对路径 |
-| `unknown flag: --title` | 子命令层级错误 | 完整命令是 `lark-cli docs +create`，注意 `+` 号 |
+| `unknown command "doc"` | 使用了错误命令 | 不得调用 `lark-cli doc create`，固定使用 `lark-cli docs +create` |
+| `unknown subcommand "create"` | 漏掉 `+` 号 | 不得调用 `lark-cli docs create`，固定使用 `lark-cli docs +create` |
+| `unknown flag "--content-file"` | 使用了旧参数 | 不得使用 `--content-file`，固定使用 `--content @相对文件名` |
+| `--content is required` | 使用了旧参数 `--markdown` | 不得使用 `--markdown`，固定使用 `--content @相对文件名` |
+| `invalid file path ... must be a relative path` | `@file` 参数不接受绝对路径 | 先 `cd` 到报告文件所在目录，使用 `@filename` 相对路径 |
 
 ### 1.5 注意事项
 
@@ -61,7 +71,9 @@ lark-cli docs +create \
 
 ## 二、创建飞书多维表格
 
-**前置条件**：`FEISHU_UPLOAD_OPTION` 为 `上传到多维表格` 或 `同时上传两者`，且审查报告生成完毕。
+**前置条件**：`FEISHU_UPLOAD_OPTION` 包含 `上传到多维表格`，且审查报告生成完毕。
+
+必须优先按 `lark-base` skill 执行多维表格创建和写入。若需要直接参考 CLI 命令，只能使用 `lark-cli base ...` 子命令，不得使用旧版 `feishu_bitable_*` 工具。
 
 ### 2.1 字段定义（共 17 个字段，必须完整使用）
 

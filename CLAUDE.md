@@ -63,7 +63,7 @@ flowchart TD
 **Main Skill (`skills/cc-code-reviewer/SKILL.md`)**:
 - Pre-scan: project detection → branch detection → project scan → jdtls/code-intelligence detection → lark-cli detection
 - Reads `.cc-code-reviewer/ignore/issues.yml` after pre-scan and injects AI-readable skip rules into the scan agent
-- Interactive mode: Collect user config via AskUserQuestion after pre-scan: review mode → report handling → review entry → scope → optional stock strategy → optional batch selection/concurrency → final confirmation
+- Interactive mode: Collect user config via AskUserQuestion after pre-scan: review mode → model → report handling → review entry → scope → optional stock strategy → optional batch selection/concurrency → final confirmation
 - Batch mode: Auto-triggered for large stock reviews or when a Maven multi-module stock strategy is selected; uses deterministic planner scripts, dispatches parallel sub-agents, gates merge on current-run batch status, and reports included/leftover batches
 - Maven large-repo mode: for Maven multi-module stock full-code or selected-module reviews using `module-sequential` or `ai-planned`, creates `.cc-code-reviewer/runs/{RUN_ID}` with atomic module/directory batches, status files, resumable execution, and staged/full merge reports
 - File batch mode: for Maven single-module, Gradle, or unknown Java projects when `BATCH_MODE=true`, uses `phase11-plan-file-batches.sh` and `file-token-batching`
@@ -222,7 +222,7 @@ Verify installation by triggering the skill with a Java review request such as `
 ### Scan Interaction Contract
 
 - Scan always runs the AskUserQuestion flow after pre-scan.
-- The flow confirms review mode and report handling before review entry; then it confirms entry, scope, optional Maven stock strategy, optional batch execution count, optional concurrency, and final execution.
+- The flow confirms review mode, model, and report handling before review entry; then it confirms entry, scope, optional Maven stock strategy, optional batch execution count, optional concurrency, and final execution.
 - Module selection for large Maven projects must keep AskUserQuestion payloads bounded: show module trees as normal text, keep fixed options small, and collect module paths through Other/free-form when needed.
 - Do not preserve command-line compatibility that bypasses interaction.
 
@@ -246,7 +246,7 @@ Verify installation by triggering the skill with a Java review request such as `
 
 Each interaction step must:
 - Call AskUserQuestion exactly once
-- Set `multiSelect: false`, except the multi-module stock-review scope step where selecting multiple modules is allowed
+- Set `multiSelect: false`, except the scan report-handling step and the multi-module stock-review scope step where selecting multiple values is allowed
 - Present clear options with descriptions
 - Wait for user response before proceeding
 

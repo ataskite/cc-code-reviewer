@@ -505,6 +505,23 @@ if [ -z "$MODE_PICK_LINE" ] || [ -z "$UPLOAD_PICK_LINE" ] || [ -z "$ENTRY_PICK_L
   echo "review mode and report handling must be selected before the review entry" >&2
   exit 1
 fi
+MODEL_PICK_LINE="$(grep -n 'question: "请选择审查使用的 AI 模型"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+if [ -z "$MODEL_PICK_LINE" ] || [ "$MODE_PICK_LINE" -ge "$MODEL_PICK_LINE" ] || [ "$MODEL_PICK_LINE" -ge "$UPLOAD_PICK_LINE" ]; then
+  echo "model selection must come after review mode and before Feishu upload" >&2
+  exit 1
+fi
+grep -q "REVIEW_MODEL" "$SKILL_FILE"
+require_literal "$SKILL_FILE" "报告处理方式为多选" "report handling must document multi-select semantics"
+require_literal "$SKILL_FILE" "选择「上传到云文档」和「上传到多维表格」即可同时上传两类飞书产物" "dual Feishu upload must be represented by selecting both upload targets"
+UPLOAD_MULTISELECT_BLOCK="$(sed -n "${UPLOAD_PICK_LINE},$((UPLOAD_PICK_LINE + 18))p" "$SKILL_FILE")"
+if ! printf '%s\n' "$UPLOAD_MULTISELECT_BLOCK" | grep -q -- "- multiSelect: true"; then
+  echo "report handling AskUserQuestion must be multi-select" >&2
+  exit 1
+fi
+if grep -q "同时上传两者" "$SKILL_FILE" "$AGENT_FILE" "$FEISHU_FILE" "$EXAMPLES_FILE"; then
+  echo "report handling must remove the old combined upload option" >&2
+  exit 1
+fi
 
 # Skill must have concurrency step
 grep -q "选择并发数" "$SKILL_FILE"

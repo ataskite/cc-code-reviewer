@@ -40,6 +40,7 @@ maxTurns: 50
 | 审查类型 | ... |
 | 审查范围 | ... |
 | 审查模式 | ... |
+| 审查模型 | ... |
 | 飞书上传选项 | ... |
 | 审查文件数量 | ... |
 | 审查代码行数 | ... |
@@ -72,11 +73,12 @@ maxTurns: 50
   - 存量审查时：`全量代码` 或 具体模块路径列表（逗号分隔）
   - 增量审查时：`最近N次提交`（同时会提供增量提交记录）
 - **审查模式**（`REVIEW_MODE`）：`fast` / `standard` / `deep` / `security`
+- **审查模型**（`REVIEW_MODEL`）：`sonnet` / `opus` / `haiku`。主 agent 通过 Task 工具的 `model` 字段把该模型应用到本子代理；此处仅用于在审查报告配置快照中记录使用的模型。
 - **飞书上传选项**（`FEISHU_UPLOAD_OPTION`）：
-  - `本地 Markdown 报告`、`lark-cli未安装` 或 `飞书上传不可用`：不执行飞书上传步骤
-  - `上传到云文档`：执行第四步（上传云文档）
-  - `上传到多维表格`：执行第五步（创建多维表格）
-  - `同时上传两者`：执行第四步和第五步
+  - 这是主 skill 步骤 2 的多选结果，可能是单个 label，也可能是用 `, ` 分隔的多个 label
+  - 包含 `上传到云文档`：执行第四步（上传云文档）
+  - 包含 `上传到多维表格`：执行第五步（创建多维表格）
+  - 只包含 `本地 Markdown 报告`、或值为 `lark-cli未安装` / `飞书上传不可用`：不执行飞书上传步骤
 - **审查文件数量**（`REVIEW_FILE_COUNT`）：本次审查涉及的 Java 文件数量
 - **审查代码行数**（`REVIEW_LINE_COUNT`）：本次审查涉及的代码总行数
 - **审查框架路径**（`REVIEW_FRAMEWORK_PATH`）：`review-framework.md` 的绝对路径。必须优先读取主 agent 注入的绝对路径。
@@ -156,7 +158,8 @@ maxTurns: 50
 - `scan_roots` 外的代码只能作为外部依赖上下文，不得作为本批正式问题位置。
 - 如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」，不计入正式问题数量。
 - 批次是原子的；不要写其他运行状态，也不要写文件级 reviewed 状态。
-- 完整写入 `BATCH_RESULT_PATH` 后，才能把 `BATCH_STATUS_PATH` 写为 `completed`。
+- 大型仓库批次模式不得自行命名结果文件。必须把批次发现清单写入 `BATCH_RESULT_PATH`，不得写入 `*.result.md`、`/tmp/review-batch-*` 或任何其他自造路径。
+- 完整写入 `BATCH_RESULT_PATH` 后，才能把 `BATCH_STATUS_PATH` 写为 `completed`。状态文件中的 `result_path` 必须指向同一个 `BATCH_RESULT_PATH`；如果使用相对路径，必须是相对 `RUN_DIR` 的路径，例如 `results/batch-001.md`。
 - 无法完整完成时，把 `BATCH_STATUS_PATH` 写为 `failed`，并写明错误原因。
 
 状态文件写为完成时使用以下结构：
@@ -201,7 +204,7 @@ maxTurns: 50
 - **第五步（创建飞书多维表格）跳过**
 - **第六步（输出最终汇总）替换**：仅输出简要完成信息 `✅ Batch {BATCH_INDEX}/{BATCH_COUNT} 完成：发现 {问题数} 个问题`，不输出完整报告
 
-当同时提供 `BATCH_PLAN_PATH` 与 `REVIEW_OUTPUT_MODE=仅发现清单` 时，`BATCH_PLAN_PATH` 优先级更高：必须读取计划文件并扫描 `scan_roots` / `units[].path`，不得使用 `BATCH_FILE_LIST` 覆盖或跳过阶段 A。
+当同时提供 `BATCH_PLAN_PATH` 与 `REVIEW_OUTPUT_MODE=仅发现清单` 时，`BATCH_PLAN_PATH` 优先级更高：必须读取计划文件并扫描 `scan_roots` / `units[].path`，不得使用 `BATCH_FILE_LIST` 覆盖或跳过阶段 A。当同时提供 `BATCH_PLAN_PATH` 与 `REVIEW_OUTPUT_MODE=仅发现清单` 时，不使用 `/tmp/review-batch-*` 输出路径，必须写入 `BATCH_RESULT_PATH`。
 
 ---
 
@@ -457,7 +460,7 @@ date +"%Y%m%d-%H%M%S"
 变量名：`REPORT_FILENAME=code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`
 
 使用 `Write` 工具将完整审查报告保存到上述路径。**所有上传和本地输出都必须复用同一个 Markdown 文件**：
-- 上传云文档时，`lark-cli docs +create --markdown @{REPORT_FILENAME}` 读取该文件
+- 上传云文档时，必须优先按 `lark-doc` skill 执行云文档创建；CLI 参考命令固定为在报告目录内执行 `lark-cli docs +create --api-version v2 --doc-format markdown --content @{REPORT_BASENAME}` 读取该文件
 - 未上传飞书时，最终汇总展示该文件路径并输出同一份报告内容
 - 飞书上传失败降级时，也复用该文件，不重复生成另一份报告
 
@@ -465,24 +468,28 @@ date +"%Y%m%d-%H%M%S"
 
 ### 第四步：上传报告到飞书云文档
 
-**前置条件**：`FEISHU_UPLOAD_OPTION` 为 `上传到云文档` 或 `同时上传两者`。
+**前置条件**：`FEISHU_UPLOAD_OPTION` 包含 `上传到云文档`。
 
 **⚠️ 强制要求**：必须通过 `lark-cli` + `lark-doc` skill 执行。禁止使用旧版工具。
+
+必须优先按 `lark-doc` skill 执行云文档创建。不得在 Bash 中试错命令；不得调用 `lark-cli doc create`，不得调用 `lark-cli docs create`，不得使用 `--content-file`，不得使用 `--markdown`。如果需要直接执行 CLI，只能使用 `lark-cli docs +create --api-version v2 --doc-format markdown --content @相对文件名`，且必须先 `cd` 到报告文件所在目录。
 
 详细操作步骤见 `../references/feishu-integration.md`「上传报告到飞书云文档」章节。执行时：
 1. 读取该文件获取完整操作步骤
 2. 使用 `Skill` 工具调用 `lark-doc` skill 创建云文档
-3. 文档标题：`🛡️ Java 代码审查报告 - {PROJECT_NAME} - {REVIEW_MODE}模式 - {日期}`
-4. 使用第三步之后生成的 `REPORT_FILENAME` 作为 `--markdown @...` 输入
+3. 文档标题写入 Markdown 报告一级标题；不要向 `docs +create` 传 `--title`
+4. 使用第三步之后生成的 `REPORT_FILENAME`，先进入报告所在目录，再用相对文件名作为 `--content @...` 输入
 5. 获取文档链接用于第六步汇总
 
 ---
 
 ### 第五步：创建飞书多维表格
 
-**前置条件**：`FEISHU_UPLOAD_OPTION` 为 `上传到多维表格` 或 `同时上传两者`。
+**前置条件**：`FEISHU_UPLOAD_OPTION` 包含 `上传到多维表格`。
 
 **⚠️ 强制要求**：必须通过 `lark-cli` + `lark-base` skill 执行。禁止使用旧版工具。
+
+必须优先按 `lark-base` skill 执行多维表格创建和写入。不得调用旧版 bitable 工具，不得在 Bash 中猜测多维表格命令；CLI 只能使用 `lark-cli base ...` 子命令。
 
 详细操作步骤、完整字段配置 JSON、录入规则等全部定义在 `../references/feishu-integration.md` 中。执行时：
 1. 读取该文件获取完整字段定义 JSON 和执行步骤
@@ -499,7 +506,7 @@ date +"%Y%m%d-%H%M%S"
 
 #### 策略 A：已上传飞书 → 简化汇总
 
-当 `FEISHU_UPLOAD_OPTION` 为 `上传到云文档`、`上传到多维表格` 或 `同时上传两者` 时，完整报告已持久化到飞书，只需输出精简摘要供用户快速浏览：
+当 `FEISHU_UPLOAD_OPTION` 包含 `上传到云文档` 或 `上传到多维表格` 时，完整报告已持久化到飞书，只需输出精简摘要供用户快速浏览：
 
 ```
 ✅ 代码审查已完成！
@@ -513,7 +520,8 @@ date +"%Y%m%d-%H%M%S"
   - P0-2: {问题一句话描述} — {位置}
   （P0 为空则列 P1，以此类推，最多列 5 条）
 
-{按实际 FEISHU_UPLOAD_OPTION 仅展示对应链接，未上传的类型不显示}
+{按实际 FEISHU_UPLOAD_OPTION 展示对应链接；如果包含 `本地 Markdown 报告`，同时展示本地报告路径；未选择或未上传的类型不显示}
+📄 本地报告：{REPORT_FILENAME}
 📄 报告文档：{链接}
 📋 问题清单：{链接}
 

@@ -285,6 +285,7 @@ test -r "$REPORT_FORMAT_PATH"
 - description: "执行 Java 代码审查"
 - prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据
 - subagent_type: "cc-code-reviewer:cc-code-reviewer"
+- model: {REVIEW_MODEL}
 
 详细参数注入格式见下方「子 agent 调用规范」章节。
 
@@ -318,6 +319,7 @@ test -r "$REPORT_FORMAT_PATH"
 
 - description: "Batch {BATCH_INDEX}/{BATCH_COUNT} 代码审查"
 - subagent_type: "cc-code-reviewer:cc-code-reviewer"
+- model: {REVIEW_MODEL}
 - prompt: 见下方「Batch Agent Prompt 注入格式」
 
 **Batch Agent Prompt 注入格式**：
@@ -335,6 +337,7 @@ test -r "$REPORT_FORMAT_PATH"
 | 审查类型 | {REVIEW_TYPE} |
 | 审查范围 | {REVIEW_SCOPE} |
 | 审查模式 | {REVIEW_MODE} |
+| 审查模型 | {REVIEW_MODEL} |
 | 飞书上传选项 | 飞书上传不可用 |
 | 审查文件数量 | {BATCH_FILE_COUNT} |
 | 审查代码行数 | {BATCH_LINE_COUNT} |
@@ -346,7 +349,7 @@ test -r "$REPORT_FORMAT_PATH"
 | 运行目录 | {RUN_DIR} |
 | 批次计划文件 | {BATCH_PLAN_PATH} |
 | 批次状态文件 | {BATCH_STATUS_PATH} |
-| 批次结果文件 | {BATCH_RESULT_PATH} |
+| 批次结果文件 | {BATCH_RESULT_PATH}（对应 RUN_DIR/results/batch-XXX.md） |
 | 批次编号 | {BATCH_INDEX}/{BATCH_COUNT}（仅旧批次模式） |
 | 语义增强 | {SEMANTIC_LEVEL} |
 | 审查输出模式 | 仅发现清单 |
@@ -419,9 +422,30 @@ test -r "$REPORT_FORMAT_PATH"
     description: "安全专项，聚焦安全核心维度"
 - multiSelect: false
 
+### 步骤 1B：选择审查模型
+
+**必须调用 AskUserQuestion 工具，参数如下**：
+- question: "请选择审查使用的 AI 模型"
+- header: "审查模型"
+- options:
+  - label: "sonnet（推荐）"
+    description: "平衡速度与质量，适合日常迭代审查"
+  - label: "opus"
+    description: "最强推理能力，深度分析更精准，耗时更长、token 消耗更高"
+  - label: "haiku"
+    description: "最快速度，适合快速扫雷或小项目"
+- multiSelect: false
+
+**用户响应后变量赋值**：
+- sonnet（推荐） → REVIEW_MODEL=sonnet
+- opus → REVIEW_MODEL=opus
+- haiku → REVIEW_MODEL=haiku
+
 ### 步骤 2：选择飞书上传选项（条件步骤）
 
 **触发条件**：LARK_PLUGIN_INSTALLED=true。不满足时跳过，设 FEISHU_UPLOAD_OPTION=飞书上传不可用。
+
+报告处理方式为多选。用户可只选择本地 Markdown 报告，也可选择一个或多个飞书输出目标；选择「上传到云文档」和「上传到多维表格」即可同时上传两类飞书产物，不再提供单独的合并上传选项。
 
 **必须调用 AskUserQuestion 工具，参数如下**：
 - question: "检测到飞书上传能力可用，请选择审查结果的处理方式"
@@ -433,9 +457,13 @@ test -r "$REPORT_FORMAT_PATH"
     description: "审查报告上传到飞书云文档，聊天中显示精简摘要"
   - label: "上传到多维表格"
     description: "问题清单录入飞书多维表格，聊天中显示精简摘要"
-  - label: "同时上传两者"
-    description: "同时上传云文档和多维表格，聊天中显示精简摘要"
-- multiSelect: false
+- multiSelect: true
+
+**用户响应后变量赋值**：
+- 将用户选择的 label 按选择顺序写入 `FEISHU_UPLOAD_OPTION`，多个值用 `, ` 分隔
+- 如果用户同时选择「上传到云文档」和「上传到多维表格」，后续执行云文档上传和多维表格创建两个步骤
+- 如果用户只选择「本地 Markdown 报告」，不执行飞书上传步骤
+- 即使用户未选择「本地 Markdown 报告」，scan agent 仍必须先生成并保存本地 Markdown 完整报告文件，作为上传和降级复用源
 
 ### 步骤 3：选择审查入口
 
@@ -446,7 +474,7 @@ test -r "$REPORT_FORMAT_PATH"
   - label: "增量审查"
     description: "审查最近 N 次提交的变更文件及其关联代码"
   - label: "全量审查"
-    description: "审查当前分支的全部 Java 代码，适合上线前或周期性巡检"
+    description: "审查当前分支的全部 Java 代码，适合历史遗留项目或周期性巡检"
   - label: "指定模块"
     description: "只审查本次选择的一个或多个模块，适合大仓库分阶段推进"
 - multiSelect: false
@@ -675,6 +703,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 - 审查类型：{REVIEW_TYPE}
 - 审查范围：{REVIEW_SCOPE}
 - 审查模式：{REVIEW_MODE}
+- 审查模型：{REVIEW_MODEL}
 - 启用维度：{根据模式 × 维度矩阵列出具体维度名称}
 - 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "已启用 .cc-code-reviewer/ignore/issues.yml（已忽略 {IGNORE_RULE_COUNT} 个问题）"；否则显示 "未配置"}
 - 飞书上传：{FEISHU_UPLOAD_OPTION}
@@ -699,7 +728,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 ```
 🚀 正在启动独立代码审查子代理...
 
-📋 任务配置：{REVIEW_MODE} 模式 · {REVIEW_TYPE} · {REVIEW_SCOPE}
+📋 任务配置：{REVIEW_MODE} 模式（{REVIEW_MODEL}） · {REVIEW_TYPE} · {REVIEW_SCOPE}
 ⏱️ 预估耗时：{预估时间}
 📌 子代理将独立执行完整审查流程，完成后自动返回结果。
 
@@ -714,7 +743,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 ```
 🚀 正在启动分批并行代码审查...
 
-📋 任务配置：{REVIEW_MODE} 模式 · {REVIEW_TYPE} · {REVIEW_SCOPE}
+📋 任务配置：{REVIEW_MODE} 模式（{REVIEW_MODEL}） · {REVIEW_TYPE} · {REVIEW_SCOPE}
 📊 扫描策略：本轮 {RUN_BATCH_COUNT 或 BATCH_COUNT} / 总 {BATCH_COUNT} 批 / {CONCURRENCY} 路并发
 ⏱️ 预估耗时：约 {total_min} 分钟
 📌 本轮 {RUN_BATCH_COUNT 或 BATCH_COUNT} 批次将按 {CONCURRENCY} 路并发执行；未调度批次保持 pending，完成后生成阶段性或完整合并结果。
@@ -800,6 +829,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-file-batches.sh" \
 使用 Task 工具启动内置的 `cc-code-reviewer` 子代理：
 - description: "执行 Java 代码审查"
 - subagent_type: "cc-code-reviewer:cc-code-reviewer"
+- model: {REVIEW_MODEL}
 - prompt: 下方参数注入格式
 
 不要传 `run_in_background`；该字段不属于 Claude Code Task 调用契约。子 agent 会独立执行审查，主 agent 等待其返回结构化结果后展示给用户。
@@ -817,6 +847,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-file-batches.sh" \
 | 审查类型 | {REVIEW_TYPE} |
 | 审查范围 | {REVIEW_SCOPE} |
 | 审查模式 | {REVIEW_MODE} |
+| 审查模型 | {REVIEW_MODEL} |
 | 飞书上传选项 | {FEISHU_UPLOAD_OPTION} |
 | 审查文件数量 | {REVIEW_FILE_COUNT} |
 | 审查代码行数 | {REVIEW_LINE_COUNT} |
@@ -854,7 +885,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-file-batches.sh" \
 | `PROJECT_NAME` | `basename "$PROJECT_DIR"` | `spring-ai-agent-utils` |
 | `PROJECT_TYPE` | phase3 脚本输出 | `maven-single` 等 |
 | `REVIEW_MODE` | 交互步骤1 | `fast` / `standard` 等 |
-| `FEISHU_UPLOAD_OPTION` | 交互步骤2 | `本地 Markdown 报告` 等 |
+| `REVIEW_MODEL` | 交互步骤1B | `sonnet` / `opus` / `haiku` |
+| `FEISHU_UPLOAD_OPTION` | 交互步骤2 | `本地 Markdown 报告` 或 `上传到云文档, 上传到多维表格` 等 |
 | `REVIEW_ENTRY` | 交互步骤3 | `增量审查` / `全量审查` / `指定模块` |
 | `REVIEW_TYPE` | 交互步骤3 | `增量审查` / `存量审查` |
 | `REVIEW_SCOPE` | 交互步骤4 | `最近5次提交` / `全量代码` / `yudao-module-mes,yudao-framework` |
