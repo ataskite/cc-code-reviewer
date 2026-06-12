@@ -418,6 +418,7 @@ cat > "$RUN_DIR/summary.json.tmp" <<JSON
   "total_java_file_count": $TOTAL_JAVA_FILE_COUNT,
   "java_file_coverage_percent": $FILE_COVERAGE,
   "finding_count": $TOTAL_FINDINGS,
+  "report_title": "$(json_escape "$REPORT_TITLE")",
   "final_report_path": "$(json_escape "$FINAL_REPORT")"
 }
 JSON

@@ -338,8 +338,12 @@ require_literal "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "TARGET_R
 require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "RUN_BATCH_IDS" "merge must honor the current-run batch set"
 require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "[合并阻塞]" "merge must report blocked current-run batches"
 require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "批次状态总览" "merge report must include all batch statuses"
+require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "report_title" "merge summary must expose a cloud-doc title"
 require_literal "$SKILL_FILE" "合并脚本等待本轮批次进入终态" "skill must document merge waiting"
 require_literal "$SKILL_FILE" 'failed`，或 `completed` 但结果文件缺失' "skill must block failed or missing batch results"
+require_literal "$SKILL_FILE" "summary.json.report_title" "skill must validate merged cloud-doc title"
+require_literal "$AGENTS_FILE" "report_title" "AGENTS must document merged report title contract"
+require_literal "$CLAUDE_FILE" "report_title" "CLAUDE must document merged report title contract"
 require_literal "$ROOT_DIR/references/report-format.md" "[合并阻塞]" "report format must document blocked merge reports"
 
 grep -q "pending.*待执行" "$SKILL_FILE"

@@ -100,7 +100,9 @@ grep -q '"completed_batches": 1' "$RUN_DIR/summary.json"
 grep -q '"failed_batches": 1' "$RUN_DIR/summary.json"
 grep -q '"pending_batches": 0' "$RUN_DIR/summary.json"
 grep -q '"merge_blocked": true' "$RUN_DIR/summary.json"
+grep -q '"report_title": "\[合并阻塞\] 代码审查报告 - demo"' "$RUN_DIR/summary.json"
 grep -q '"java_loc_coverage_percent": 50' "$RUN_DIR/summary.json"
+head -n 1 "$FINAL_REPORT" | grep -Fx '# [合并阻塞] 代码审查报告 - demo'
 grep -q '\[合并阻塞\]' "$FINAL_REPORT"
 grep -q "大仓库审查执行摘要" "$FINAL_REPORT"
 grep -q "批次状态总览" "$FINAL_REPORT"
@@ -144,6 +146,8 @@ if grep -q '\[阶段性\]' "$FULL_REPORT"; then
   exit 1
 fi
 grep -q '"java_loc_coverage_percent": 100' "$FULL_RUN_DIR/summary.json"
+grep -q '"report_title": "代码审查报告 - demo full"' "$FULL_RUN_DIR/summary.json"
+head -n 1 "$FULL_REPORT" | grep -Fx '# 代码审查报告 - demo full'
 
 PARTIAL_RUN_DIR="$TMP_DIR/partial run"
 mkdir -p "$PARTIAL_RUN_DIR/batches" "$PARTIAL_RUN_DIR/results"
@@ -180,6 +184,8 @@ test -f "$PARTIAL_REPORT"
 grep -q '\[阶段性\]' "$PARTIAL_REPORT"
 grep -q '"merge_blocked": false' "$PARTIAL_RUN_DIR/summary.json"
 grep -q '"target_batch_count": 2' "$PARTIAL_RUN_DIR/summary.json"
+grep -q '"report_title": "\[阶段性\] 代码审查报告 - demo partial"' "$PARTIAL_RUN_DIR/summary.json"
+head -n 1 "$PARTIAL_REPORT" | grep -Fx '# [阶段性] 代码审查报告 - demo partial'
 grep -q "batch-001.*已纳入本次合并" "$PARTIAL_REPORT"
 grep -q "batch-002.*已纳入本次合并" "$PARTIAL_REPORT"
 grep -q "batch-003.*未纳入本轮，遗留" "$PARTIAL_REPORT"

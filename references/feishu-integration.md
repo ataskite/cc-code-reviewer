@@ -25,6 +25,10 @@ cd "{REPORT_DIR}" && lark-cli docs +create \
 
 `REPORT_DIR` 是报告文件所在目录，`REPORT_BASENAME` 是报告文件名。`--content @...` 后必须使用当前目录内的相对文件名，不得传绝对路径。文档标题由 Markdown 报告的一级标题承载。
 
+上传前必须校验 Markdown 文件第一条非空内容是一级标题（形如 `# 代码审查报告 - {PROJECT_NAME}`）。不得上传会在飞书显示为 `untitled` 的无标题内容；如果第一条非空内容不是一级标题，必须先修正本地报告文件或创建仅用于上传的同内容标题修正版，再执行 `docs +create`。
+
+分批合并报告必须使用 `summary.json` 中的 `report_title` 校验标题：`final_report_path` 指向的 Markdown 文件第一条非空内容必须等于 `# {report_title}`。不满足时不得上传，必须回到合并报告文件修正标题后再创建飞书云文档。
+
 ### 1.2 已验证的完整示例
 
 ```bash

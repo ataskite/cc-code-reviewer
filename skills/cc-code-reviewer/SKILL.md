@@ -927,6 +927,7 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 ```
 
 该脚本会生成 `summary.json` 和 `final/code-review-report-*`，并在报告中写入“批次状态总览”，列明本轮主任务批次、已纳入合并的批次、失败/缺失/等待超时遗留批次，以及未纳入本轮的遗留批次。
+`summary.json` 中的 `report_title` 是合并报告用于飞书云文档标题校验的唯一标题来源；`final_report_path` 指向的 Markdown 文件第一条非空内容必须等于 `# {report_title}`。
 
 合并门禁：
 - `RUN_BATCH_IDS` 为空时，默认检查 `plan.json` 中的全部批次；Maven 大仓库模式正常执行时必须传入本轮 `RUN_BATCH_IDS`。
@@ -954,7 +955,7 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 
 #### 合并后报告保存
 
-复用现有飞书保存逻辑：根据 FEISHU_UPLOAD_OPTION 执行上传，上传合并后的报告文件。
+复用现有飞书保存逻辑：根据 FEISHU_UPLOAD_OPTION 执行上传，上传合并后的报告文件。上传飞书云文档前必须校验合并报告标题：读取 `summary.json.report_title`，确认待上传 Markdown 文件第一条非空内容等于 `# {report_title}`；不得上传会在飞书显示为 `untitled` 的无标题内容。
 
 #### 合并后结果展示
 

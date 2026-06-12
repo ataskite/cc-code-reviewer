@@ -234,6 +234,7 @@ Verify installation by triggering the skill with a Java review request such as `
 - Maven multi-module stock batching must never fall back to `phase11-plan-file-batches.sh`; that planner is only for Maven single-module, Gradle, or unknown Java projects.
 - Pre-scan, batch-planning, and batch-agent formal scan Java file/line counts must include only `src/main/java` production sources; `src/test/java` test sources must not contribute to review scale, file batch manifests, or formal batch findings.
 - `RUN_DIR` names are fixed as `{YYYYMMDD-HHMMSS}-{branch_slug}-{REVIEW_MODE}`. Scope, strategy, task type, selected modules, and totals must be read from `plan.json`, not inferred from the directory name.
+- `summary.json` from `phase12-merge-large-batches.sh` must include `report_title`; the merged Markdown report's first non-empty line must be `# {report_title}` before any Feishu cloud-doc upload.
 - Batch status must be shown as normal assistant-visible Markdown, not only as collapsed shell output. The table header is `| 批次 | 状态 | 行数 | 文件数 | 模块 |`.
 - Batch execution options and concurrency options are dynamic. Do not show impossible options such as 5 batches when only 3 are runnable, and never offer concurrency greater than `RUN_BATCH_COUNT`.
 
@@ -268,6 +269,8 @@ Sub agent receives parameters via prompt injection, including:
 Uses `lark-cli` command with:
 - `lark-doc` skill for cloud documents
 - `lark-base` skill for bitable (multi-dimensional tables)
+
+Before creating a Feishu cloud document, validate that the Markdown file starts with a level-1 title. Never upload titleless content that would appear as `untitled`.
 
 **Never** use deprecated tools like `feishu_create_doc` or `feishu_bitable_*`.
 

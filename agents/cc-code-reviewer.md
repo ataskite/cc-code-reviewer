@@ -461,6 +461,7 @@ date +"%Y%m%d-%H%M%S"
 
 使用 `Write` 工具将完整审查报告保存到上述路径。**所有上传和本地输出都必须复用同一个 Markdown 文件**：
 - 上传云文档时，必须优先按 `lark-doc` skill 执行云文档创建；CLI 参考命令固定为在报告目录内执行 `lark-cli docs +create --api-version v2 --doc-format markdown --content @{REPORT_BASENAME}` 读取该文件
+- 上传前必须校验 Markdown 文件第一条非空内容是一级标题；不得上传会在飞书显示为 `untitled` 的无标题内容
 - 未上传飞书时，最终汇总展示该文件路径并输出同一份报告内容
 - 飞书上传失败降级时，也复用该文件，不重复生成另一份报告
 
@@ -479,7 +480,8 @@ date +"%Y%m%d-%H%M%S"
 2. 使用 `Skill` 工具调用 `lark-doc` skill 创建云文档
 3. 文档标题写入 Markdown 报告一级标题；不要向 `docs +create` 传 `--title`
 4. 使用第三步之后生成的 `REPORT_FILENAME`，先进入报告所在目录，再用相对文件名作为 `--content @...` 输入
-5. 获取文档链接用于第六步汇总
+5. 创建前校验待上传 Markdown 文件第一条非空内容是一级标题；分批合并报告必须使用 `summary.json` 中的 `report_title` 校验标题，确保第一条非空内容等于 `# {report_title}`
+6. 获取文档链接用于第六步汇总
 
 ---
 
