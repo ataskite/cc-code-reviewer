@@ -258,6 +258,23 @@ if jq -r '.units[].name? // empty' "$RUN_DIR"/batches/batch-*.json | grep -q "yu
   exit 1
 fi
 
+OUTSIDE_DIR="$TMP_DIR/outside-module"
+mkdir -p "$OUTSIDE_DIR/src/main/java/com/example/outside"
+cat > "$OUTSIDE_DIR/pom.xml" <<'XML'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <artifactId>outside-module</artifactId>
+</project>
+XML
+printf 'package com.example.outside;\npublic class Outside {}\n' > "$OUTSIDE_DIR/src/main/java/com/example/outside/Outside.java"
+
+set +e
+OUTSIDE_OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-021203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "../outside-module" 2>&1)"
+OUTSIDE_STATUS=$?
+set -e
+test "$OUTSIDE_STATUS" -ne 0
+printf '%s\n' "$OUTSIDE_OUTPUT" | grep -q 'SELECTED_MODULE_OUTSIDE_PROJECT'
+
 OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-030203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "yudao-module-mes,yudao-framework" "module-sequential")"
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 

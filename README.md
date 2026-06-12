@@ -79,7 +79,7 @@ claude plugin update cc-code-reviewer@cc-code-reviewer
 1. 预扫描 — 识别项目结构、模块、Git 分支、技术栈和 lark-cli 能力
 2. 交互确认 — 逐步选择分支、模式、范围和执行计划
 3. 执行审查 — Scan Agent 在确认参数下运行
-4. 生成报告 — `code-review-report-{PROJECT}-{TIME}.md`，可选同步飞书
+4. 生成报告 — `code-review-report-{PROJECT}-{TIME}.md`，可选同步飞书；分批合并报告按已纳入批次判断阶段性/完整，并对重复发现做确定性去重
 
 ### 人工确认
 

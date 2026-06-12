@@ -236,11 +236,29 @@ parse_selected_modules() {
 }
 
 validate_selected_modules() {
-  local module
+  local module module_abs
   if [ "${#SELECTED_MODULES[@]}" -eq 0 ]; then
     echo "NO_SELECTED_MODULES=$REVIEW_SCOPE_INPUT" >&2
     exit 1
   fi
+  for module in "${SELECTED_MODULES[@]}"; do
+    case "$module" in
+      /*|..|../*|*/..|*/../*|.)
+        echo "SELECTED_MODULE_OUTSIDE_PROJECT=$module" >&2
+        exit 1
+        ;;
+    esac
+    if [ -e "$PROJECT_DIR/$module" ]; then
+      module_abs="$(cd "$PROJECT_DIR/$module" 2>/dev/null && pwd || true)"
+      case "$module_abs" in
+        "$PROJECT_DIR"/*) ;;
+        *)
+          echo "SELECTED_MODULE_OUTSIDE_PROJECT=$module" >&2
+          exit 1
+          ;;
+      esac
+    fi
+  done
   if scope_is_full; then
     return
   fi

@@ -102,6 +102,54 @@ markdown_cell() {
   printf '%s' "$1" | tr '\n\r' '  ' | sed 's/|/\\|/g'
 }
 
+dedupe_issue_blocks() {
+  local input_file="$1"
+  local output_file="$2"
+  perl -CS -Mutf8 -e '
+    binmode STDIN, ":utf8";
+    binmode STDOUT, ":utf8";
+    my %seen;
+    my @block;
+    my $in_issue = 0;
+
+    sub flush_block {
+      return if !@block;
+      my $key = join("", @block);
+      $key =~ s/\s+/ /g;
+      if (!$seen{$key}++) {
+        print @block;
+      }
+      @block = ();
+      $in_issue = 0;
+    }
+
+    while (my $line = <STDIN>) {
+      if ($line =~ /^###\s+(?:P[0-3]|待确认)(?:\b|\s|\|)/) {
+        flush_block();
+        @block = ($line);
+        $in_issue = 1;
+        next;
+      }
+      if ($in_issue) {
+        if ($line =~ /^##\s+/ || $line =~ /^###\s+/) {
+          flush_block();
+          print $line;
+        } else {
+          push @block, $line;
+        }
+        next;
+      }
+      print $line;
+    }
+    flush_block();
+  ' < "$input_file" > "$output_file"
+}
+
+count_issue_blocks() {
+  local file="$1"
+  { grep -E '^###[[:space:]]+(P[0-3]|待确认)([[:space:]]|[|]|$)' "$file" 2>/dev/null || true; } | wc -l | tr -d ' '
+}
+
 normalize_batch_id() {
   local raw="$1"
   raw="$(printf '%s' "$raw" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
@@ -232,9 +280,11 @@ fi
 
 mkdir -p "$RUN_DIR/final"
 COMPLETED_RESULTS="$RUN_DIR/final/.completed-results.md"
+DEDUPED_RESULTS="$RUN_DIR/final/.deduped-results.md"
 CROSS_BATCH_LEADS="$RUN_DIR/final/.cross-batch-leads.md"
 BATCH_STATUS_TABLE="$RUN_DIR/final/.batch-status-table.md"
 : > "$COMPLETED_RESULTS"
+: > "$DEDUPED_RESULTS"
 : > "$CROSS_BATCH_LEADS"
 : > "$BATCH_STATUS_TABLE"
 
@@ -301,7 +351,6 @@ for batch_path in "$RUN_DIR"/batches/batch-*.json; do
         INCLUDED_BATCH_IDS+=("$batch_id")
         COVERED_LOC=$((COVERED_LOC + planned_loc))
         COVERED_FILES=$((COVERED_FILES + planned_files))
-        TOTAL_FINDINGS=$((TOTAL_FINDINGS + finding_count))
         {
           echo ""
           echo "### $batch_id - $(batch_modules "$batch_path")"
@@ -378,6 +427,9 @@ for batch_path in "$RUN_DIR"/batches/batch-*.json; do
     "$(markdown_cell "$error")" >> "$BATCH_STATUS_TABLE"
 done
 
+dedupe_issue_blocks "$COMPLETED_RESULTS" "$DEDUPED_RESULTS"
+TOTAL_FINDINGS="$(count_issue_blocks "$DEDUPED_RESULTS")"
+
 LOC_COVERAGE="$(percent "$COVERED_LOC" "$TOTAL_JAVA_LOC")"
 FILE_COVERAGE="$(percent "$COVERED_FILES" "$TOTAL_JAVA_FILE_COUNT")"
 
@@ -388,7 +440,7 @@ FINAL_REPORT="$RUN_DIR/final/code-review-report-$SAFE_PROJECT_NAME-$TIMESTAMP.md
 
 if [ "$MERGE_BLOCKED" = true ]; then
   REPORT_TITLE="[合并阻塞] 代码审查报告 - $PROJECT_NAME"
-elif [ "$COMPLETED_BATCHES" -lt "$BATCH_COUNT" ]; then
+elif [ "$INCLUDED_BATCHES" -lt "$BATCH_COUNT" ]; then
   REPORT_TITLE="[阶段性] 代码审查报告 - $PROJECT_NAME"
 else
   REPORT_TITLE="代码审查报告 - $PROJECT_NAME"
@@ -427,6 +479,26 @@ mv "$RUN_DIR/summary.json.tmp" "$RUN_DIR/summary.json"
 cat > "$FINAL_REPORT.tmp" <<MD
 # $REPORT_TITLE
 
+## 审查配置快照
+
+- 生成时间：$TIMESTAMP
+- 审查类型：存量审查
+- 审查范围：$REVIEW_SCOPE
+- 审查模式：$REVIEW_MODE
+- 语义增强：$SEMANTIC_LEVEL
+- Run ID：$RUN_ID
+- 本轮主任务批次：$TARGET_BATCH_COUNT / $BATCH_COUNT
+- 已纳入合并批次：$INCLUDED_BATCHES
+- 遗留批次：$LEFTOVER_BATCHES
+- 文件覆盖率：$(format_number "$COVERED_FILES") / $(format_number "$TOTAL_JAVA_FILE_COUNT")（$FILE_COVERAGE%）
+
+## 审查范围说明
+
+- 项目名称：$PROJECT_NAME
+- 覆盖方式：仅合并本轮主任务中状态为“已完成”且结果文件存在的批次
+- 覆盖口径：Java 文件覆盖率只统计已纳入合并的批次文件数
+- 未纳入范围：失败、待执行、执行中、结果缺失或未纳入本轮的批次，详见“批次状态总览”
+
 ## 大仓库审查执行摘要
 
 - Run ID：$RUN_ID
@@ -456,8 +528,8 @@ cat >> "$FINAL_REPORT.tmp" <<'MD'
 
 MD
 
-if [ -s "$COMPLETED_RESULTS" ]; then
-  cat "$COMPLETED_RESULTS" >> "$FINAL_REPORT.tmp"
+if [ -s "$DEDUPED_RESULTS" ]; then
+  cat "$DEDUPED_RESULTS" >> "$FINAL_REPORT.tmp"
 else
   echo "暂无已完成批次发现。" >> "$FINAL_REPORT.tmp"
 fi
@@ -476,6 +548,10 @@ fi
 
 cat >> "$FINAL_REPORT.tmp" <<'MD'
 
+## 覆盖限制与未审查范围
+
+本报告的正式问题结论只来自已纳入本次合并的批次。未纳入本轮、失败、待执行、执行中或结果缺失的批次不会进入正式问题结论；这些批次需要在后续轮次继续执行或重试后再合并。
+
 ## 覆盖说明
 
 本报告只合并本轮主任务中状态为“已完成”且结果文件存在的批次。失败、待执行、执行中、结果缺失或未纳入本轮的批次不会进入正式问题结论，详见“批次状态总览”。
@@ -483,7 +559,7 @@ Java 文件覆盖率是唯一覆盖指标；LOC 与 review cost 仅作为分批�
 MD
 
 mv "$FINAL_REPORT.tmp" "$FINAL_REPORT"
-rm -f "$COMPLETED_RESULTS" "$CROSS_BATCH_LEADS" "$BATCH_STATUS_TABLE"
+rm -f "$COMPLETED_RESULTS" "$DEDUPED_RESULTS" "$CROSS_BATCH_LEADS" "$BATCH_STATUS_TABLE"
 
 echo "SUMMARY_PATH=$RUN_DIR/summary.json"
 echo "FINAL_REPORT_PATH=$FINAL_REPORT"

@@ -537,6 +537,7 @@ test -r "$REPORT_FORMAT_PATH"
 - 选择"全部模块" → REVIEW_SCOPE=全量代码
 - 选择"前 5 个大模块" → REVIEW_SCOPE=按 `MODULE:` 行 Java 行数降序取前 5 个模块路径，逗号分隔
 - 选择"手动输入模块路径" 或 Other/free-form → 读取用户提供的模块相对路径，支持逗号、中文逗号、顿号、空格或换行分隔多个模块；若 AskUserQuestion 当前交互没有返回自定义文本，追加一次 AskUserQuestion 收集模块路径，header 使用 "输入模块"，仍只提供固定选项并要求用户在 Other/free-form 填写模块路径
+- 模块路径必须是 `PROJECT_DIR` 内的相对路径；不得接受绝对路径、`..` 路径穿越或解析后位于项目根之外的路径，规划脚本必须以 `SELECTED_MODULE_OUTSIDE_PROJECT` 阻止越界输入
 - 自定义模块路径必须逐个校验是否存在于预扫描结果的 `MODULE:` 行中；不存在时提示有效模块列表并重新收集，最多重试 3 次
 
 **变量赋值**：
@@ -935,6 +936,7 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 - 本轮批次为 `failed`，或 `completed` 但结果文件缺失时，不得静默跳过；生成 `[合并阻塞]` 报告并以非 0 退出。
 - 本轮批次均 `completed` 且结果文件存在时，才合并这些批次的审查结果。
 - 若 `plan.json` 中仍有未纳入本轮的批次，报告标记为 `[阶段性]`；只有全部批次均已完成并纳入合并时才称为完整报告。
+- 完整/阶段性判断以已纳入合并的批次数为准；即使非本轮批次已经 completed，只要没有纳入本次合并，仍必须保留为遗留批次并输出 `[阶段性]` 报告。
 
 #### 合并步骤
 
@@ -947,7 +949,7 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 7. **跨批去重**：对已纳入本次合并的发现按文件、行号、维度和根因去重；未完成或遗留批次不得参与正式结论。
 8. **聚合同类问题**：对同一根因的多处出现聚合为一条，保留代表位置和影响范围。
 9. **汇总覆盖率**：Java 文件覆盖率只统计已纳入合并的批次文件数；LOC 与 review cost 仅作为规划规模参考。
-10. **按完整报告格式输出**：复用 `references/report-format.md` 格式，生成阻塞、阶段性或完整报告。
+10. **按分批合并报告格式输出**：复用 `references/report-format.md` 中的合并报告格式，至少包含审查配置快照、审查范围说明、执行摘要、批次状态总览、已完成批次发现、跨批依赖线索、覆盖限制与未审查范围。
 
 #### 合并后输出
 

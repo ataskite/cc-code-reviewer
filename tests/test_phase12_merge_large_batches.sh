@@ -189,6 +189,82 @@ head -n 1 "$PARTIAL_REPORT" | grep -Fx '# [阶段性] 代码审查报告 - demo 
 grep -q "batch-001.*已纳入本次合并" "$PARTIAL_REPORT"
 grep -q "batch-002.*已纳入本次合并" "$PARTIAL_REPORT"
 grep -q "batch-003.*未纳入本轮，遗留" "$PARTIAL_REPORT"
+grep -q "审查配置快照" "$PARTIAL_REPORT"
+grep -q "审查范围说明" "$PARTIAL_REPORT"
+grep -q "覆盖限制与未审查范围" "$PARTIAL_REPORT"
+
+SUBSET_RUN_DIR="$TMP_DIR/subset completed run"
+mkdir -p "$SUBSET_RUN_DIR/batches" "$SUBSET_RUN_DIR/results"
+cat > "$SUBSET_RUN_DIR/plan.json" <<'JSON'
+{
+  "run_id": "run-subset",
+  "project_name": "demo subset",
+  "review_mode": "standard",
+  "review_scope": "全量代码",
+  "semantic_level": "maven-static",
+  "total_java_loc": 300,
+  "total_java_file_count": 6,
+  "batch_count": 3
+}
+JSON
+for batch_id in batch-001 batch-002 batch-003; do
+  cat > "$SUBSET_RUN_DIR/batches/$batch_id.json" <<JSON
+{"batch_id":"$batch_id","planned_java_loc":100,"planned_java_file_count":2,"scan_roots":["$batch_id"],"modules":[{"name":"$batch_id"}]}
+JSON
+  cat > "$SUBSET_RUN_DIR/results/$batch_id.status.json" <<JSON
+{"batch_id":"$batch_id","status":"completed","planned_java_loc":100,"planned_java_file_count":2,"result_path":"$SUBSET_RUN_DIR/results/$batch_id.md","finding_count":1}
+JSON
+  printf '## 发现列表\n\n### P1 | [维度1-正确性] %s 问题\n- 文件：%s/src/main/java/Demo.java:10\n- 置信度：高\n- 证据：示例\n- 影响：示例\n- 建议：示例\n' "$batch_id" "$batch_id" > "$SUBSET_RUN_DIR/results/$batch_id.md"
+done
+
+SUBSET_OUTPUT="$(RUN_BATCH_IDS="batch-001,batch-002" bash "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "$SUBSET_RUN_DIR")"
+SUBSET_REPORT="$(printf '%s\n' "$SUBSET_OUTPUT" | sed -n 's/^FINAL_REPORT_PATH=//p')"
+test -f "$SUBSET_REPORT"
+grep -q '"merge_blocked": false' "$SUBSET_RUN_DIR/summary.json"
+grep -q '"included_batches": 2' "$SUBSET_RUN_DIR/summary.json"
+grep -q '"leftover_batches": 1' "$SUBSET_RUN_DIR/summary.json"
+grep -q '"report_title": "\[阶段性\] 代码审查报告 - demo subset"' "$SUBSET_RUN_DIR/summary.json"
+head -n 1 "$SUBSET_REPORT" | grep -Fx '# [阶段性] 代码审查报告 - demo subset'
+grep -q "batch-003.*未纳入本轮，遗留" "$SUBSET_REPORT"
+
+DEDUP_RUN_DIR="$TMP_DIR/dedup run"
+mkdir -p "$DEDUP_RUN_DIR/batches" "$DEDUP_RUN_DIR/results"
+cat > "$DEDUP_RUN_DIR/plan.json" <<'JSON'
+{
+  "run_id": "run-dedup",
+  "project_name": "demo dedup",
+  "review_mode": "standard",
+  "review_scope": "全量代码",
+  "semantic_level": "maven-static",
+  "total_java_loc": 200,
+  "total_java_file_count": 4,
+  "batch_count": 2
+}
+JSON
+for batch_id in batch-001 batch-002; do
+  cat > "$DEDUP_RUN_DIR/batches/$batch_id.json" <<JSON
+{"batch_id":"$batch_id","planned_java_loc":100,"planned_java_file_count":2,"scan_roots":["$batch_id"],"modules":[{"name":"$batch_id"}]}
+JSON
+  cat > "$DEDUP_RUN_DIR/results/$batch_id.status.json" <<JSON
+{"batch_id":"$batch_id","status":"completed","planned_java_loc":100,"planned_java_file_count":2,"result_path":"$DEDUP_RUN_DIR/results/$batch_id.md","finding_count":1}
+JSON
+  cat > "$DEDUP_RUN_DIR/results/$batch_id.md" <<'MD'
+## 发现列表
+
+### P1 | [维度1-正确性] 重复问题
+- 文件：shared/src/main/java/Demo.java:10
+- 置信度：高
+- 证据：相同证据
+- 影响：相同影响
+- 建议：相同建议
+MD
+done
+
+DEDUP_OUTPUT="$(bash "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "$DEDUP_RUN_DIR")"
+DEDUP_REPORT="$(printf '%s\n' "$DEDUP_OUTPUT" | sed -n 's/^FINAL_REPORT_PATH=//p')"
+test -f "$DEDUP_REPORT"
+grep -q '"finding_count": 1' "$DEDUP_RUN_DIR/summary.json"
+test "$(grep -c '### P1 | \[维度1-正确性\] 重复问题' "$DEDUP_REPORT")" = "1"
 
 PENDING_RUN_DIR="$TMP_DIR/pending run"
 mkdir -p "$PENDING_RUN_DIR/batches" "$PENDING_RUN_DIR/results"
