@@ -166,7 +166,7 @@ The suite runs every `tests/test_*.sh` file and then `git diff --check`. It cove
 - `phase8-prepare-fix-workspace.sh`: current/branch/worktree strategies and dirty workspace protection
 - Documentation contracts for interactive scan flow, report persistence, Feishu Base fields, fix-stage contracts, and test instructions
 
-The plugin only supports macOS and Linux. Keep script changes in Bash and verify them through the local Bash suite.
+The plugin only supports macOS and Linux. Scripts are written in Bash and call `perl` (system-provided on macOS/Linux) for timeouts, JSON parsing, and text normalization—keep this mix when editing and verify through the local Bash suite.
 
 ### Testing Scripts Individually
 

@@ -17,6 +17,7 @@ flowchart LR
 ### 前置条件
 
 - macOS / Linux + Bash 3.0+ + `git`
+- `perl`（macOS/Linux 系统自带；用于 Git 仓库克隆超时控制、JSON 字段解析和文本归一化）
 - 已安装 [Claude Code](https://claude.ai/code)
 - 可选：[lark-cli](https://github.com/larksuite/cli/blob/main/README.zh.md)（飞书云文档/多维表格支持）
 

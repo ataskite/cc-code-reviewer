@@ -600,3 +600,27 @@ grep -q "仅对存量审查生效" "$SKILL_FILE"
 # Skill must show batch info in step 7 execution plan
 grep -q "扫描策略" "$SKILL_FILE"
 grep -q "分批并行扫描" "$SKILL_FILE"
+
+# === AGENTS.md / CLAUDE.md 同步守卫 ===
+# 这两个文件服务不同工具（Codex / Claude Code），除以下两处预期差异外，正文必须逐行一致，
+# 防止架构描述在两份拷贝间漂移：
+#   - 第 1 行：标题（# AGENTS.md / # CLAUDE.md）
+#   - 第 3 行：首句工具引导语（含工具名和域名，Codex.ai/code vs claude.ai/code）
+# 第 7 行的 "claudecode" vs "Claude Code" 通过归一化为同一写法后参与比较。
+sync_normalize() {
+  local file="$1"
+  perl -CS -Mutf8 -ne '
+    next if $. == 1 || $. == 3;          # 跳过第 1 行标题、第 3 行首句工具引导语
+    s/\bclaudecode\b/Claude Code/g;       # 统一第 7 行的工具名写法
+    print;
+  ' "$file"
+}
+
+SYNC_DIFF="$(diff <(sync_normalize "$AGENTS_FILE") <(sync_normalize "$CLAUDE_FILE") || true)"
+if [ -n "$SYNC_DIFF" ]; then
+  echo "AGENTS.md 与 CLAUDE.md 正文不同步（标题行与首句工具引导语的差异已排除）。请同步两文件后再次运行。" >&2
+  echo "差异如下：" >&2
+  echo "$SYNC_DIFF" >&2
+  echo "提示：修改时请同时编辑 AGENTS.md 和 CLAUDE.md；仅第 1 行标题和第 3 行首句允许不同。" >&2
+  exit 1
+fi
