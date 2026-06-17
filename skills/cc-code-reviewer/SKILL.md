@@ -160,15 +160,44 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 - 识别证据超过 80 字可截断，但不得截断技术栈名称、建议维度和专项规则
 - 摘要表最多展示 12 个技术栈；超过 12 个时追加 `另有 {N} 个技术栈未在摘要表中展示，完整结果已注入子 agent。`
 
+### 第四步之后：选择审查模型 + 上下文窗口侦测
+
+**时机**：在步骤 4B（选择存量审查方式）之后、分批判定之前执行。
+
+**必须调用 AskUserQuestion 工具，参数如下**：
+- question: "请选择审查使用的 AI 模型"
+- header: "审查模型"
+- options:
+  - label: "sonnet（推荐）"
+    description: "平衡速度与质量，适合日常迭代审查"
+  - label: "opus"
+    description: "最强推理能力，深度分析更精准，耗时更长、token 消耗更高"
+  - label: "haiku"
+    description: "最快速度，适合快速扫雷或小项目"
+- multiSelect: false
+
+**用户响应后变量赋值**：
+- sonnet（推荐） → REVIEW_MODEL=sonnet
+- opus → REVIEW_MODEL=opus
+- haiku → REVIEW_MODEL=haiku
+
+**选完模型后立即侦测上下文窗口**：
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase14-detect-model-context.sh" "$REVIEW_MODEL"
+```
+解析输出得到 `CONTEXT_WINDOW_TOKENS`、`CONTEXT_SCALE`、`CONTEXT_TIER`、`ACTUAL_MODEL_NAME`、`DETECTION_SOURCE`。若用户选 opus 但底层配置了 `glm-5.2[1M]`，则 CONTEXT_SCALE=5（1M 窗口），分批将按大窗口规划；若为普通模型则 CONTEXT_SCALE=1（200k，与旧行为一致）。
+
+> **设计依据**：模型选择放在分批之前，是因为分批预算（每批装多少代码）依赖模型的上下文窗口大小。大窗口模型（1M）可一次性审查 5 倍代码量，显著减少批次数。
+
 ### 第四步之后：分批判定
 
-**时机**：在步骤 3（选择审查入口）确定 REVIEW_ENTRY 后、步骤 5 前执行判定。
+**时机**：在模型选择 + 上下文窗口侦测完成后、步骤 5 前执行判定。
 
-**公式**：
+**公式**（分批阈值随 CONTEXT_SCALE 缩放，大窗口下更少项目进入分批）：
 ```
 estimated_tokens = REVIEW_FILE_COUNT × 500 + REVIEW_LINE_COUNT × 3
 BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
-  estimated_tokens > 100000
+  estimated_tokens > (100000 × CONTEXT_SCALE)
   OR STOCK_REVIEW_STRATEGY=module-sequential
   OR STOCK_REVIEW_STRATEGY=ai-planned
 )
@@ -180,7 +209,7 @@ BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
 - `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 从 phase3-project-scan.sh 输出中解析（`Java文件总数` 和 `代码总行数`），口径仅包含 `src/main/java` 生产源码
 - `500`：每个文件的工具调用 + agent 评估开销（token）
 - `3`：每行 Java 代码平均 token 数
-- `100000`：单批留给文件内容 + 开销的上限（200k 总上下文 - 25k 系统 prompt - 50k agent 输出 ≈ 125k，取 100k 留余量）
+- `100000 × CONTEXT_SCALE`：单批留给文件内容 + 开销的上限。基准 100000（200k 总上下文 - 25k 系统 prompt - 50k agent 输出 ≈ 125k，取 100k 留余量），大窗口模型按 CONTEXT_SCALE 同比放大
 
 **判定结果**：
 - `BATCH_MODE=false` → 走现有单 agent 流程，不做任何改动
@@ -199,19 +228,21 @@ BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
 
 只要 `PROJECT_TYPE=maven-multi` 且用户已经选择 `STOCK_REVIEW_STRATEGY=ai-planned` 或 `module-sequential`，就必须进入 Maven 大仓库模式。即使只选择一个模块、即使所选模块低于 `TOTAL_JAVA_LOC >= 120000` 自动阈值，也必须调用 `phase11-plan-large-batches.sh`，并把 `REVIEW_SCOPE` 原样作为第 5 个参数传入。Maven 多模块存量分批绝不调用 `phase11-plan-file-batches.sh`；该文件级 planner 只服务 Maven 单模块、Gradle 或未知 Java 项目。
 
-判定公式：
+判定公式（以下为 CONTEXT_SCALE=1 即 200k 窗口下的基准值；实际值 = 基准值 × CONTEXT_SCALE）：
 ```text
 TOTAL_JAVA_LOC >= 120000
-TARGET_BATCH_LOC = 50000
+TARGET_BATCH_LOC = 50000            # 基准，实际 = 50000 × CONTEXT_SCALE
 SOFT_MIN_BATCH_LOC = 30000
 SOFT_MAX_BATCH_LOC = 50000
 HARD_MAX_BATCH_LOC = 50000
 review_cost = java_loc + java_file_count * 25
-TARGET_BATCH_COST = 52000
+TARGET_BATCH_COST = 52000           # 基准，实际 = 52000 × CONTEXT_SCALE
 SOFT_MIN_BATCH_COST = 32000
 SOFT_MAX_BATCH_COST = 60000
 HARD_MAX_BATCH_COST = 65000
 ```
+
+**CONTEXT_SCALE 缩放机制**：批次成本与 LOC 上限按模型上下文窗口缩放。`CONTEXT_SCALE` 由 `phase14-detect-model-context.sh` 探测得出：1M 窗口（如 `glm-5.2[1M]`）→ scale=5，单批可装 5 倍代码；200k 窗口 → scale=1（与旧行为一致）。调用 `phase11-plan-large-batches.sh` 时须把 `CONTEXT_SCALE` 作为第 7 个参数传入；文件级 planner 通过 `CC_REVIEW_CONTEXT_SCALE` 环境变量接收。
 
 Maven 大仓库规划使用 semantic-cost batching：
 - 先生成 work units，而不是直接把顶层 Maven module 当批次
@@ -248,7 +279,7 @@ if [ "$CODE_INTELLIGENCE_AVAILABLE" = "true" ]; then
   SEMANTIC_LEVEL="jdtls-lsp"
 fi
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "$SEMANTIC_LEVEL" "$REVIEW_SCOPE" "$STOCK_REVIEW_STRATEGY"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "$SEMANTIC_LEVEL" "$REVIEW_SCOPE" "$STOCK_REVIEW_STRATEGY" "$CONTEXT_SCALE"
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR"
 ```
 
@@ -659,7 +690,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJEC
 **耗时预估公式**：
 ```
 单批成本 = batch JSON 中的 planned_review_cost；缺失时回退 planned_java_loc + planned_java_file_count × 25
-目标批次成本 = 52000
+目标批次成本 = plan.json budget.target_batch_cost（随 CONTEXT_SCALE 缩放，基准 52000）
 目标批次耗时 = fast 4 分钟 / standard 8 分钟 / deep 15 分钟 / security 10 分钟
 单批耗时 = ceil(单批成本 × 目标批次耗时 / 目标批次成本)，最低 1 分钟
 total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 lane 后的最大 lane 耗时
@@ -673,28 +704,11 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 - 3 路并发 → CONCURRENCY=3
 - 并发数仅允许 `1..min(3, RUN_BATCH_COUNT)`，默认 `1`
 
-### 步骤 5C：选择审查模型
+### 步骤 5C：（已前移）
 
-**触发条件**：无（所有路径必经）。
+审查模型选择已前移到「第四步之后：选择审查模型 + 上下文窗口侦测」段（在分批判定之前执行），因为分批预算依赖模型上下文窗口大小。此处不再重复询问。
 
-在确认执行计划之前，最后选择子 agent 审查使用的 AI 模型。此时用户已经了解完整的任务规模（审查范围、批次数量、并发策略），可以据此做出更合适的模型选择。
-
-**必须调用 AskUserQuestion 工具，参数如下**：
-- question: "请选择审查使用的 AI 模型"
-- header: "审查模型"
-- options:
-  - label: "sonnet（推荐）"
-    description: "平衡速度与质量，适合日常迭代审查"
-  - label: "opus"
-    description: "最强推理能力，深度分析更精准，耗时更长、token 消耗更高"
-  - label: "haiku"
-    description: "最快速度，适合快速扫雷或小项目"
-- multiSelect: false
-
-**用户响应后变量赋值**：
-- sonnet（推荐） → REVIEW_MODEL=sonnet
-- opus → REVIEW_MODEL=opus
-- haiku → REVIEW_MODEL=haiku
+执行计划展示中的「审查模型」行直接引用前移步骤确定的 `REVIEW_MODEL`。
 
 ### 步骤 6：确认执行计划
 
@@ -708,7 +722,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 - 审查类型：{REVIEW_TYPE}
 - 审查范围：{REVIEW_SCOPE}
 - 审查模式：{REVIEW_MODE}
-- 审查模型：{REVIEW_MODEL}
+- 审查模型：{REVIEW_MODEL}（{ACTUAL_MODEL_NAME}，{CONTEXT_WINDOW_TOKENS} tokens{CONTEXT_SCALE>1 时显示 "，缩放 {CONTEXT_SCALE}x"}）
 - 启用维度：{根据模式 × 维度矩阵列出具体维度名称}
 - 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "已启用 .cc-code-reviewer/ignore/issues.yml（已忽略 {IGNORE_RULE_COUNT} 个问题）"；否则显示 "未配置"}
 - 报告保存方式：{FEISHU_UPLOAD_OPTION}
@@ -790,7 +804,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-large-batches.sh" \
   "{TARGET_BRANCH 或 CURRENT_BRANCH}" \
   "$SEMANTIC_LEVEL" \
   "$REVIEW_SCOPE" \
-  "$STOCK_REVIEW_STRATEGY"
+  "$STOCK_REVIEW_STRATEGY" \
+  "$CONTEXT_SCALE"
 ```
 
 适用范围：
@@ -808,6 +823,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-large-batches.sh" \
 Maven 多模块存量分批绝不调用 `phase11-plan-file-batches.sh`。即使只选择一个模块，也必须使用 Maven 多模块 planner，以便 `REVIEW_SCOPE` 限定在所选模块内，避免生成全项目批次。
 
 ```bash
+CC_REVIEW_CONTEXT_SCALE="$CONTEXT_SCALE" \
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-file-batches.sh" \
   "$PROJECT_DIR" \
   "$REVIEW_MODE" \
@@ -890,7 +906,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-file-batches.sh" \
 | `PROJECT_NAME` | `basename "$PROJECT_DIR"` | `spring-ai-agent-utils` |
 | `PROJECT_TYPE` | phase3 脚本输出 | `maven-single` 等 |
 | `REVIEW_MODE` | 交互步骤1 | `fast` / `standard` 等 |
-| `REVIEW_MODEL` | 交互步骤5C | `sonnet` / `opus` / `haiku` |
+| `REVIEW_MODEL` | 第四步之后（模型选择已前移至分批前） | `sonnet` / `opus` / `haiku` |
+| `CONTEXT_SCALE` | phase14-detect-model-context.sh 输出 | `1`（200k 窗口）/ `5`（1M 窗口） |
+| `CONTEXT_WINDOW_TOKENS` | phase14-detect-model-context.sh 输出 | `200000` / `1000000` |
 | `FEISHU_UPLOAD_OPTION` | 交互步骤2 | `本地 Markdown 报告` 或 `飞书云文档, 飞书多维表格` 等 |
 | `REVIEW_ENTRY` | 交互步骤3 | `增量审查` / `全量审查` / `指定模块` |
 | `REVIEW_TYPE` | 交互步骤3 | `增量审查` / `存量审查` |

@@ -5,7 +5,14 @@ PROJECT_DIR="${1:?请输入项目路径}"
 REVIEW_MODE="${2:?请输入审查模式}"
 BRANCH_NAME="${3:-no-branch}"
 
-BATCH_TOKEN_BUDGET="${CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET:-100000}"
+# 模型上下文窗口缩放系数：1 = 200k（旧行为），5 = 1M 窗口
+# 由 phase14-detect-model-context.sh 探测，主 skill 通过环境变量注入
+CONTEXT_SCALE="${CC_REVIEW_CONTEXT_SCALE:-1}"
+[ "$CONTEXT_SCALE" -lt 1 ] 2>/dev/null && CONTEXT_SCALE=1
+[ "$CONTEXT_SCALE" -gt 10 ] && CONTEXT_SCALE=10
+
+# token 预算按 scale 缩放：显式环境变量 > scale 缩放默认值（向后兼容）
+BATCH_TOKEN_BUDGET="${CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET:-$((100000 * CONTEXT_SCALE))}"
 LINE_TOKEN_ESTIMATE=3
 FILE_TOKEN_OVERHEAD=500
 

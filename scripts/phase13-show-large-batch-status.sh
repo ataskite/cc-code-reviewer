@@ -161,7 +161,8 @@ ceil_div() {
   echo $(((numerator + denominator - 1) / denominator))
 }
 
-TARGET_REVIEW_COST=52000
+TARGET_REVIEW_COST_BASE=52000
+TARGET_REVIEW_COST="$TARGET_REVIEW_COST_BASE"
 
 target_batch_minutes() {
   case "${1:-standard}" in
@@ -319,9 +320,35 @@ TOTAL_JAVA_LOC="$(json_get "$PLAN_PATH" total_java_loc)"
 TOTAL_JAVA_FILE_COUNT="$(json_get "$PLAN_PATH" total_java_file_count)"
 BATCH_COUNT="$(json_get "$PLAN_PATH" batch_count)"
 
+# 读取缩放后的批次成本（随模型上下文窗口动态调整），缺失时回退基准值 52000
+# budget 是嵌套对象，用 perl 从 plan.json 显式读取
+TARGET_BATCH_COST="$(perl -MJSON::PP -e '
+  my ($file) = @ARGV;
+  open my $fh, "<", $file or exit 0;
+  local $/;
+  my $d = eval { decode_json(<$fh>) } or exit 0;
+  my $b = $d->{budget} || {};
+  print $b->{target_batch_cost} // "";
+' "$PLAN_PATH" 2>/dev/null || true)"
+if [ -n "$TARGET_BATCH_COST" ] && [ "$TARGET_BATCH_COST" -gt 0 ] 2>/dev/null; then
+  TARGET_REVIEW_COST="$TARGET_BATCH_COST"
+fi
+CONTEXT_SCALE="$(perl -MJSON::PP -e '
+  my ($file) = @ARGV;
+  open my $fh, "<", $file or exit 0;
+  local $/;
+  my $d = eval { decode_json(<$fh>) } or exit 0;
+  my $b = $d->{budget} || {};
+  print $b->{context_scale} // "";
+' "$PLAN_PATH" 2>/dev/null || true)"
+CONTEXT_SCALE="${CONTEXT_SCALE:-1}"
+
 echo "大仓库审查任务"
 echo "项目: ${PROJECT_NAME:-$(basename "$PROJECT_DIR")}"
 echo "模式: ${REVIEW_MODE:-unknown}  范围: ${REVIEW_SCOPE:-全量代码}  语义: ${SEMANTIC_LEVEL:-maven-static}"
+if [ "$CONTEXT_SCALE" -gt 1 ] 2>/dev/null; then
+  echo "上下文窗口: $((200000 * CONTEXT_SCALE)) tokens（缩放系数 ${CONTEXT_SCALE}x，大窗口模型已启用更大批次）"
+fi
 echo "批次数: ${BATCH_COUNT:-0}  Java 行数: $(format_number "$TOTAL_JAVA_LOC")  Java 文件: $(format_number "$TOTAL_JAVA_FILE_COUNT")"
 echo
 echo "| 批次 | 状态 | 行数 | 文件数 | 模块 |"

@@ -354,8 +354,9 @@ grep -q "SOFT_MAX_BATCH_LOC = 50000" "$SKILL_FILE"
 grep -q "HARD_MAX_BATCH_LOC = 50000" "$SKILL_FILE"
 require_literal "$SKILL_FILE" "semantic-cost batching" "large repo strategy must be semantic-cost batching"
 require_literal "$SKILL_FILE" "review_cost = java_loc + java_file_count * 25" "review cost formula must be documented"
-require_literal "$SKILL_FILE" "TARGET_BATCH_COST = 52000" "target review cost must be documented"
-require_literal "$SKILL_FILE" "HARD_MAX_BATCH_COST = 65000" "hard review cost must be documented"
+require_literal "$SKILL_FILE" "TARGET_BATCH_COST = 52000" "target review cost baseline must be documented"
+require_literal "$SKILL_FILE" "HARD_MAX_BATCH_COST = 65000" "hard review cost baseline must be documented"
+require_match "SKILL 必须说明批次成本按 CONTEXT_SCALE 缩放" "CONTEXT_SCALE" "$SKILL_FILE"
 require_literal "$SKILL_FILE" "context_roots" "large repo plan must include bounded context roots"
 require_literal "$SKILL_FILE" "context cost" "large repo context cost must be bounded"
 require_literal "$SKILL_FILE" "work units" "large repo planner must use work units"
@@ -368,13 +369,14 @@ require_literal "$AGENT_FILE" "context_roots are read-only context" "agent must 
 require_literal "$AGENT_FILE" '`src/main/java` 生产 Java 文件作为本批正式审查范围' "batch agent must scan only production Java sources"
 require_literal "$AGENT_FILE" '`src/test/java` 只能作为测试质量判断的只读上下文' "batch agent must keep test sources contextual"
 
-require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "TARGET_BATCH_COST=52000" "planner must define target review cost"
-require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "HARD_MAX_BATCH_COST=65000" "planner must define hard review cost"
+require_match "planner 必须定义目标批次成本（基于 52000 基准 × scale）" '52000 \* CONTEXT_SCALE' "$ROOT_DIR/scripts/phase11-plan-large-batches.sh"
+require_match "planner 必须定义硬上限成本（基于 65000 基准 × scale）" '65000 \* CONTEXT_SCALE' "$ROOT_DIR/scripts/phase11-plan-large-batches.sh"
+require_match "planner 必须接收 CONTEXT_SCALE 参数" "CONTEXT_SCALE" "$ROOT_DIR/scripts/phase11-plan-large-batches.sh"
 require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "review_cost" "planner must compute review cost"
 require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "context_roots" "planner must emit context roots"
 require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "semantic-cost-batching" "planner must emit semantic-cost strategy"
 require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "SELECTED_MODULE_OUTSIDE_PROJECT" "planner must reject selected modules outside project root"
-require_literal "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "TARGET_REVIEW_COST=52000" "status time estimates must use the current target review cost"
+require_match "status 须定义批次成本基准（随 CONTEXT_SCALE 缩放）" 'TARGET_REVIEW_COST' "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh"
 require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "RUN_BATCH_IDS" "merge must honor the current-run batch set"
 require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "[合并阻塞]" "merge must report blocked current-run batches"
 require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "批次状态总览" "merge report must include all batch statuses"
@@ -499,10 +501,13 @@ if [ -z "$MODE_PICK_LINE" ] || [ -z "$UPLOAD_PICK_LINE" ] || [ -z "$ENTRY_PICK_L
   exit 1
 fi
 MODEL_PICK_LINE="$(grep -n 'question: "请选择审查使用的 AI 模型"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
-if [ -z "$MODEL_PICK_LINE" ] || [ "$MODE_PICK_LINE" -ge "$MODEL_PICK_LINE" ]; then
-  echo "model selection must come after review mode" >&2
+if [ -z "$MODEL_PICK_LINE" ]; then
+  echo "model selection AskUserQuestion must exist" >&2
   exit 1
 fi
+# 模型选择已前移到分批之前（第四步之后段），出现在文档的"执行算法"段。
+# 断言改为：模型选择必须存在，且文档中必须声明它发生在分批规划之前。
+require_match "SKILL 必须声明模型选择在分批之前（时序前提）" "模型选择放在分批之前" "$SKILL_FILE"
 grep -q "REVIEW_MODEL" "$SKILL_FILE"
 require_literal "$SKILL_FILE" "报告保存方式为多选" "report handling must document multi-select semantics"
 require_literal "$SKILL_FILE" "用户可选择本地 Markdown 报告、飞书云文档和飞书多维表格中的任意一个或多个，支持任意组合多选" "dual Feishu upload must be represented by selecting both upload targets"

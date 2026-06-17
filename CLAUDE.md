@@ -136,7 +136,8 @@ scripts/
   ├── phase11-plan-large-batches.sh   # Maven multi-module stock batch planner
   ├── phase11-plan-file-batches.sh    # File-token batch planner for non Maven-multi projects
   ├── phase12-merge-large-batches.sh  # Large batch report merge
-  └── phase13-show-large-batch-status.sh # User-visible batch status and dynamic execution plan
+  ├── phase13-show-large-batch-status.sh # User-visible batch status and dynamic execution plan
+  └── phase14-detect-model-context.sh # Model context window detection (CONTEXT_SCALE)
 ```
 
 ## Common Development Tasks
@@ -186,6 +187,7 @@ bash scripts/phase10-detect-code-intelligence.sh "/path/to/project"
 bash scripts/phase11-plan-large-batches.sh "/path/to/project" standard main jdtls-lsp "全量代码" ai-planned
 bash scripts/phase11-plan-file-batches.sh "/path/to/project" standard main
 bash scripts/phase13-show-large-batch-status.sh "/path/to/project"
+bash scripts/phase14-detect-model-context.sh opus
 ```
 
 ### Modifying Review Logic
@@ -229,7 +231,8 @@ Verify installation by triggering the skill with a Java review request such as `
 ### Batch Planning Contract
 
 - Maven multi-module stock batching always uses `phase11-plan-large-batches.sh`, including selected-module reviews and single selected-module reviews.
-- `phase11-plan-large-batches.sh` receives `PROJECT_DIR`, `REVIEW_MODE`, branch, `SEMANTIC_LEVEL`, `REVIEW_SCOPE`, and `STOCK_REVIEW_STRATEGY`.
+- `phase11-plan-large-batches.sh` receives `PROJECT_DIR`, `REVIEW_MODE`, branch, `SEMANTIC_LEVEL`, `REVIEW_SCOPE`, `STOCK_REVIEW_STRATEGY`, and `CONTEXT_SCALE` (7th arg, default 1).
+- `CONTEXT_SCALE` is detected by `phase14-detect-model-context.sh` from `~/.claude/settings.json`: models with a `[1M]` suffix marker (e.g. `glm-5.2[1M]`) or on the built-in 1M whitelist yield scale=5; others yield scale=1 (200k window, legacy behavior). Batch cost/LOC limits scale proportionally so 1M-window models produce fewer, larger batches.
 - `STOCK_REVIEW_STRATEGY` is `module-sequential` for one batch per selected module or `ai-planned` for semantic-cost planning.
 - Maven multi-module stock batching must never fall back to `phase11-plan-file-batches.sh`; that planner is only for Maven single-module, Gradle, or unknown Java projects.
 - Pre-scan, batch-planning, and batch-agent formal scan Java file/line counts must include only `src/main/java` production sources; `src/test/java` test sources must not contribute to review scale, file batch manifests, or formal batch findings.
