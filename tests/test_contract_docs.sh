@@ -36,6 +36,23 @@ require_literal() {
   fi
 }
 
+# require_match <message> <pattern> <file> [file...]
+# 带失败信息的 grep 断言：message 必须作为第一个参数，便于定位失败契约。
+# 失败时输出原因、期望 pattern 和第一个未命中的文件。
+require_match() {
+  local message="$1"
+  local pattern="$2"
+  shift 2
+  local file
+  for file in "$@"; do
+    [ -n "$file" ] || continue
+    if ! grep -Eq "$pattern" "$file"; then
+      echo "$message: 未匹配 /$pattern/ in $file" >&2
+      exit 1
+    fi
+  done
+}
+
 grep -q "### 第三步之后：持久化报告文件" "$AGENT_FILE"
 grep -q "REPORT_FILENAME" "$AGENT_FILE"
 grep -q "所有上传和本地输出都必须复用同一个 Markdown 文件" "$AGENT_FILE"
@@ -46,7 +63,7 @@ if grep -q 'field-create .*"name":"备注","type":"text"' "$FEISHU_FILE"; then
 fi
 
 grep -q 'field-update .*"name":"备注","type":"text"' "$FEISHU_FILE"
-grep -q "共 17 个字段" "$FEISHU_FILE"
+require_match "飞书集成文档必须声明字段总数" "共 17 个字段" "$FEISHU_FILE"
 if grep -q "负责人" "$FEISHU_FILE"; then
   echo "scan-stage Feishu Base schema must not include 负责人" >&2
   exit 1
@@ -95,7 +112,10 @@ require_literal "$AGENT_FILE" "不包含 applies_to 下的子列表项" "agent i
 require_literal "$EXAMPLES_FILE" "已忽略 2 个问题" "scan examples must show project ignore issue count"
 
 grep -q "phase9-collect-fix-metadata" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
-test -f "$ARCHITECTURE_PNG"
+if [ ! -f "$ARCHITECTURE_PNG" ]; then
+  echo "架构总览图缺失: $ARCHITECTURE_PNG" >&2
+  exit 1
+fi
 if [ -f "$ARCHITECTURE_SVG" ]; then
   echo "architecture overview is imagegen PNG-only; SVG source should not be kept" >&2
   exit 1
@@ -106,17 +126,22 @@ grep -q "飞书保存不可用" "$EXAMPLES_FILE"
 grep -q "报告已保存到" "$EXAMPLES_FILE"
 grep -q "项目 ignore 命中" "$EXAMPLES_FILE"
 
-test -f "$IGNORE_SKILL_FILE"
-test -f "$IGNORE_WORKFLOW_FILE"
-grep -q "AI 指令型 ignore 文件" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE"
-grep -q ".cc-code-reviewer/ignore/issues.yml" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE" "$SKILL_FILE" "$AGENT_FILE"
-grep -q "不存报告编号" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE"
-grep -q "name:" "$IGNORE_WORKFLOW_FILE"
-grep -q "applies_to:" "$IGNORE_WORKFLOW_FILE"
-grep -q "skip_when:" "$IGNORE_WORKFLOW_FILE"
-grep -q "飞书 Base" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE"
-grep -q "本地 Markdown" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE"
-grep -q "用户指定问题编号" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE"
+if [ ! -f "$IGNORE_SKILL_FILE" ]; then echo "ignore skill 缺失: $IGNORE_SKILL_FILE" >&2; exit 1; fi
+if [ ! -f "$IGNORE_WORKFLOW_FILE" ]; then echo "ignore workflow 缺失: $IGNORE_WORKFLOW_FILE" >&2; exit 1; fi
+require_match "ignore 文档必须声明 AI 指令型语义" "AI 指令型 ignore 文件" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE"
+require_match "ignore 文档必须包含默认文件路径" '\.cc-code-reviewer/ignore/issues\.yml' "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE" "$SKILL_FILE" "$AGENT_FILE"
+# 注意：以下断言原本就是 grep -q 多文件"任一命中"语义（skill 与 workflow 措辞不同），
+# 不能用 require_match（它要求所有文件命中），故保留 grep -q 但补充失败说明。
+if ! grep -q "不存报告编号" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE"; then
+  echo "ignore 文档必须声明不存报告编号 (skill 与 workflow 任一命中即可)" >&2
+  exit 1
+fi
+require_match "ignore workflow YAML 必须包含 name 字段示例" "name:" "$IGNORE_WORKFLOW_FILE"
+require_match "ignore workflow YAML 必须包含 applies_to 字段示例" "applies_to:" "$IGNORE_WORKFLOW_FILE"
+require_match "ignore workflow YAML 必须包含 skip_when 字段示例" "skip_when:" "$IGNORE_WORKFLOW_FILE"
+require_match "ignore 文档必须支持飞书 Base 来源" "飞书 Base" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE"
+require_match "ignore 文档必须支持本地 Markdown 来源" "本地 Markdown" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE"
+require_match "ignore 文档必须描述用户指定问题编号流程" "用户指定问题编号" "$IGNORE_SKILL_FILE" "$IGNORE_WORKFLOW_FILE"
 
 grep -qx "# Fix Workflow" "$FIX_WORKFLOW_FILE"
 grep -qx "## Fix Input Normalization" "$FIX_WORKFLOW_FILE"
@@ -286,14 +311,28 @@ fi
 
 PLUGIN_VERSION="$(grep -E '"version":' "$PLUGIN_FILE" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
 MARKETPLACE_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
-MARKETPLACE_PLUGIN_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | sed -n '2p' | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
-[ "$PLUGIN_VERSION" = "$MARKETPLACE_VERSION" ]
-[ "$PLUGIN_VERSION" = "$MARKETPLACE_PLUGIN_VERSION" ]
-[ "$PLUGIN_VERSION" = "1.3.2" ]
-grep -q "code-fixer" "$PLUGIN_FILE"
-grep -q '"code-fix"' "$PLUGIN_FILE"
-grep -q '"code-fix"' "$MARKETPLACE_FILE"
-grep -q "report-driven fixing" "$MARKETPLACE_FILE"
+MARKETPLACE_PLUGIN_VERSION="$(grep -E '"version":' "$MARKETPLACE_FILE" | sed -n 2p | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
+
+# 版本号不再硬编码：只校验三处版本互相一致且非空。
+# 发版时只需改 plugin.json + marketplace.json 两个文件，本测试自动跟随。
+version_assert() {
+  local left="$1" right="$2" label="$3"
+  if [ "$left" != "$right" ]; then
+    echo "版本不一致 ($label): '$left' != '$right'" >&2
+    exit 1
+  fi
+  if [ -z "$left" ]; then
+    echo "版本号为空 ($label)，请检查 plugin.json / marketplace.json 是否包含 \"version\" 字段" >&2
+    exit 1
+  fi
+}
+version_assert "$PLUGIN_VERSION" "$MARKETPLACE_VERSION" "plugin.json vs marketplace.json 顶层"
+version_assert "$PLUGIN_VERSION" "$MARKETPLACE_PLUGIN_VERSION" "plugin.json vs marketplace.json plugin 条目"
+version_assert "$PLUGIN_VERSION" "$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' "$PLUGIN_FILE" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')" "plugin.json 自身可解析"
+require_match "plugin.json 必须声明 code-fixer 关键字" "code-fixer" "$PLUGIN_FILE"
+require_match "plugin.json 必须声明 code-fix skill" '"code-fix"' "$PLUGIN_FILE"
+require_match "marketplace.json 必须声明 code-fix skill" '"code-fix"' "$MARKETPLACE_FILE"
+require_match "marketplace.json 描述必须包含 report-driven fixing" "report-driven fixing" "$MARKETPLACE_FILE"
 
 # === Batch scanning contracts ===
 
