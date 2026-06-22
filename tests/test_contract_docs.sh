@@ -110,6 +110,17 @@ require_literal "$SKILL_FILE" "已忽略 {IGNORE_RULE_COUNT} 个问题" "scan pr
 require_literal "$SKILL_FILE" '只统计 `ignore:` 下缩进 2 个空格的 `- name:`' "ignore count must exclude nested applies_to list items"
 require_literal "$AGENT_FILE" "不包含 applies_to 下的子列表项" "agent ignore count docs must exclude nested applies_to list items"
 require_literal "$EXAMPLES_FILE" "已忽略 2 个问题" "scan examples must show project ignore issue count"
+require_literal "$AGENT_FILE" "P0 五项硬门槛（必须全部满足）" "review agent must define all mandatory P0 gates"
+require_literal "$AGENT_FILE" "生产可达" "P0 must require a production-reachable path"
+require_literal "$AGENT_FILE" "置信度必须为高" "P0 must require high confidence"
+require_literal "$AGENT_FILE" "事故级影响" "P0 must require incident-level impact"
+require_literal "$AGENT_FILE" "缺少有效防护" "P0 must account for effective mitigations"
+require_literal "$AGENT_FILE" "阻断发布" "P0 must be release-blocking"
+require_literal "$AGENT_FILE" "证据成立但影响未达到事故级" "confirmed non-P0 findings must downgrade to P1"
+require_literal "$AGENT_FILE" "归入待确认" "unproven high-risk findings must move to pending confirmation"
+require_literal "$AGENT_FILE" "不得因为未通过 P0 门槛而静默丢弃" "non-fast modes must preserve downgraded findings"
+require_literal "$ROOT_DIR/references/review-framework.md" "P0 五项硬门槛" "review framework must share the strict P0 contract"
+require_literal "$ROOT_DIR/references/report-format.md" "P0 证据门槛" "report format must require P0 gate evidence"
 
 grep -q "phase9-collect-fix-metadata" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
 if [ ! -f "$ARCHITECTURE_PNG" ]; then
@@ -629,3 +640,5 @@ if [ -n "$SYNC_DIFF" ]; then
   echo "提示：修改时请同时编辑 AGENTS.md 和 CLAUDE.md；仅第 1 行标题和第 3 行首句允许不同。" >&2
   exit 1
 fi
+
+echo "✅ 契约文档测试通过"
