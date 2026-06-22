@@ -119,8 +119,10 @@ require_literal "$AGENT_FILE" "阻断发布" "P0 must be release-blocking"
 require_literal "$AGENT_FILE" "证据成立但影响未达到事故级" "confirmed non-P0 findings must downgrade to P1"
 require_literal "$AGENT_FILE" "归入待确认" "unproven high-risk findings must move to pending confirmation"
 require_literal "$AGENT_FILE" "不得因为未通过 P0 门槛而静默丢弃" "non-fast modes must preserve downgraded findings"
+require_literal "$AGENT_FILE" "fast 模式无条件只输出满足 P0 五项硬门槛的 P0；P1、P2、P3 和待确认均不输出" "fast mode must output only fully qualified P0 findings"
 require_literal "$ROOT_DIR/references/review-framework.md" "P0 五项硬门槛" "review framework must share the strict P0 contract"
 require_literal "$ROOT_DIR/references/report-format.md" "P0 证据门槛" "report format must require P0 gate evidence"
+require_literal "$ROOT_DIR/references/report-format.md" '**置信度**：高 | **所属维度**：维度名称' "P0 report template must require high confidence"
 
 grep -q "phase9-collect-fix-metadata" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
 if [ ! -f "$ARCHITECTURE_PNG" ]; then
