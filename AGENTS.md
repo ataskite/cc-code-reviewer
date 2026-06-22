@@ -224,6 +224,7 @@ Verify installation by triggering the skill with a Java review request such as `
 ### Scan Interaction Contract
 
 - Scan always runs the AskUserQuestion flow after pre-scan.
+- fast 模式只输出满足全部 P0 硬门槛的问题；AskUserQuestion 选项必须直观标注“仅输出 P0”，最终执行计划必须再次显示“输出级别：仅 P0”。
 - The flow confirms review mode, model, and report handling before review entry; then it confirms entry, scope, optional Maven stock strategy, optional batch execution count, optional concurrency, and final execution.
 - Module selection for large Maven projects must keep AskUserQuestion payloads bounded: show module trees as normal text, keep fixed options small, and collect module paths through Other/free-form when needed.
 - Do not preserve command-line compatibility that bypasses interaction.

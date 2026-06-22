@@ -41,11 +41,11 @@
 
    🧩 项目 ignore：✅ 已启用：.cc-code-reviewer/ignore/issues.yml（已忽略 2 个问题）
 
-   → AskUserQuestion: "请选择审查模式" [fast | standard | deep | security]
-   → 用户选择: standard
+   → AskUserQuestion: "请选择审查模式" [fast（仅输出 P0） | standard | deep | security]
+   → 用户选择: fast（仅输出 P0）
 
 [第2次回复：处理步骤2]
-我：✅ 已选择：standard
+我：✅ 已选择：fast（仅输出 P0）
 
    → AskUserQuestion: "请选择审查报告的保存方式" [本地 Markdown 报告 | 飞书云文档 | 飞书多维表格]（多选）
    → 用户选择: 飞书云文档、飞书多维表格
@@ -73,9 +73,10 @@
    - 审查分支：main
    - 审查类型：存量审查
    - 审查范围：全量代码
-   - 审查模式：standard
+   - 审查模式：fast
+   - 输出级别：仅 P0
    - 审查模型：sonnet
-   - 启用维度：正确性、代码质量、Spring Boot 规范、数据库/数据访问、安全、性能、资源管理、日志/可观测性、测试质量(核心缺失)、技术债、架构、缓存(基础)、API设计(RESTful+错误处理+分页)
+   - 启用维度：正确性、事务/配置安全、资源管理
    - 报告保存方式：飞书云文档、飞书多维表格
 
    → AskUserQuestion: "确认执行计划（步骤6）" [确认执行 | 取消]
@@ -84,8 +85,8 @@
 [第6次回复：启动子agent]
 我：🚀 正在启动独立代码审查子代理...
 
-   📋 任务配置：standard 模式（sonnet） · 存量审查 · 全量代码
-   ⏱️ 预估耗时：8-15 分钟
+   📋 任务配置：fast 模式（sonnet） · 存量审查 · 全量代码
+   ⏱️ 预估耗时：3-5 分钟
    📌 子代理将独立执行完整审查流程，完成后自动返回结果。
    📤 审查完成后将自动保存到飞书（飞书云文档、飞书多维表格），无需手动操作。
    💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
@@ -94,9 +95,9 @@
    → 子agent执行审查 → 上传飞书云文档 → 创建多维表格 → 返回精简汇总
 
 [子agent完成后]
-我：✅ 代码审查已完成！⏱️ 耗时 12 分 35 秒
+我：✅ 代码审查已完成！⏱️ 耗时 4 分 12 秒
 
-   📊 审查结果：8 个问题（P0: 1 / P1: 3 / P2: 4）
+   📊 审查结果：1 个问题（P0: 1）
    🧩 项目 ignore 命中 2 条规则，过滤 5 个同类问题
    🔥 最高风险项：...
    📄 审查报告：https://...
@@ -149,7 +150,7 @@
 [第2次回复：切换分支 + 步骤1（审查模式）]
 我：✅ 已切换到分支: develop
 
-   → AskUserQuestion: "请选择审查模式" [fast | standard | deep | security]
+   → AskUserQuestion: "请选择审查模式" [fast（仅输出 P0） | standard | deep | security]
    → 用户选择: deep
 
 [第3次回复：步骤2（报告保存方式跳过）]
@@ -255,7 +256,7 @@
 
    🔌 lark-cli：✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书保存
 
-   → AskUserQuestion: "请选择审查模式" [fast | standard | deep | security]
+   → AskUserQuestion: "请选择审查模式" [fast（仅输出 P0） | standard | deep | security]
    → 用户选择: standard
 
 [第2次回复：步骤2（报告保存方式）]
@@ -408,7 +409,7 @@
 
 🧠 代码智能：✅ jdtls-lsp 可用，可用于跨目录调用链理解
 
-→ AskUserQuestion: "请选择审查模式" [fast | standard | deep | security]
+→ AskUserQuestion: "请选择审查模式" [fast（仅输出 P0） | standard | deep | security]
 → 用户选择：standard
 
 → AskUserQuestion: "请选择审查报告的保存方式"

@@ -443,8 +443,8 @@ test -r "$REPORT_FORMAT_PATH"
 - question: "请选择审查模式"
 - header: "审查模式"
 - options:
-  - label: "fast"
-    description: "快速扫雷，聚焦关键风险，约 5 分钟内出结果"
+  - label: "fast（仅输出 P0）"
+    description: "只报告已证实、足以阻断上线的 P0；P1/P2/P3 和待确认项均不输出"
   - label: "standard（推荐）"
     description: "标准审查，覆盖常规核心维度 + API设计 + 缓存基础 + 核心测试缺失，日常迭代推荐"
   - label: "deep"
@@ -722,6 +722,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 - 审查类型：{REVIEW_TYPE}
 - 审查范围：{REVIEW_SCOPE}
 - 审查模式：{REVIEW_MODE}
+- 输出级别：仅 P0  ← 仅 REVIEW_MODE=fast 时显示
 - 审查模型：{REVIEW_MODEL}（{ACTUAL_MODEL_NAME}，{CONTEXT_WINDOW_TOKENS} tokens{CONTEXT_SCALE>1 时显示 "，缩放 {CONTEXT_SCALE}x"}）
 - 启用维度：{根据模式 × 维度矩阵列出具体维度名称}
 - 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "已启用 .cc-code-reviewer/ignore/issues.yml（已忽略 {IGNORE_RULE_COUNT} 个问题）"；否则显示 "未配置"}

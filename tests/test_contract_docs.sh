@@ -509,6 +509,13 @@ fi
 MODE_PICK_LINE="$(grep -n 'question: "请选择审查模式"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 UPLOAD_PICK_LINE="$(grep -n 'question: "请选择审查报告的保存方式"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 ENTRY_PICK_LINE="$(grep -n 'question: "请选择本次审查入口"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+require_literal "$SKILL_FILE" 'label: "fast（仅输出 P0）"' "fast option must state its P0-only output"
+require_literal "$SKILL_FILE" '只报告已证实、足以阻断上线的 P0；P1/P2/P3 和待确认项均不输出' "fast option must explain excluded severities"
+require_literal "$SKILL_FILE" '输出级别：仅 P0' "fast execution plan must repeat the P0-only boundary"
+require_literal "$EXAMPLES_FILE" 'fast（仅输出 P0）' "scan examples must show the explicit fast label"
+require_literal "$ROOT_DIR/README.md" '仅输出 P0' "README mode table must disclose fast output severity"
+require_literal "$AGENTS_FILE" 'fast 模式只输出满足全部 P0 硬门槛的问题' "AGENTS must document fast P0-only behavior"
+require_literal "$CLAUDE_FILE" 'fast 模式只输出满足全部 P0 硬门槛的问题' "CLAUDE must document fast P0-only behavior"
 if [ -z "$MODE_PICK_LINE" ] || [ -z "$UPLOAD_PICK_LINE" ] || [ -z "$ENTRY_PICK_LINE" ] || [ "$MODE_PICK_LINE" -ge "$UPLOAD_PICK_LINE" ] || [ "$UPLOAD_PICK_LINE" -ge "$ENTRY_PICK_LINE" ]; then
   echo "review mode and report handling must be selected before the review entry" >&2
   exit 1
