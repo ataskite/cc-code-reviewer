@@ -453,6 +453,14 @@ test -r "$REPORT_FORMAT_PATH"
     description: "安全专项，聚焦安全核心维度"
 - multiSelect: false
 
+**用户响应后变量赋值（必须归一化）**：
+- fast（仅输出 P0） → REVIEW_MODE=fast
+- standard（推荐） → REVIEW_MODE=standard
+- deep → REVIEW_MODE=deep
+- security → REVIEW_MODE=security
+
+后续 planner、条件判断和子 agent 参数注入只能使用归一化后的 `REVIEW_MODE` 枚举，不得传递展示 label。
+
 ### 步骤 2：选择审查报告保存方式（条件步骤）
 
 **触发条件**：LARK_PLUGIN_INSTALLED=true。不满足时跳过，设 FEISHU_UPLOAD_OPTION=仅本地 Markdown 报告。
