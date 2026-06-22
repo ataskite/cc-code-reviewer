@@ -120,6 +120,35 @@ require_literal "$AGENT_FILE" "证据成立但影响未达到事故级" "confirm
 require_literal "$AGENT_FILE" "归入待确认" "unproven high-risk findings must move to pending confirmation"
 require_literal "$AGENT_FILE" "不得因为未通过 P0 门槛而静默丢弃" "non-fast modes must preserve downgraded findings"
 require_literal "$AGENT_FILE" "fast 模式无条件只输出满足 P0 五项硬门槛的 P0；P1、P2、P3 和待确认均不输出" "fast mode must output only fully qualified P0 findings"
+if grep -Fq "置信度不影响级别判断" "$AGENT_FILE"; then
+  echo "confidence must participate in severity classification; remove the obsolete rule" >&2
+  exit 1
+fi
+
+BATCH_P0_TEMPLATE="$(awk '
+  /^## Batch 发现清单输出格式$/ { in_batch_format = 1; next }
+  in_batch_format && /^### P0 \|/ { in_p0_template = 1 }
+  in_p0_template && /^### P[1-3] \|/ { exit }
+  in_p0_template { print }
+' "$AGENT_FILE")"
+if [ -z "$BATCH_P0_TEMPLATE" ]; then
+  echo "batch finding format must contain a structured P0 template" >&2
+  exit 1
+fi
+for batch_p0_field in \
+  "置信度：高" \
+  "生产可达路径：" \
+  "事故级影响：" \
+  "有效防护核查：" \
+  "阻断发布理由："; do
+  if ! printf '%s\n' "$BATCH_P0_TEMPLATE" | grep -Fq -- "$batch_p0_field"; then
+    echo "batch P0 template must include audit field: $batch_p0_field" >&2
+    exit 1
+  fi
+done
+
+require_literal "$EXAMPLES_FILE" "高置信已证实：生产订单请求参数直达未参数化 SQL，无有效校验或绑定防护，可破坏关键订单数据，必须阻断发布" "large-repo SQL injection P0 example must summarize all five gates"
+require_literal "$EXAMPLES_FILE" "高置信已证实：生产支付链路发生部分提交，无回滚或补偿防护，可造成资金错误，必须阻断发布" "large-repo transaction P0 example must summarize all five gates"
 require_literal "$ROOT_DIR/references/review-framework.md" "P0 五项硬门槛" "review framework must share the strict P0 contract"
 require_literal "$ROOT_DIR/references/report-format.md" "P0 证据门槛" "report format must require P0 gate evidence"
 require_literal "$ROOT_DIR/references/report-format.md" '**置信度**：高 | **所属维度**：维度名称' "P0 report template must require high confidence"

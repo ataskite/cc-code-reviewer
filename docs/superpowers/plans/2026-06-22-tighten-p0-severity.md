@@ -1,6 +1,6 @@
 # Tighten P0 Severity Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Completed steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 收紧 P0 为证据充分、生产可达且必须阻断发布的事故级问题，同时在非 fast 模式中把未通过 P0 门槛的候选完整下移，并让 fast 交互明确提示“仅输出 P0”。
 
@@ -43,7 +43,7 @@
 - Consumes: `REVIEW_MODE` and the existing P0/P1/P2/P3/待确认 report taxonomy.
 - Produces: a prompt-level five-gate P0 decision and deterministic downgrade destinations used by every scan mode.
 
-- [ ] **Step 1: Add failing contract assertions**
+- [x] **Step 1: Add failing contract assertions**
 
 Append the following assertions near the existing reviewer-agent contract checks in `tests/test_contract_docs.sh`:
 
@@ -61,13 +61,13 @@ require_literal "$ROOT_DIR/references/review-framework.md" "P0 五项硬门槛" 
 require_literal "$ROOT_DIR/references/report-format.md" "P0 证据门槛" "report format must require P0 gate evidence"
 ```
 
-- [ ] **Step 2: Run the contract test and verify RED**
+- [x] **Step 2: Run the contract test and verify RED**
 
 Run: `bash tests/test_contract_docs.sh`
 
 Expected: FAIL with `review agent must define all mandatory P0 gates` because the new contract text is absent.
 
-- [ ] **Step 3: Replace the loose P0 definition in the review agent**
+- [x] **Step 3: Replace the loose P0 definition in the review agent**
 
 In `agents/cc-code-reviewer.md`, replace the current P0 row and loose confidence bullets with:
 
@@ -103,7 +103,7 @@ Add these boundary examples after the downgrade rules:
 
 Remove the contradictory sentence `` `低置信度` 的问题通常不应直接定为 P0，除非代码证据足够直接 ``. Keep the existing rule that unproven issues belong in 待确认 or a lower severity.
 
-- [ ] **Step 4: Synchronize the framework and report evidence contract**
+- [x] **Step 4: Synchronize the framework and report evidence contract**
 
 Insert this section before the mode matrix in `references/review-framework.md`:
 
@@ -126,13 +126,13 @@ In `references/report-format.md`, immediately before `### 🔴 严重问题`, ad
 每条 P0 必须在证据、影响和建议中明确证明：生产路径可达、置信度高、后果达到事故级、没有足以阻断事故的有效防护，并且问题必须阻断发布。任一项无法证明时不得输出为 P0，应按审查模式进入 P1、待确认或更低级别。
 ```
 
-- [ ] **Step 5: Run the focused contract test and verify GREEN**
+- [x] **Step 5: Run the focused contract test and verify GREEN**
 
 Run: `bash tests/test_contract_docs.sh`
 
 Expected: PASS and final output contains `✅ 契约文档测试通过`.
 
-- [ ] **Step 6: Commit the strict classification contract**
+- [x] **Step 6: Commit the strict classification contract**
 
 ```bash
 git add tests/test_contract_docs.sh agents/cc-code-reviewer.md references/review-framework.md references/report-format.md
@@ -155,7 +155,7 @@ git commit -m "feat: tighten P0 severity classification"
 - Consumes: the `REVIEW_MODE=fast` selection from AskUserQuestion.
 - Produces: user-visible `fast（仅输出 P0）` selection copy and an execution-plan line `- 输出级别：仅 P0`.
 
-- [ ] **Step 1: Add failing interaction-copy assertions**
+- [x] **Step 1: Add failing interaction-copy assertions**
 
 Add these assertions near the existing `MODE_PICK_LINE` checks in `tests/test_contract_docs.sh`:
 
@@ -169,13 +169,13 @@ require_literal "$AGENTS_FILE" 'fast 模式只输出满足全部 P0 硬门槛的
 require_literal "$CLAUDE_FILE" 'fast 模式只输出满足全部 P0 硬门槛的问题' "CLAUDE must document fast P0-only behavior"
 ```
 
-- [ ] **Step 2: Run the contract test and verify RED**
+- [x] **Step 2: Run the contract test and verify RED**
 
 Run: `bash tests/test_contract_docs.sh`
 
 Expected: FAIL with `fast option must state its P0-only output`.
 
-- [ ] **Step 3: Update the AskUserQuestion option and execution plan**
+- [x] **Step 3: Update the AskUserQuestion option and execution plan**
 
 In `skills/cc-code-reviewer/SKILL.md`, change the fast option to:
 
@@ -192,7 +192,7 @@ In the execution-plan template, immediately after `- 审查模式：{REVIEW_MODE
 
 Do not add this line for standard, deep, or security.
 
-- [ ] **Step 4: Synchronize user-facing and repository guidance**
+- [x] **Step 4: Synchronize user-facing and repository guidance**
 
 In every `请选择审查模式` option list in `references/examples.md`, replace `fast` with `fast（仅输出 P0）`. Add `- 输出级别：仅 P0` to a fast execution-plan example.
 
@@ -204,17 +204,23 @@ Add this bullet under `### Scan Interaction Contract` in both `AGENTS.md` and `C
 - fast 模式只输出满足全部 P0 硬门槛的问题；AskUserQuestion 选项必须直观标注“仅输出 P0”，最终执行计划必须再次显示“输出级别：仅 P0”。
 ```
 
-Run: `cmp -s AGENTS.md CLAUDE.md`
+Run the repository's normalized synchronization guard (it excludes the two intentional header/tool-introduction differences and normalizes `claudecode` to `Claude Code` before comparing):
+
+```bash
+diff \
+  <(perl -CS -Mutf8 -ne 'next if $. == 1 || $. == 3; s/\bclaudecode\b/Claude Code/g; print' AGENTS.md) \
+  <(perl -CS -Mutf8 -ne 'next if $. == 1 || $. == 3; s/\bclaudecode\b/Claude Code/g; print' CLAUDE.md)
+```
 
 Expected: exit code 0.
 
-- [ ] **Step 5: Run the focused contract test and verify GREEN**
+- [x] **Step 5: Run the focused contract test and verify GREEN**
 
 Run: `bash tests/test_contract_docs.sh`
 
 Expected: PASS and final output contains `✅ 契约文档测试通过`.
 
-- [ ] **Step 6: Commit the explicit fast-mode copy**
+- [x] **Step 6: Commit the explicit fast-mode copy**
 
 ```bash
 git add tests/test_contract_docs.sh skills/cc-code-reviewer/SKILL.md references/examples.md README.md AGENTS.md CLAUDE.md
@@ -232,17 +238,17 @@ git commit -m "docs: clarify fast mode only reports P0"
 - Consumes: the strict P0 and fast interaction contracts.
 - Produces: a clean, fully tested repository state ready for handoff.
 
-- [ ] **Step 1: Inspect the final diff for scope and contradictions**
+- [x] **Step 1: Inspect the final diff for scope and contradictions**
 
 Run:
 
 ```bash
-git diff HEAD~2 -- agents/cc-code-reviewer.md references/review-framework.md references/report-format.md skills/cc-code-reviewer/SKILL.md references/examples.md README.md AGENTS.md CLAUDE.md tests/test_contract_docs.sh
+git diff f7b91f3328325c809bc0f70355ebf918d848c797..HEAD -- agents/cc-code-reviewer.md references/review-framework.md references/report-format.md skills/cc-code-reviewer/SKILL.md references/examples.md README.md AGENTS.md CLAUDE.md tests/test_contract_docs.sh docs/superpowers/plans/2026-06-22-tighten-p0-severity.md
 ```
 
-Expected: only P0 classification, downgrade completeness, fast interaction copy, synchronized documentation, and their tests have changed.
+Expected: the fixed implementation baseline captures all four implementation commits plus subsequent review-fix commits; changes remain limited to P0 classification, downgrade completeness, fast interaction copy, synchronized documentation, examples, plan truth-sync, and their tests.
 
-- [ ] **Step 2: Search for obsolete loose P0 wording**
+- [x] **Step 2: Search for obsolete loose P0 wording**
 
 Run:
 
@@ -255,13 +261,13 @@ fi
 
 Expected: exit code 0 with no matches.
 
-- [ ] **Step 3: Run the complete test suite**
+- [x] **Step 3: Run the complete test suite**
 
 Run: `bash tests/run_all.sh`
 
 Expected: every `tests/test_*.sh` file passes and the suite exits 0.
 
-- [ ] **Step 4: Re-run whitespace and repository-state verification**
+- [x] **Step 4: Re-run whitespace and repository-state verification**
 
 Run:
 
@@ -272,6 +278,10 @@ git status --short
 
 Expected: `git diff --check` exits 0; `git status --short` is empty after the Task 1 and Task 2 commits.
 
-- [ ] **Step 5: Record verification evidence**
+- [x] **Step 5: Record verification evidence**
 
-Capture the full-suite pass count from `tests/run_all.sh`, the two implementation commit hashes, and the clean status in the final handoff. Do not create an extra commit when the worktree is already clean.
+Final verification record:
+
+- Full suite: 22/22 test files passed.
+- Implementation commits: `f88f289` (`feat: tighten P0 severity classification`), `d38b736` (`fix: enforce strict fast P0 output`), `7279348` (`docs: clarify fast mode only reports P0`), `b08232d` (`fix: normalize fast review mode selection`).
+- Review repairs are included by inspecting the fixed baseline range `f7b91f3328325c809bc0f70355ebf918d848c797..HEAD`; they do not alter the approved requirements.
