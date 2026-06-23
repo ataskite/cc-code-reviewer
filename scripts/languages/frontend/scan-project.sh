@@ -23,8 +23,11 @@ CONFIG_COUNT="$(find "$PROJECT_DIR" -maxdepth 3 \
     -o -name 'vite.config.*' -o -name 'webpack.config.*' \) -print 2>/dev/null | grep -c . || true)"
 
 # 组件维度（src 下顶层目录作为粗粒度 COMPONENT）
-# 复用 collect-source-files.sh 的同一口径，保证 COMPONENT 计数与 SOURCE_FILE_COUNT 一致
+# 复用 collect-source-files.sh 的同一口径：对项目根调用一次得到完整 manifest，
+# 再按 src 下各顶层目录过滤计数，保证 COMPONENT 计数与 SOURCE_FILE_COUNT 一致
 emit_components() {
+  local full_manifest
+  full_manifest="$(bash "$SCRIPT_DIR/collect-source-files.sh" "$PROJECT_DIR" 2>/dev/null)"
   local d
   while IFS= read -r d; do
     [ -n "$d" ] || continue
@@ -32,9 +35,14 @@ emit_components() {
     local cnt=0 ln=0 f
     while IFS= read -r f; do
       [ -n "$f" ] || continue
-      cnt=$((cnt+1))
-      ln=$((ln + $(wc -l < "$f" | tr -d ' ')))
-    done < <(bash "$SCRIPT_DIR/collect-source-files.sh" "$d" 2>/dev/null)
+      # 仅统计位于该顶层组件目录内的文件（路径前缀匹配 + 边界）
+      case "$f" in
+        "$d"/*)
+          cnt=$((cnt+1))
+          ln=$((ln + $(wc -l < "$f" | tr -d ' ')))
+          ;;
+      esac
+    done <<< "$full_manifest"
     if [ "$cnt" -gt 0 ]; then
       printf 'COMPONENT:%s|%s|%s|%s\n' "$(basename "$rel")" "$rel" "$cnt" "$ln"
     fi

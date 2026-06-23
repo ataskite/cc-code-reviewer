@@ -354,10 +354,10 @@ test -r "$REPORT_FORMAT_PATH"
 
 #### 路径 A：单 agent 模式（BATCH_MODE=false）
 
-使用 Task 工具启动 `cc-code-reviewer` 子代理：
-- description: "执行 Java 代码审查"
+使用 Task 工具启动子代理，子代理类型按 `LANGUAGE_ID` 选择：
+- `LANGUAGE_ID=java` → subagent_type: `"cc-code-reviewer:cc-code-reviewer"`，description: `"执行 Java 代码审查"`
+- `LANGUAGE_ID=frontend` → subagent_type: `"cc-code-reviewer-frontend:cc-code-reviewer-frontend"`，description: `"执行前端代码审查"`
 - prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据
-- subagent_type: "cc-code-reviewer:cc-code-reviewer"
 - model: {REVIEW_MODEL}
 
 详细参数注入格式见下方「子 agent 调用规范」章节。
@@ -391,7 +391,7 @@ test -r "$REPORT_FORMAT_PATH"
 **每个 batch agent 的调用参数**：
 
 - description: "Batch {BATCH_INDEX}/{BATCH_COUNT} 代码审查"
-- subagent_type: "cc-code-reviewer:cc-code-reviewer"
+- subagent_type: 按 `LANGUAGE_ID` 选择（`java` → `cc-code-reviewer:cc-code-reviewer`；`frontend` → `cc-code-reviewer-frontend:cc-code-reviewer-frontend`）
 - model: {REVIEW_MODEL}
 - prompt: 见下方「Batch Agent Prompt 注入格式」
 
@@ -919,9 +919,9 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-b
 
 ### 调用方式
 
-使用 Task 工具启动内置的 `cc-code-reviewer` 子代理：
-- description: "执行 Java 代码审查"
-- subagent_type: "cc-code-reviewer:cc-code-reviewer"
+使用 Task 工具启动子代理，子代理类型按 `LANGUAGE_ID` 选择：
+- `LANGUAGE_ID=java` → description: `"执行 Java 代码审查"`，subagent_type: `"cc-code-reviewer:cc-code-reviewer"`
+- `LANGUAGE_ID=frontend` → description: `"执行前端代码审查"`，subagent_type: `"cc-code-reviewer-frontend:cc-code-reviewer-frontend"`
 - model: {REVIEW_MODEL}
 - prompt: 下方参数注入格式
 

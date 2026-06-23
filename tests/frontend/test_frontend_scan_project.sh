@@ -38,5 +38,7 @@ grep -q "SOURCE_SCOPE:formal|" <<< "$OUT"
 grep -q "SOURCE_SCOPE:excluded|node_modules" <<< "$OUT"
 # CODE_INTELLIGENCE 占位（detect-code-intelligence.sh 在 Task 4 接入；此处先输出 none 占位）
 grep -q "CODE_INTELLIGENCE_PROVIDER=" <<< "$OUT"
+# src/components 下有生产源码 → 必须发出至少一条 COMPONENT 行（锁定 emit_components 不漏发）
+grep -q "^COMPONENT:components|src/components|" <<< "$OUT"
 
 echo "PASS: frontend scan-project"
