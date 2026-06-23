@@ -77,6 +77,48 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 
 > ⚠️ 3 个脚本必须全部执行完成后才能继续。此阶段禁止调用 AskUserQuestion，禁止输出任何交互式提问。
 
+### 第三步之后：语言探测与路由
+
+预扫描脚本执行前，先识别候选语言：
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-language.sh" "$PROJECT_DIR"
+# 输出：CANDIDATE_LANGUAGE:java|evidence=... 和/或 CANDIDATE_LANGUAGE:frontend|evidence=... 或 CANDIDATE_LANGUAGE:none
+```
+
+**路由规则**：
+- **纯 Java**（仅 `CANDIDATE_LANGUAGE:java`）：走现有 Java 预扫描（phase1/2/3/10/4），流程不变。
+- **纯前端**（仅 `CANDIDATE_LANGUAGE:frontend`）：走「前端预扫描」分支。
+- **混合仓库**（两者皆有）：**必须调用 AskUserQuestion** 让用户选择一种语言：
+  - question: "检测到多语言仓库（Java + 前端），本次审查目标语言？"
+  - header: "审查语言"
+  - options:
+    - label: "Java"
+      description: "审查 Java 生产源码（src/main/java），使用 Java 审查矩阵"
+    - label: "前端（React/TS/JS）"
+      description: "审查前端生产源码（src 下 .ts/.tsx/.js/.jsx），使用前端审查矩阵"
+  - multiSelect: false
+  - 用户选择后设 `LANGUAGE_ID`，另一语言仅作仓库背景，不得产出正式问题。
+- **none**：输出"❌ 未识别到支持的审查目标（Java 或 React/TS/JS）"并终止。
+
+**前端预扫描分支**（`LANGUAGE_ID=frontend` 时执行，替代 phase3/phase10）：
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/detect-project.sh" "$PROJECT_DIR"
+# 不支持（nextjs/nuxt/generic-tsjs）时停止，不套用 React 规则
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/scan-project.sh" "$PROJECT_DIR"
+# 输出 PROFILE_SCHEMA v1：SOURCE_FILE_COUNT/SOURCE_LINE_COUNT/FORMAL_CONFIG_FILE_COUNT/COMPONENT/TECH_STACK/SOURCE_SCOPE
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/detect-code-intelligence.sh" "$PROJECT_DIR"
+# 输出 CODE_INTELLIGENCE_PROVIDER=typescript-lsp|none（覆盖 scan-project 的占位）
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
+# 复用 lark-cli 检测
+```
+
+> 前端分支下，后续交互步骤（模式/报告/入口/范围/确认）、增量预处理（phase5）、模型侦测（phase14）、分批、合并、报告保存、飞书输出**全部复用现有流程**；差异仅在：预扫描数据来自前端 PROFILE，分批用 `scripts/core/plan-file-batches.sh` + source manifest，合并用 `scripts/core/merge-batch-results.sh`，子 agent 用 `cc-code-reviewer-frontend`。
+
 ### 第三步之后：读取项目级 ignore 规则
 
 3 个预扫描脚本完成后，在输出预扫描摘要前，检查项目内是否存在 AI 指令型 ignore 文件：
@@ -849,6 +891,27 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-file-batches.sh" \
 - 批次清单必须来自 `BATCH_FILE_LIST_DIR/batch-XXX.files`
 - 每个批次的 `BATCH_FILE_COUNT` 和 `BATCH_LINE_COUNT` 从对应 `batch-XXX.json` 或 `.files` 清单统计
 - 增量审查不执行此分批路径
+
+### 前端分批（LANGUAGE_ID=frontend）
+
+前端项目（含 React monorepo 单语言运行）必须使用 `scripts/core/plan-file-batches.sh`（语言中立），不得使用 Java 的 `phase11-plan-file-batches.sh` 或 `phase11-plan-large-batches.sh`：
+
+```bash
+# 先生成不可变 source manifest（生产 .ts/.tsx/.js/.jsx，排除测试/产物/配置脚本）
+MANIFEST="$(mktemp)"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/collect-source-files.sh" "$PROJECT_DIR" > "$MANIFEST"
+
+CC_REVIEW_CONTEXT_SCALE="$CONTEXT_SCALE" \
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
+  "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "frontend" "$MANIFEST"
+```
+
+合并：
+```bash
+RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-batch-results.sh" "$RUN_DIR"
+```
+
+`scripts/core/merge-batch-results.sh` 的覆盖率展示名根据 `plan.json.language_id` 自动切换为「前端源码文件覆盖率」。前端 batch agent 使用 `cc-code-reviewer-frontend` 子代理，注入 PROFILE 行、source manifest、`SEMANTIC_LEVEL`、批次参数（`RUN_DIR`/`BATCH_PLAN_PATH`/`BATCH_STATUS_PATH`/`BATCH_RESULT_PATH`）。
 
 ---
 
