@@ -2,6 +2,8 @@
 
 > Claude Code 插件 · 企业级 Java 代码审查与报告驱动修复
 
+- **多语言支持**：首期支持 Java 与 React/TypeScript/JavaScript 前端审查；统一入口 `/cc-code-reviewer:cc-code-reviewer` 自动路由，混合仓库由用户选择一种语言；前端基于语言无关的共享内核 + 前端适配器，详见 `docs/superpowers/specs/2026-06-23-multi-language-reviewer-design.md`。
+
 ```mermaid
 flowchart LR
     Scan["Scan<br/>发现问题"] --> Report["候选问题清单"]

@@ -8,6 +8,8 @@ This is a **Claude Code plugin skill** for enterprise-grade Java code review and
 
 **Important**: This repository intentionally uses **skill-only entry points** plus dedicated sub-agents. Claude Code can invoke the skills explicitly via `/cc-code-reviewer:cc-code-reviewer` for scan, `/cc-code-reviewer:cc-code-ignore` for scan ignore-rule maintenance, and `/cc-code-reviewer:cc-code-fixer` for fix.
 
+- **Multi-language support**: first phase supports both Java and React/TypeScript/JavaScript frontend review. The unified entry `/cc-code-reviewer:cc-code-reviewer` auto-routes by language detection; mixed repos require the user to pick one language. The frontend path is built on a language-neutral shared kernel (`scripts/core/`) plus a frontend adapter (`scripts/languages/frontend/`) and a dedicated sub-agent (`agents/cc-code-reviewer-frontend.md`). See `docs/superpowers/specs/2026-06-23-multi-language-reviewer-design.md`.
+
 ## Architecture
 
 ### Overview

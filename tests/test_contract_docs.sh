@@ -683,4 +683,32 @@ if [ -n "$SYNC_DIFF" ]; then
   exit 1
 fi
 
+# === 前端多语言文档同步断言 ===
+for f in \
+  "scripts/core/detect-language.sh" \
+  "scripts/core/validate-scope.sh" \
+  "scripts/core/plan-file-batches.sh" \
+  "scripts/core/merge-batch-results.sh" \
+  "scripts/languages/frontend/detect-project.sh" \
+  "scripts/languages/frontend/scan-project.sh" \
+  "scripts/languages/frontend/collect-source-files.sh" \
+  "scripts/languages/frontend/detect-code-intelligence.sh" \
+  "agents/cc-code-reviewer-frontend.md" \
+  "references/language-adapter-contract.md" \
+  "references/shared-review-framework.md" \
+  "references/languages/frontend/source-scope.md" \
+  "references/languages/frontend/review-framework.md" \
+  "references/languages/frontend/react-rules.md"; do
+  [ -f "$ROOT_DIR/$f" ] || { echo "MISSING: $f" >&2; exit 1; }
+done
+
+# SKILL.md 必须含语言路由分支
+grep -q "语言探测与路由" "$SKILL_FILE"
+grep -q "CANDIDATE_LANGUAGE:frontend" "$SKILL_FILE"
+grep -q "cc-code-reviewer-frontend" "$SKILL_FILE"
+
+# 前端矩阵与 React 规则必须被前端 Agent 引用
+grep -q "review-framework" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+grep -q "react-rules" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+
 echo "✅ 契约文档测试通过"
