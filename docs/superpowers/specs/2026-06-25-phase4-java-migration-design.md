@@ -1,7 +1,7 @@
 # Phase 4：Java 公共能力迁移设计
 
 **日期**：2026-06-25
-**状态**：草案（待批准）
+**状态**：已批准（关键未决问题已决策，见第 10 节）
 **依赖**：`2026-06-23-multi-language-reviewer-design.md` 第 12 节 Phase 4（强制退出门）
 **前置条件**：前端 React Scan（原 spec Phase 0–3）已在 `feat/frontend-reviewer` 分支实现并通过测试
 
@@ -123,9 +123,9 @@ SOURCE_LINE_COUNT=<同 代码总行数>
 
 **风险**：改大仓库 planner，影响 Maven 多模块大仓库。必须靠 `tests/test_phase11_plan_large_batches.sh` 全量回归。
 
-### M6（评估项）：large-batches merge 复用 core
+### M6（独立后续项，M5 完成后评估）：large-batches merge 复用 core
 
-**目标**：评估 `core/merge-batch-results.sh` 能否服务 large-batches。
+**目标**：M5 完成后专门评估 `core/merge-batch-results.sh` 能否服务 large-batches。**不在 M1–M5 实施计划范围内**，作为独立后续项。
 
 **关键障碍**：phase12 依赖 batch.json 的 `units`/`scan_roots`/`context_roots` 做模块维度状态表，core merge 目前只读 `modules`（从 batch.json 退化读 `scan_roots`）。
 
@@ -177,11 +177,11 @@ M1 (manifest 生成器)        ── 新增，零 Java 风险
 - 原 spec「Java 用户可见契约不变」→ 约束 1 + 双字段策略（4.3）保证。
 - 原 spec「Phase 4 是双轨期强制退出门」→ 第 6 节明确化判定标准，M1–M5 满足退出门。
 
-## 10. 未决问题（需在实施计划阶段确认）
+## 10. 已决策问题
 
-1. **M2 包装层的字段转译**：core 输出 `TOTAL_SOURCE_LOC`，包装层转译为 `TOTAL_JAVA_LOC`。是包装层 `sed` 转译，还是 core planner 支持「输出字段名后缀」参数？倾向前者（core 保持中立，包装层负责 Java 契约）。
-2. **M6 的最终决策**：需要实际对比 phase12 的模块维度状态表与 core merge 的 `batch_modules()` 输出，才能判定。建议在 M5 完成后做一次专门评估，结论写入实施计划。
-3. **CONTEXT_SCALE 传递**：phase11-file 当前通过环境变量 `CC_REVIEW_CONTEXT_SCALE` 接收，core planner 也用同名环境变量。M2 包装层需确保环境变量透传。
+1. **M2 包装层的字段转译**：采用**包装层 `sed` 转译**。core 输出 `TOTAL_SOURCE_LOC`，包装层 `sed` 转译为 `TOTAL_JAVA_LOC`。core 保持中立，Java 契约由包装层负责。**不**给 core planner 加「输出字段名后缀」参数（避免 core 感知语言）。
+2. **M6 的决策时机**：**等 M5 完成后专门评估**。M5 让 large-batches 输出 `source_*` 别名后，实际对比 phase12 的模块维度状态表与 core merge 的 `batch_modules()` 输出，再决定 M6 做或不做。M6 不在 M1–M5 的实施计划内，作为独立后续项。
+3. **CONTEXT_SCALE 传递**：phase11-file 当前通过环境变量 `CC_REVIEW_CONTEXT_SCALE` 接收，core planner 也用同名环境变量。M2 包装层**透传**该环境变量即可（同名，无需转换）。
 
 ## 11. 非目标
 
