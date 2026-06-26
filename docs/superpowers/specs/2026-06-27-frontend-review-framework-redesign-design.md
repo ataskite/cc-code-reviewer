@@ -312,7 +312,7 @@ fi
 # 正向断言:必须包含类型安全维度(中后台 P0 级)
 grep -q "类型安全" "$FE_FRAMEWORK"
 # 正向断言:必须声明 11 维度(硬断言,防止再次注水膨胀)
-FE_DIM_COUNT=$(grep -cE '^## [0-9]+\. ' "$FE_FRAMEWORK")
+FE_DIM_COUNT=$(grep -cE '^### [0-9]+\. ' "$FE_FRAMEWORK")
 test "$FE_DIM_COUNT" -eq 11
 # shared-review-framework.md 必须已删除
 test ! -f "$ROOT_DIR/references/shared-review-framework.md"
