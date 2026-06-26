@@ -14,12 +14,15 @@ D="$(cd "$D" && pwd -P)"
 OUT="$(bash "$ROOT_DIR/scripts/languages/frontend/detect-code-intelligence.sh" "$D")"
 grep -q "CODE_INTELLIGENCE_LANGUAGE=frontend" <<< "$OUT"
 grep -qE "^CODE_INTELLIGENCE_PROVIDER=(typescript-lsp|none)$" <<< "$OUT"
-# 不可用时必须有 reason 与 install hint
-grep -q "CODE_INTELLIGENCE_REASON=" <<< "$OUT"
-grep -q "CODE_INTELLIGENCE_INSTALL_HINT=" <<< "$OUT"
-# provider=none 时 AVAILABLE 必须为 false
+# provider=none（不可用）时必须有 reason 与 install hint；可用时不输出这两项
 if grep -q "^CODE_INTELLIGENCE_PROVIDER=none$" <<< "$OUT"; then
+  grep -q "CODE_INTELLIGENCE_REASON=" <<< "$OUT"
+  grep -q "CODE_INTELLIGENCE_INSTALL_HINT=" <<< "$OUT"
   grep -q "^CODE_INTELLIGENCE_AVAILABLE=false$" <<< "$OUT"
+else
+  # provider=typescript-lsp（可用）时必须有 AVAILABLE=true 和 COMMAND
+  grep -q "^CODE_INTELLIGENCE_AVAILABLE=true$" <<< "$OUT"
+  grep -q "^CODE_INTELLIGENCE_COMMAND=" <<< "$OUT"
 fi
 
 # 项目路径不存在 → 走降级（available=false），不崩溃

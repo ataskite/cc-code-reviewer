@@ -206,30 +206,35 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 
 **时机**：在步骤 4B（选择存量审查方式）之后、分批判定之前执行。
 
+**先探测三个角色的上下文窗口**（用于动态推荐，不阻塞）：
+
+```bash
+for role in opus sonnet haiku; do
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase14-detect-model-context.sh" "$role"
+done
+```
+解析每个角色的 `CONTEXT_WINDOW_TOKENS`、`CONTEXT_SCALE`、`ACTUAL_MODEL_NAME`。**把「（推荐）」标给 `CONTEXT_WINDOW_TOKENS` 最大的角色**——上下文窗口最大的模型能一次审查更多代码、减少分批，且通常是配置里质量最强的档位。若多个角色窗口相同，优先级 opus > sonnet > haiku。
+
 **必须调用 AskUserQuestion 工具，参数如下**：
 - question: "请选择审查使用的 AI 模型"
 - header: "审查模型"
-- options:
-  - label: "sonnet（推荐）"
-    description: "平衡速度与质量，适合日常迭代审查"
-  - label: "opus"
-    description: "最强推理能力，深度分析更精准，耗时更长、token 消耗更高"
-  - label: "haiku"
-    description: "最快速度，适合快速扫雷或小项目"
+- options（按 opus / sonnet / haiku 顺序，仅窗口最大的那个标「（推荐）」；description 必须带实际底层模型名 + 窗口大小）:
+  - label: "opus（推荐）" 或 "opus"  ← 窗口最大时标推荐
+    description: "{ACTUAL_MODEL_NAME}，{CONTEXT_WINDOW_TOKENS} tokens 上下文，最强推理，适合深度/大仓库审查"
+  - label: "sonnet（推荐）" 或 "sonnet"  ← 窗口最大时标推荐
+    description: "{ACTUAL_MODEL_NAME}，{CONTEXT_WINDOW_TOKENS} tokens 上下文，平衡速度与质量"
+  - label: "haiku（推荐）" 或 "haiku"  ← 窗口最大时标推荐
+    description: "{ACTUAL_MODEL_NAME}，{CONTEXT_WINDOW_TOKENS} tokens 上下文，最快速度，适合快速扫雷或小项目"
 - multiSelect: false
 
+> 示例：若 opus=glm-5.2[1M](1M)、sonnet=glm-5-turbo(200k)、haiku=glm-4.7(200k)，则 opus 窗口最大，标「opus（推荐）」，description 写「glm-5.2，1000000 tokens 上下文，最强推理…」。
+
 **用户响应后变量赋值**：
-- sonnet（推荐） → REVIEW_MODEL=sonnet
-- opus → REVIEW_MODEL=opus
-- haiku → REVIEW_MODEL=haiku
+- 选哪个角色 → REVIEW_MODEL = 该角色（opus / sonnet / haiku）
 
-**选完模型后立即侦测上下文窗口**：
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase14-detect-model-context.sh" "$REVIEW_MODEL"
-```
-解析输出得到 `CONTEXT_WINDOW_TOKENS`、`CONTEXT_SCALE`、`CONTEXT_TIER`、`ACTUAL_MODEL_NAME`、`DETECTION_SOURCE`。若用户选 opus 但底层配置了 `glm-5.2[1M]`，则 CONTEXT_SCALE=5（1M 窗口），分批将按大窗口规划；若为普通模型则 CONTEXT_SCALE=1（200k，与旧行为一致）。
+**用户选定后，复用上一步已探测的该角色窗口数据**设置 `CONTEXT_WINDOW_TOKENS`、`CONTEXT_SCALE`、`CONTEXT_TIER`、`ACTUAL_MODEL_NAME`、`DETECTION_SOURCE`（无需再跑一次 phase14）。若用户选的角色上一步未探测（异常情况），则补跑一次 `phase14-detect-model-context.sh "$REVIEW_MODEL"`。
 
-> **设计依据**：模型选择放在分批之前，是因为分批预算（每批装多少代码）依赖模型的上下文窗口大小。大窗口模型（1M）可一次性审查 5 倍代码量，显著减少批次数。
+> **设计依据**：模型选择放在分批之前，是因为分批预算（每批装多少代码）依赖模型的上下文窗口大小。大窗口模型（1M）可一次性审查 5 倍代码量，显著减少批次数。动态推荐窗口最大的角色，避免向用户推荐「逻辑档位中等但实际配置最弱」的模型。
 
 ### 第四步之后：分批判定
 
