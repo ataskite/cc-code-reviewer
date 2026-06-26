@@ -345,9 +345,18 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJEC
 在调用子 agent 之前，必须基于插件根目录生成参考文件绝对路径，并校验文件可读：
 
 ```bash
-REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/java/review-framework.md"
 REPORT_FORMAT_PATH="${CLAUDE_PLUGIN_ROOT}/references/report-format.md"
-test -r "$REVIEW_FRAMEWORK_PATH"
+if [ "$LANGUAGE_ID" = "frontend" ]; then
+  REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/review-framework.md"
+  REACT_RULES_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/react-rules.md"
+  SOURCE_SCOPE_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/source-scope.md"
+  test -r "$REVIEW_FRAMEWORK_PATH"
+  test -r "$REACT_RULES_PATH"
+  test -r "$SOURCE_SCOPE_PATH"
+else
+  REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/java/review-framework.md"
+  test -r "$REVIEW_FRAMEWORK_PATH"
+fi
 test -r "$REPORT_FORMAT_PATH"
 ```
 
@@ -421,6 +430,8 @@ test -r "$REPORT_FORMAT_PATH"
 | 审查文件数量 | {BATCH_FILE_COUNT} |
 | 审查代码行数 | {BATCH_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
+| React 规则路径 | {REACT_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
+| 源码范围路径 | {SOURCE_SCOPE_PATH}（仅 LANGUAGE_ID=frontend） |
 | 报告格式路径 | {REPORT_FORMAT_PATH} |
 | 项目 ignore 文件路径 | {IGNORE_RULES_PATH 或 未配置} |
 | 项目 ignore 是否启用 | {IGNORE_RULES_ENABLED} |
@@ -950,6 +961,8 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-b
 | 审查文件数量 | {REVIEW_FILE_COUNT} |
 | 审查代码行数 | {REVIEW_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
+| React 规则路径 | {REACT_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
+| 源码范围路径 | {SOURCE_SCOPE_PATH}（仅 LANGUAGE_ID=frontend） |
 | 报告格式路径 | {REPORT_FORMAT_PATH} |
 | 项目 ignore 文件路径 | {IGNORE_RULES_PATH 或 未配置} |
 | 项目 ignore 是否启用 | {IGNORE_RULES_ENABLED} |
@@ -996,7 +1009,9 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-b
 | `DETECTED_TECH_STACK` | 从 `PROJECT_SCAN_RESULT` 的 `TECH_STACK:` 行解析，来源为 Maven/Gradle 依赖指纹 | `Spring Boot, MyBatis, Redis/Cache` |
 | `REVIEW_FILE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `76` |
 | `REVIEW_LINE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `16637` |
-| `REVIEW_FRAMEWORK_PATH` | `${CLAUDE_PLUGIN_ROOT}/references/languages/java/review-framework.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/java/review-framework.md` |
+| `REVIEW_FRAMEWORK_PATH` | 按 `LANGUAGE_ID` 分支：`java` → `references/languages/java/review-framework.md`；`frontend` → `references/languages/frontend/review-framework.md`。启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/java/review-framework.md` |
+| `REACT_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/react-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/react-rules.md` |
+| `SOURCE_SCOPE_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/source-scope.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/source-scope.md` |
 | `REPORT_FORMAT_PATH` | `${CLAUDE_PLUGIN_ROOT}/references/report-format.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/report-format.md` |
 | `GIT_LOG_OUTPUT` | phase5 脚本输出（仅增量） | `git log --oneline -N` |
 | `CHANGED_FILES_OUTPUT` | phase5 脚本输出（仅增量） | `git diff --name-only` |

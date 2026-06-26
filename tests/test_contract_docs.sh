@@ -733,6 +733,25 @@ grep -q 'cc-code-reviewer:cc-code-reviewer-frontend' "$SKILL_FILE"
 FRONTEND_DISPATCH_COUNT="$(grep -c 'cc-code-reviewer:cc-code-reviewer-frontend' "$SKILL_FILE")"
 test "$FRONTEND_DISPATCH_COUNT" -ge 2
 
+# SKILL.md 路径准备必须按 LANGUAGE_ID 分支，前端注入三个专属路径（不能写死 Java 路径）
+grep -q 'LANGUAGE_ID.*frontend' "$SKILL_FILE"
+grep -q 'REACT_RULES_PATH' "$SKILL_FILE"
+grep -q 'SOURCE_SCOPE_PATH' "$SKILL_FILE"
+grep -q 'references/languages/frontend/review-framework.md' "$SKILL_FILE"
+grep -q 'references/languages/frontend/react-rules.md' "$SKILL_FILE"
+grep -q 'references/languages/frontend/source-scope.md' "$SKILL_FILE"
+
+# 前端 agent 必须期望前端专属路径（不能只依赖 Java 的 REVIEW_FRAMEWORK_PATH）
+grep -q "前端审查框架路径" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+grep -q "React 规则路径" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+grep -q "源码范围路径" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+
+# 前端 agent 不得残留旧 15 维度编号（D01-D15）或维度 12-15 引用
+if grep -qE 'D(0[1-9]|1[0-5])[^0-9]|维度 ?1[2345]|1-15|15 维度' "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"; then
+  echo "FAIL: 前端 agent 残留旧 15 维度编号或维度 12-15 引用" >&2
+  exit 1
+fi
+
 # 前端矩阵与 React 规则必须被前端 Agent 引用
 grep -q "review-framework" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 grep -q "react-rules" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
