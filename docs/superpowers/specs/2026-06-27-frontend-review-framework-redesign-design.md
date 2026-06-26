@@ -285,7 +285,7 @@ references/
 
 ## 8. 文件改动清单
 
-### 8.1 改动总表（8 个文件，0 脚本逻辑改动）
+### 8.1 改动总表（10 个文件，0 脚本逻辑改动）
 
 | # | 文件 | 动作 | 细节 |
 |---|---|---|---|
@@ -293,10 +293,12 @@ references/
 | 2 | `references/languages/frontend/review-framework.md` | **重写** | 11 维度清单（§6）+ 模式矩阵（§7）+ P0 门槛 + 依赖规则 |
 | 3 | `references/languages/frontend/react-rules.md` | **重写** | 按新 11 维度名组织规则章节（原 D01/D03… 改为中文名） |
 | 4 | `references/shared-review-framework.md` | **删除** | 过度设计，零代码消费 |
-| 5 | `skills/cc-code-reviewer/SKILL.md` | **改 Java 路径** | `:348` Java 分支 `REVIEW_FRAMEWORK_PATH` → `references/languages/java/review-framework.md`，干净切换不留兼容 |
+| 5 | `skills/cc-code-reviewer/SKILL.md` | **改 Java 路径（2 处）** | `:348` 的 `REVIEW_FRAMEWORK_PATH` 变量 + `:1001` 参数表示例值，均 → `references/languages/java/review-framework.md`，干净切换不留兼容 |
 | 6 | `agents/cc-code-reviewer.md` | **改回退路径** | `:105` 相对路径同步改 |
 | 7 | `tests/test_contract_docs.sh` | **改断言** | Java 路径断言同步；删 shared 文件行；新增前端反注水断言（见 §8.2） |
-| 8 | `README.md` / `AGENTS.md` / `CLAUDE.md` | **改路径** | Java 框架路径说明同步 |
+| 8 | `README.md` | **改路径** | Java 框架路径说明同步 |
+| 9 | `AGENTS.md` | **改路径+目录树** | Java 框架路径说明同步；文件结构树补 `languages/java/`、`languages/frontend/` 层级 |
+| 10 | `CLAUDE.md` | **改路径+目录树** | 同 AGENTS.md |
 
 ### 8.2 新增契约测试断言（`tests/test_contract_docs.sh` 前端断言块）
 
@@ -310,12 +312,16 @@ if grep -qE 'D(0[1-9]|1[0-5])_[A-Z_]+' "$FE_FRAMEWORK"; then
   echo "FAIL: 前端框架不得引用 Java 公共维度 ID" >&2; exit 1
 fi
 # 正向断言:必须包含类型安全维度(中后台 P0 级)
-grep -q "类型安全" "$FE_FRAMEWORK"
+grep -q "类型安全" "$FE_FRAMEWORK" || { echo "FAIL: 前端框架必须包含类型安全维度" >&2; exit 1; }
 # 正向断言:必须声明 11 维度(硬断言,防止再次注水膨胀)
 FE_DIM_COUNT=$(grep -cE '^### [0-9]+\. ' "$FE_FRAMEWORK")
-test "$FE_DIM_COUNT" -eq 11
+if [ "$FE_DIM_COUNT" -ne 11 ]; then
+  echo "FAIL: 前端框架必须声明 11 维度，当前 $FE_DIM_COUNT" >&2; exit 1
+fi
 # shared-review-framework.md 必须已删除
-test ! -f "$ROOT_DIR/references/shared-review-framework.md"
+if [ -f "$ROOT_DIR/references/shared-review-framework.md" ]; then
+  echo "FAIL: shared-review-framework.md 应已删除，审查框架各语言独立" >&2; exit 1
+fi
 ```
 
 同时修改原断言块：
