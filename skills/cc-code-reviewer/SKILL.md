@@ -248,9 +248,11 @@ BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
 **前提**：分批模式仅对存量审查生效。增量审查的变更文件数通常远低于阈值；即使超过阈值，batch agent 缺少增量上下文（GIT_LOG/CHANGED_FILES），无法判断问题是变更引入还是存量，因此不进入分批。
 
 **参数来源**：
-- `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 从 phase3-project-scan.sh 输出中解析（`Java文件总数` 和 `代码总行数`），口径仅包含 `src/main/java` 生产源码
+- `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 的来源按语言分支：
+  - `LANGUAGE_ID=java`：从 phase3-project-scan.sh 输出中解析（`Java文件总数` 和 `代码总行数`），口径仅包含 `src/main/java` 生产源码
+  - `LANGUAGE_ID=frontend`：从前端 `scan-project.sh` 输出的 PROFILE_SCHEMA 行解析（`SOURCE_FILE_COUNT` 和 `SOURCE_LINE_COUNT`），口径仅包含 `src/` 下生产 `.ts/.tsx/.js/.jsx`
 - `500`：每个文件的工具调用 + agent 评估开销（token）
-- `3`：每行 Java 代码平均 token 数
+- `3`：每行代码平均 token 数
 - `100000 × CONTEXT_SCALE`：单批留给文件内容 + 开销的上限。基准 100000（200k 总上下文 - 25k 系统 prompt - 50k agent 输出 ≈ 125k，取 100k 留余量），大窗口模型按 CONTEXT_SCALE 同比放大
 
 **判定结果**：
