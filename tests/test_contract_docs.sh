@@ -90,7 +90,7 @@ grep -q "最近提交概览" "$SKILL_FILE"
 grep -q "prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据" "$SKILL_FILE"
 grep -q "| 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |" "$SKILL_FILE"
 grep -q "| 报告格式路径 | {REPORT_FORMAT_PATH} |" "$SKILL_FILE"
-grep -q 'REVIEW_FRAMEWORK_PATH=.*references/review-framework.md' "$SKILL_FILE"
+grep -q 'REVIEW_FRAMEWORK_PATH=.*references/languages/java/review-framework.md' "$SKILL_FILE"
 grep -q 'REPORT_FORMAT_PATH=.*references/report-format.md' "$SKILL_FILE"
 GLOBAL_REFERENCE_LINE="$(grep -n "### 第六步之前：准备审查参考文件路径" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 TASK_LAUNCH_LINE="$(grep -n "### 第七步：调用子 agent 执行代码审查" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
@@ -149,7 +149,7 @@ done
 
 require_literal "$EXAMPLES_FILE" "高置信已证实：生产订单请求参数直达未参数化 SQL，无有效校验或绑定防护，可破坏关键订单数据，必须阻断发布" "large-repo SQL injection P0 example must summarize all five gates"
 require_literal "$EXAMPLES_FILE" "高置信已证实：生产支付链路发生部分提交，无回滚或补偿防护，可造成资金错误，必须阻断发布" "large-repo transaction P0 example must summarize all five gates"
-require_literal "$ROOT_DIR/references/review-framework.md" "P0 五项硬门槛" "review framework must share the strict P0 contract"
+require_literal "$ROOT_DIR/references/languages/java/review-framework.md" "P0 五项硬门槛" "review framework must share the strict P0 contract"
 require_literal "$ROOT_DIR/references/report-format.md" "P0 证据门槛" "report format must require P0 gate evidence"
 require_literal "$ROOT_DIR/references/report-format.md" '**置信度**：高 | **所属维度**：维度名称' "P0 report template must require high confidence"
 
@@ -695,12 +695,33 @@ for f in \
   "scripts/languages/frontend/detect-code-intelligence.sh" \
   "agents/cc-code-reviewer-frontend.md" \
   "references/language-adapter-contract.md" \
-  "references/shared-review-framework.md" \
+  "references/languages/java/review-framework.md" \
   "references/languages/frontend/source-scope.md" \
   "references/languages/frontend/review-framework.md" \
   "references/languages/frontend/react-rules.md"; do
   [ -f "$ROOT_DIR/$f" ] || { echo "MISSING: $f" >&2; exit 1; }
 done
+
+# shared-review-framework.md 必须已删除（过度设计，不再维护公共维度分类法）
+if [ -f "$ROOT_DIR/references/shared-review-framework.md" ]; then
+  echo "FAIL: shared-review-framework.md 应已删除，审查框架各语言独立" >&2
+  exit 1
+fi
+
+# 前端审查框架必须使用独立维度集，不得引用 Java 公共维度 ID（D01_CORRECTNESS 等）
+FE_FRAMEWORK="$ROOT_DIR/references/languages/frontend/review-framework.md"
+if grep -qE 'D(0[1-9]|1[0-5])_[A-Z_]+' "$FE_FRAMEWORK"; then
+  echo "FAIL: 前端框架不得引用 Java 公共维度 ID" >&2
+  exit 1
+fi
+# 正向断言：必须包含类型安全维度（中后台 P0 级）
+grep -q "类型安全" "$FE_FRAMEWORK" || { echo "FAIL: 前端框架必须包含类型安全维度" >&2; exit 1; }
+# 正向断言：必须声明 11 维度（硬断言，防止再次注水膨胀）
+FE_DIM_COUNT=$(grep -cE '^### [0-9]+\. ' "$FE_FRAMEWORK")
+if [ "$FE_DIM_COUNT" -ne 11 ]; then
+  echo "FAIL: 前端框架必须声明 11 维度，当前 $FE_DIM_COUNT" >&2
+  exit 1
+fi
 
 # SKILL.md 必须含语言路由分支
 grep -q "语言探测与路由" "$SKILL_FILE"

@@ -102,7 +102,7 @@ maxTurns: 50
 **参考文件读取规则**：
 - 在执行审查前，先读取 `REVIEW_FRAMEWORK_PATH` 和 `REPORT_FORMAT_PATH`。
 - 如果任一路径为空、不是绝对路径、文件不存在或不可读，立即停止并向主 agent 返回失败原因和缺失路径；不得使用猜测路径继续生成审查结论。
-- 只有在主 agent 未注入这些字段的历史兼容场景，才允许回退读取当前 agent 文件相邻的 `../references/review-framework.md` 和 `../references/report-format.md`。
+- 只有在主 agent 未注入这些字段的历史兼容场景，才允许回退读取当前 agent 文件相邻的 `../references/languages/java/review-framework.md` 和 `../references/report-format.md`。
 
 **辅助数据**（参数表之后以独立章节注入）：
 - **项目概况**（`PROJECT_SCAN_RESULT`）：主agent在阶段三（项目预扫描）获取的项目结构、模块树、文件统计。**禁止重复执行 find 统计、文件计数等已完成操作**，直接利用这些数据确定审查范围。

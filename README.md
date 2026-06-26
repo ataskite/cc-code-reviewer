@@ -116,7 +116,7 @@ Scan 报告进入 Fix 前，人工审核候选问题：确认误报、补充上�
 
 | 文档 | 说明 |
 |------|------|
-| [审查维度与模式矩阵](references/review-framework.md) | 15 维度定义、技术栈匹配规则、模式 × 维度启用矩阵 |
+| [审查维度与模式矩阵](references/languages/java/review-framework.md) | 15 维度定义、技术栈匹配规则、模式 × 维度启用矩阵 |
 | [报告格式](references/report-format.md) | Scan 审查报告结构化输出规范 |
 | [飞书集成](references/feishu-integration.md) | 云文档上传、多维表格读写（基础字段（14 个）+ 预留字段 3 个，共 17 个字段）操作参考 |
 | [分批扫描](CLAUDE.md) | Maven 多模块 / 文件 token 分批规划与可恢复执行 |

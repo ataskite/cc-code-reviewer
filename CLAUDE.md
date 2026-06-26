@@ -69,6 +69,7 @@ flowchart TD
 - Batch mode: Auto-triggered for large stock reviews or when a Maven multi-module stock strategy is selected; uses deterministic planner scripts, dispatches parallel sub-agents, gates merge on current-run batch status, and reports included/leftover batches
 - Maven large-repo mode: for Maven multi-module stock full-code or selected-module reviews using `module-sequential` or `ai-planned`, creates `.cc-code-reviewer/runs/{RUN_ID}` with atomic module/directory batches, status files, resumable execution, and staged/full merge reports
 - File batch mode: for Maven single-module, Gradle, or unknown Java projects when `BATCH_MODE=true`, uses `phase11-plan-file-batches.sh` and `file-token-batching`
+- Feishu upload: after the review sub-agent returns the local report file (single-agent mode) or after batch merge (batch mode), the main skill performs all Feishu cloud-doc / bitable uploads per `FEISHU_UPLOAD_OPTION`; sub-agents never upload to Feishu
 - **Never** execute code review itself
 
 **Review Agent (`agents/cc-code-reviewer.md`)**:
@@ -76,7 +77,7 @@ flowchart TD
 - Apply project ignore rules before generating the final issue list, and disclose matched rules / filtered issue counts
 - In Maven large-repo batches, read `BATCH_PLAN_PATH`, keep formal findings inside `scan_roots`, and use `jdtls-lsp` semantic queries when `SEMANTIC_LEVEL=jdtls-lsp`
 - Generate structured report
-- Upload to Feishu (if requested)
+- Save local Markdown report only; never upload to Feishu (the main skill handles all Feishu uploads)
 - **Never** interact with user via AskUserQuestion
 
 **Ignore Skill (`skills/cc-code-ignore/SKILL.md`)**:
@@ -114,7 +115,11 @@ skills/cc-code-ignore/SKILL.md      # Scan ignore-rule maintenance skill
 skills/cc-code-fixer/SKILL.md       # Fix-stage skill definition
 agents/cc-code-reviewer.md          # Sub agent for review execution
 references/
-  ├── review-framework.md             # 15 dimensions definition + mode matrix
+  ├── languages/
+  │   ├── java/
+  │   │   └── review-framework.md     # Java 15 dimensions definition + mode matrix
+  │   └── frontend/
+  │       └── review-framework.md     # Frontend 11 dimensions (independent set)
   ├── report-format.md                # Report output format specification
   ├── feishu-integration.md           # Feishu upload operation reference
   ├── ignore-workflow.md              # Project-level ignore rule format and workflow
@@ -196,10 +201,10 @@ bash scripts/phase14-detect-model-context.sh opus
 
 1. **Script logic**: Edit `scripts/*.sh` files directly
 2. **Review flow**: Edit `skills/cc-code-reviewer/SKILL.md`
-3. **Review dimensions**: Edit `references/review-framework.md`
+3. **Review dimensions**: Edit `references/languages/java/review-framework.md`
 4. **Agent prompt**: Edit `agents/cc-code-reviewer.md`
 
-**Critical**: Keep mode × dimension matrix consistent between `review-framework.md` and `cc-code-reviewer.md`.
+**Critical**: Keep mode × dimension matrix consistent between `references/languages/java/review-framework.md` and `cc-code-reviewer.md`.
 
 **Critical**: When changing scan flow or batch behavior, keep `README.md`, `AGENTS.md`, `CLAUDE.md`, `references/examples.md`, `skills/cc-code-reviewer/SKILL.md`, `agents/cc-code-reviewer.md`, and `tests/test_contract_docs.sh` synchronized.
 

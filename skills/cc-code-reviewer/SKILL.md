@@ -345,7 +345,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJEC
 在调用子 agent 之前，必须基于插件根目录生成参考文件绝对路径，并校验文件可读：
 
 ```bash
-REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/review-framework.md"
+REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/java/review-framework.md"
 REPORT_FORMAT_PATH="${CLAUDE_PLUGIN_ROOT}/references/report-format.md"
 test -r "$REVIEW_FRAMEWORK_PATH"
 test -r "$REPORT_FORMAT_PATH"
@@ -998,7 +998,7 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-b
 | `DETECTED_TECH_STACK` | 从 `PROJECT_SCAN_RESULT` 的 `TECH_STACK:` 行解析，来源为 Maven/Gradle 依赖指纹 | `Spring Boot, MyBatis, Redis/Cache` |
 | `REVIEW_FILE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `76` |
 | `REVIEW_LINE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `16637` |
-| `REVIEW_FRAMEWORK_PATH` | `${CLAUDE_PLUGIN_ROOT}/references/review-framework.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/review-framework.md` |
+| `REVIEW_FRAMEWORK_PATH` | `${CLAUDE_PLUGIN_ROOT}/references/languages/java/review-framework.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/java/review-framework.md` |
 | `REPORT_FORMAT_PATH` | `${CLAUDE_PLUGIN_ROOT}/references/report-format.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/report-format.md` |
 | `GIT_LOG_OUTPUT` | phase5 脚本输出（仅增量） | `git log --oneline -N` |
 | `CHANGED_FILES_OUTPUT` | phase5 脚本输出（仅增量） | `git diff --name-only` |
