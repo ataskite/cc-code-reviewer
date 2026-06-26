@@ -202,7 +202,7 @@ maxTurns: 50
 - **第三步（生成报告）替换为发现清单输出**：不按 REPORT_FORMAT_PATH 生成完整报告，而是将结构化发现列表追加写入 `/tmp/review-batch-{BATCH_INDEX}-{PROJECT_NAME}.md`。格式见「Batch 发现清单输出格式」章节
 - **第三步之后（持久化报告文件）跳过**：`仅发现清单` 模式只输出发现清单，不生成完整报告、不落盘完整报告文件
 - **飞书上传跳过**：本子 agent 在任何输出模式下都不执行飞书上传；飞书上传由主 skill 统一处理
-- **第六步（输出最终汇总）替换**：仅输出简要完成信息 `✅ Batch {BATCH_INDEX}/{BATCH_COUNT} 完成：发现 {问题数} 个问题`，不输出完整报告
+- **第四步（输出最终汇总）替换**：仅输出简要完成信息 `✅ Batch {BATCH_INDEX}/{BATCH_COUNT} 完成：发现 {问题数} 个问题`，不输出完整报告
 
 当同时提供 `BATCH_PLAN_PATH` 与 `REVIEW_OUTPUT_MODE=仅发现清单` 时，`BATCH_PLAN_PATH` 优先级更高：必须读取计划文件并扫描 `scan_roots` / `units[].path`，不得使用 `BATCH_FILE_LIST` 覆盖或跳过阶段 A。当同时提供 `BATCH_PLAN_PATH` 与 `REVIEW_OUTPUT_MODE=仅发现清单` 时，不使用 `/tmp/review-batch-*` 输出路径，必须写入 `BATCH_RESULT_PATH`。
 
@@ -667,7 +667,7 @@ date +"%Y%m%d-%H%M%S"
    综合覆盖率 = (文件覆盖率 + 行覆盖率) / 2
    ```
 
-4. **在第六步汇总中报告**：
+4. **在第四步汇总中报告**：
    ```
    📊 审查覆盖：{实际扫描文件数}/{审查文件数量} 文件（{实际扫描行数}/{审查代码行数} 行），覆盖率 {综合覆盖率}%
    ```

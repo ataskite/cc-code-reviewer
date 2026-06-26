@@ -10,7 +10,7 @@
 
 ## 一、上传报告到飞书云文档
 
-**前置条件**：`FEISHU_UPLOAD_OPTION` 包含 `上传到云文档`，且审查报告生成完毕。
+**前置条件**：`FEISHU_UPLOAD_OPTION` 包含 `飞书云文档`，且审查报告生成完毕。
 
 ### 1.1 命令格式
 
@@ -75,7 +75,7 @@ lark-cli docs +create \
 
 ## 二、创建飞书多维表格
 
-**前置条件**：`FEISHU_UPLOAD_OPTION` 包含 `上传到多维表格`，且审查报告生成完毕。
+**前置条件**：`FEISHU_UPLOAD_OPTION` 包含 `飞书多维表格`，且审查报告生成完毕。
 
 必须优先按 `lark-base` skill 执行多维表格创建和写入。若需要直接参考 CLI 命令，只能使用 `lark-cli base ...` 子命令，不得使用旧版 `feishu_bitable_*` 工具。
 

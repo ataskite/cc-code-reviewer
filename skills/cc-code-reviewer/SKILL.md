@@ -456,7 +456,7 @@ test -r "$REPORT_FORMAT_PATH"
 |------|----------|-------------|
 | 审查文件数量 | REVIEW_FILE_COUNT（总量） | BATCH_FILE_COUNT（本批） |
 | 审查代码行数 | REVIEW_LINE_COUNT（总量） | BATCH_LINE_COUNT（本批） |
-| 报告保存方式 | 用户选择的值 | 固定"仅本地 Markdown 报告" |
+| 报告保存方式 | 不注入子 agent（飞书上传由主 skill 处理） | 不注入子 agent（飞书上传由主 skill 合并后处理） |
 | 批次编号 | 无 | BATCH_INDEX/BATCH_COUNT |
 | 审查输出模式 | 无（默认完整报告） | "仅发现清单" |
 | 文件列表来源 | agent 自行 Glob | 外部注入，agent 不扫描 |
@@ -511,7 +511,7 @@ test -r "$REPORT_FORMAT_PATH"
 
 ### 步骤 2：选择审查报告保存方式（条件步骤）
 
-**触发条件**：LARK_PLUGIN_INSTALLED=true。不满足时跳过，设 FEISHU_UPLOAD_OPTION=仅本地 Markdown 报告。
+**触发条件**：LARK_PLUGIN_INSTALLED=true。不满足时跳过，设 FEISHU_UPLOAD_OPTION=本地 Markdown 报告。
 
 报告保存方式为多选。用户可选择本地 Markdown 报告、飞书云文档和飞书多维表格中的任意一个或多个，支持任意组合多选。
 
@@ -799,7 +799,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 
 **用户确认后的启动提示**：
 
-**BATCH_MODE=false 时**（与现有设计一致）：
+**BATCH_MODE=false 时**（子 agent 只审查+落盘报告，主 skill 接管飞书上传）：
 
 ```
 🚀 正在启动独立代码审查子代理...
@@ -1120,8 +1120,8 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 
 #### 步骤 2：按 FEISHU_UPLOAD_OPTION 执行飞书上传
 
-- **包含 `上传到云文档`**：通过 `lark-cli` + `lark-doc` skill 创建飞书云文档。CLI 固定使用 `lark-cli docs +create --api-version v2 --doc-format markdown --content @{REPORT_BASENAME}`，先 `cd` 到报告文件所在目录再用相对文件名。文档标题由 Markdown 一级标题承载，不要传 `--title`。从响应 `data.doc_url` 提取云文档链接 `DOC_URL`。详细步骤见 `${CLAUDE_PLUGIN_ROOT}/references/feishu-integration.md`「上传报告到飞书云文档」章节。
-- **包含 `上传到多维表格`**：通过 `lark-cli` + `lark-base` skill 创建飞书多维表格并录入问题清单。按 17 字段定义创建表 → 重命名默认主字段为"备注" → 创建其余 16 字段 → 批量录入问题数据（从子 agent 返回的完整报告内容中解析各级别问题）→ 清理默认字段。从响应提取多维表格链接 `BASE_URL`。详细步骤见 `${CLAUDE_PLUGIN_ROOT}/references/feishu-integration.md`「创建飞书多维表格」章节。
+- **包含 `飞书云文档`**：通过 `lark-cli` + `lark-doc` skill 创建飞书云文档。CLI 固定使用 `lark-cli docs +create --api-version v2 --doc-format markdown --content @{REPORT_BASENAME}`，先 `cd` 到报告文件所在目录再用相对文件名。文档标题由 Markdown 一级标题承载，不要传 `--title`。从响应 `data.doc_url` 提取云文档链接 `DOC_URL`。详细步骤见 `${CLAUDE_PLUGIN_ROOT}/references/feishu-integration.md`「上传报告到飞书云文档」章节。
+- **包含 `飞书多维表格`**：通过 `lark-cli` + `lark-base` skill 创建飞书多维表格并录入问题清单。按 17 字段定义创建表 → 重命名默认主字段为"备注" → 创建其余 16 字段 → 批量录入问题数据（从子 agent 返回的完整报告内容中解析各级别问题）→ 清理默认字段。从响应提取多维表格链接 `BASE_URL`。详细步骤见 `${CLAUDE_PLUGIN_ROOT}/references/feishu-integration.md`「创建飞书多维表格」章节。
 - **只含 `本地 Markdown 报告`、或值为 `lark-cli未安装` / `飞书上传不可用`**：跳过飞书上传，直接进入步骤 3 的「未上传飞书」分支。
 
 #### 步骤 3：输出最终汇总
@@ -1142,8 +1142,8 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 
 {按实际 FEISHU_UPLOAD_OPTION 展示对应链接；如果包含 `本地 Markdown 报告`，同时展示本地报告路径}
 📄 本地报告：{REPORT_FILE_PATH}
-📄 审查报告：{DOC_URL}  ← 仅包含上传到云文档时显示
-📋 问题清单：{BASE_URL}  ← 仅包含上传到多维表格时显示
+📄 审查报告：{DOC_URL}  ← 仅包含飞书云文档时显示
+📋 问题清单：{BASE_URL}  ← 仅包含飞书多维表格时显示
 
 💡 建议：{一句话关键建议}
 👉 详细报告请点击上方飞书链接查看。
@@ -1183,7 +1183,7 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 ### 条件步骤规则
 
 - **单模块项目自动跳过步骤4**：`PROJECT_TYPE` 为 `*-single` 且选择存量审查时，自动设 `REVIEW_SCOPE=全量代码`
-- **lark-cli 检测**：lark-cli、lark-doc、lark-base 任一不可用时自动设 `FEISHU_UPLOAD_OPTION=仅本地 Markdown 报告`
+- **lark-cli 检测**：lark-cli、lark-doc、lark-base 任一不可用时自动设 `FEISHU_UPLOAD_OPTION=本地 Markdown 报告`
 - **Git 分支选择**：仅在 Git 仓库且多分支时执行前置分支选择步骤
 - **飞书保存执行**：主 skill 使用 `lark-doc`/`lark-base` skill，通过 `lark-cli` 执行；子 agent 不执行飞书上传，只返回本地报告文件路径由主 skill 统一上传
 
