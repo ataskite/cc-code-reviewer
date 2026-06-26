@@ -112,12 +112,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/scan-project.sh" "$PROJEC
 
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/detect-code-intelligence.sh" "$PROJECT_DIR"
 # 输出 CODE_INTELLIGENCE_PROVIDER=typescript-lsp|none（覆盖 scan-project 的占位）
+# 主 skill 据此派生 SEMANTIC_LEVEL：CODE_INTELLIGENCE_PROVIDER=typescript-lsp → SEMANTIC_LEVEL=typescript-lsp；否则 SEMANTIC_LEVEL=none
 
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
 # 复用 lark-cli 检测
 ```
 
-> 前端分支下，后续交互步骤（模式/报告/入口/范围/确认）、增量预处理（phase5）、模型侦测（phase14）、分批、合并、报告保存、飞书输出**全部复用现有流程**；差异仅在：预扫描数据来自前端 PROFILE，分批用 `scripts/core/plan-file-batches.sh` + source manifest，合并用 `scripts/core/merge-batch-results.sh`，子 agent 用 `cc-code-reviewer-frontend`。
+> 前端分支下，后续交互步骤（模式/报告/入口/范围/确认）、增量预处理（phase5）、模型侦测（phase14）、分批、合并、报告保存、飞书输出**全部复用现有流程**；差异仅在：预扫描数据来自前端 PROFILE，`SEMANTIC_LEVEL` 从 `CODE_INTELLIGENCE_PROVIDER` 派生（`typescript-lsp`/`none`，非 Java 的 `jdtls-lsp`/`maven-static`），分批用 `scripts/core/plan-file-batches.sh` + source manifest，合并用 `scripts/core/merge-batch-results.sh`，子 agent 用 `cc-code-reviewer-frontend`。
 
 ### 第三步之后：读取项目级 ignore 规则
 
@@ -166,15 +167,20 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 - 可用分支：{分支数量} 个{分支数 > 1 时显示"（需选择）"，否则显示"（自动使用）"}
 
 📊 规模：
+{LANGUAGE_ID=java 时}
 - Java 文件（src/main/java）：{N} 个
 - 代码行数（src/main/java）：{M} 行
 {多模块时追加以下行}
 - 模块数量：{K} 个
 - 模块列表：{模块1名称}({n1}类), {模块2名称}({n2}类), ...
+{LANGUAGE_ID=frontend 时}
+- 前端源码文件（src 下 .ts/.tsx/.js/.jsx）：{SOURCE_FILE_COUNT} 个
+- 代码行数：{SOURCE_LINE_COUNT} 行
+- 配置文件：{FORMAL_CONFIG_FILE_COUNT} 个
 
 🧩 技术栈扫描：
 - 识别数量：{解析 `TECH_STACK:` 行数量；未识别专项技术栈时显示 0}
-- 启用专项规则：{识别到专项技术栈时显示 "是"，否则显示 "否，仅启用通用 Java 审查规则"}
+- 启用专项规则：{识别到专项技术栈时显示 "是"，否则显示 "否，仅启用通用{LANGUAGE_ID=java 时显示 Java，frontend 时显示前端}审查规则"}
 
 {识别到 TECH_STACK 且 dependency != none 时展示以下表格，最多展示 12 个}
 | 技术栈 | 识别证据 | 建议维度 | 专项规则 |
@@ -185,19 +191,19 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 - 另有 {N} 个技术栈未在摘要表中展示，完整结果已注入子 agent。
 
 {未识别专项技术栈时展示}
-- 未识别专项技术栈，仅启用通用 Java 审查规则。
+- 未识别专项技术栈，仅启用通用{LANGUAGE_ID=java 时显示 Java，frontend 时显示前端}审查规则。
 
 🔌 lark-cli：{LARK_PLUGIN_INSTALLED=true 时显示 "✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书保存" / false 时显示 "⚠️ 飞书保存不可用：{LARK_PLUGIN_REASON}，报告将仅保存到本地文件"}
 
-🧠 代码智能：{CODE_INTELLIGENCE_AVAILABLE=true 时显示 "✅ jdtls-lsp 可用，可用于跨目录调用链理解" / false 时显示 "⚠️ 未启用 jdtls-lsp，将使用 Maven 静态依赖分批；建议安装 jdtls 并启用 jdtls-lsp 提升跨模块理解质量"}
+🧠 代码智能：{LANGUAGE_ID=java 时，CODE_INTELLIGENCE_AVAILABLE=true 显示 "✅ jdtls-lsp 可用，可用于跨目录调用链理解" / false 显示 "⚠️ 未启用 jdtls-lsp，将使用 Maven 静态依赖分批；建议安装 jdtls 并启用 jdtls-lsp 提升跨模块理解质量"}{LANGUAGE_ID=frontend 时，CODE_INTELLIGENCE_PROVIDER=typescript-lsp 显示 "✅ typescript-lsp 可用，可用于跨目录调用链理解" / none 显示 "⚠️ 未启用 typescript-lsp，将使用 import graph + 配置 + 文本检索静态分析；建议启用 typescript-lsp 提升跨文件理解质量"}
 
 🧩 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "✅ 已启用：.cc-code-reviewer/ignore/issues.yml（已忽略 {IGNORE_RULE_COUNT} 个问题）" / false 且文件不存在时显示 "未配置" / false 且不可读时显示 "⚠️ 文件存在但不可读：{原因}"}
 ```
 
 **技术栈扫描展示规则**：
-- 数据来源：phase3 输出中的 `TECH_STACK:{技术栈}|dependency:{命中依赖或 file:路径}|dimensions:{建议维度}|rules:{专项规则}` 行
+- 数据来源：{LANGUAGE_ID=java 时为 phase3 输出；LANGUAGE_ID=frontend 时为前端 scan-project.sh 输出}中的 `TECH_STACK:{技术栈}|dependency:{命中依赖或 file:路径}|dimensions:{建议维度}|rules:{专项规则}` 行
 - 必须逐行解析所有 `TECH_STACK:` 行，`PROJECT_SCAN_RESULT` 注入子 agent 时仍保留完整原文
-- `dependency:none` 表示未识别专项技术栈，不展示表格，只展示通用 Java 审查规则提示
+- `dependency:none` 表示未识别专项技术栈，不展示表格，只展示通用审查规则提示
 - `dependency:file:` 表示通过配置文件识别，摘要中的识别证据展示为 `文件:{路径}`
 - 识别证据超过 80 字可截断，但不得截断技术栈名称、建议维度和专项规则
 - 摘要表最多展示 12 个技术栈；超过 12 个时追加 `另有 {N} 个技术栈未在摘要表中展示，完整结果已注入子 agent。`
@@ -447,9 +453,17 @@ test -r "$REPORT_FORMAT_PATH"
 ### 本批审查边界
 请读取 `BATCH_PLAN_PATH`，以其中 `scan_roots` 作为正式审查边界。
 若批次计划包含 `units`，以 `units[].path` / `units[].scan_roots` 对应的 `scan_roots` 为准；`context_roots` are read-only context，只能用于理解依赖关系。
+
+**LANGUAGE_ID=java 时**：
 正式扫描文件必须限定为 `scan_roots` 内的 `src/main/java` 生产源码；`src/test/java` 只能作为测试质量判断的只读上下文，不计入已审查 Java 文件，也不得作为正式问题位置。
 `SEMANTIC_LEVEL=jdtls-lsp` 时表示 jdtls-lsp 可用时必须使用：本批子 agent 必须用 jdtls 查询 definition、references、implementations、call hierarchy 来理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `scan_roots` 内的 `src/main/java` 生产源码。
 `SEMANTIC_LEVEL=maven-static` 时才允许回退 Maven 静态依赖与文本检索。
+
+**LANGUAGE_ID=frontend 时**：
+正式扫描文件必须限定为 `scan_roots` 内的 `src/` 下生产源码（`.ts/.tsx/.js/.jsx`）；测试文件（`*.test.*`/`*.spec.*`/`__tests__`/`e2e`/`cypress`）、产物（`dist`/`build`）、`.d.ts` 只能作为只读上下文，不计入已审查前端文件，也不得作为正式问题位置。
+`SEMANTIC_LEVEL=typescript-lsp` 时必须用 TS LSP 查询 definition/references/implementations/diagnostics 理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `scan_roots` 内的生产源码。
+`SEMANTIC_LEVEL=none` 时才允许回退 import graph + 配置 + 文本检索静态分析。
+
 如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」。
 
 ### 项目概况（预扫描结果）
@@ -553,7 +567,7 @@ test -r "$REPORT_FORMAT_PATH"
   - label: "增量审查"
     description: "审查最近 N 次提交的变更文件及其关联代码"
   - label: "全量审查"
-    description: "审查当前分支的全部 Java 代码，适合历史遗留项目或周期性巡检"
+    description: "审查当前分支的全部代码，适合历史遗留项目或周期性巡检"
   - label: "指定模块"
     description: "只审查本次选择的一个或多个模块，适合大仓库分阶段推进"
 - multiSelect: false
@@ -1005,7 +1019,7 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-b
 | `REVIEW_SCOPE` | 交互步骤4 | `最近5次提交` / `全量代码` / `yudao-module-mes,yudao-framework` |
 | `STOCK_REVIEW_STRATEGY` | 交互步骤4B（仅 Maven 多模块存量） | `module-sequential` / `ai-planned` |
 | `PROJECT_SCAN_RESULT` | phase3 完整输出 | 项目概况、模块结构 |
-| `SEMANTIC_LEVEL` | phase10 输出转换：`CODE_INTELLIGENCE_AVAILABLE=true` 时为 `jdtls-lsp`，否则为 `maven-static` | `jdtls-lsp` |
+| `SEMANTIC_LEVEL` | Java：phase10 输出转换（`CODE_INTELLIGENCE_AVAILABLE=true` → `jdtls-lsp`，否则 `maven-static`）；前端：`detect-code-intelligence.sh` 输出转换（`CODE_INTELLIGENCE_PROVIDER=typescript-lsp` → `typescript-lsp`，否则 `none`） | `jdtls-lsp` / `typescript-lsp` |
 | `DETECTED_TECH_STACK` | 从 `PROJECT_SCAN_RESULT` 的 `TECH_STACK:` 行解析，来源为 Maven/Gradle 依赖指纹 | `Spring Boot, MyBatis, Redis/Cache` |
 | `REVIEW_FILE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `76` |
 | `REVIEW_LINE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `16637` |
