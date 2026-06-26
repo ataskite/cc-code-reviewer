@@ -356,8 +356,8 @@ test -r "$REPORT_FORMAT_PATH"
 ### 第七步：调用子 agent 执行代码审查
 
 **分支判断**：
-- BATCH_MODE=false → 执行「路径 A：单 agent 模式」（现有逻辑不变）
-- BATCH_MODE=true → 执行「路径 B：分批并行模式」（新增逻辑）
+- BATCH_MODE=false → 执行「路径 A：单 agent 模式」（子 agent 只审查+落盘报告，飞书上传由主 skill 接管）
+- BATCH_MODE=true → 执行「路径 B：分批并行模式」（子 agent 仅输出发现清单，合并与上传由主 skill 处理）
 
 #### 路径 A：单 agent 模式（BATCH_MODE=false）
 
@@ -418,7 +418,6 @@ test -r "$REPORT_FORMAT_PATH"
 | 审查范围 | {REVIEW_SCOPE} |
 | 审查模式 | {REVIEW_MODE} |
 | 审查模型 | {REVIEW_MODEL} |
-| 报告保存方式 | 仅本地 Markdown 报告 |
 | 审查文件数量 | {BATCH_FILE_COUNT} |
 | 审查代码行数 | {BATCH_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
@@ -810,7 +809,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 📌 子代理将独立执行完整审查流程，完成后自动返回结果。
 
 {选择飞书输出时追加}
-📤 审查完成后将自动保存到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
+📤 审查完成后将由主代理保存到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
 
 💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
 ```
@@ -826,7 +825,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 📌 本轮 {RUN_BATCH_COUNT 或 BATCH_COUNT} 批次将按 {CONCURRENCY} 路并发执行；未调度批次保持 pending，完成后生成阶段性或完整合并结果。
 
 {选择飞书输出时追加}
-📤 审查完成后将自动保存到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
+📤 审查完成后将由主代理保存到飞书（{FEISHU_UPLOAD_OPTION}），无需手动操作。
 
 💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
 ```
@@ -948,7 +947,6 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-b
 | 审查范围 | {REVIEW_SCOPE} |
 | 审查模式 | {REVIEW_MODE} |
 | 审查模型 | {REVIEW_MODEL} |
-| 报告保存方式 | {FEISHU_UPLOAD_OPTION} |
 | 审查文件数量 | {REVIEW_FILE_COUNT} |
 | 审查代码行数 | {REVIEW_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
@@ -1104,35 +1102,58 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 
 ### 子 agent 返回结果处理
 
-**BATCH_MODE=false 时**：直接使用子 agent 返回的结果，按下方现有逻辑处理（已上传飞书 / 未上传飞书 / 上传失败降级）。
+**BATCH_MODE=false 时**：子 agent 不执行飞书上传，只返回本地报告文件绝对路径 + 完整报告内容 + 结构化摘要（覆盖率/问题统计/最高风险项/一句话建议）。主 skill 接收返回结果后，执行下方「单 agent 模式报告保存与飞书上传」章节。
 
 **BATCH_MODE=true 时**：子 agent 返回结果仅用于进度确认。实际合并和输出由「第五步之后：报告合并」章节处理。每个 batch agent 完成后输出 `✅ Batch {BATCH_INDEX}/{BATCH_COUNT} 完成`，全部完成后进入合并流程。
 
 ---
 
-**已上传飞书时**：
+### 单 agent 模式报告保存与飞书上传（BATCH_MODE=false）
+
+**前置条件**：子 agent 已返回本地报告文件绝对路径（`REPORT_FILE_PATH`）+ 完整报告内容 + 结构化摘要。本地 Markdown 报告文件已由子 agent 落盘，主 skill 无需重新 Write。
+
+主 skill 按以下顺序处理报告保存与飞书上传，该流程与分批模式的「合并后报告保存」复用同一份 `references/feishu-integration.md` 操作规范：
+
+#### 步骤 1：标题校验（上传前置）
+
+从子 agent 返回的 `REPORT_FILE_PATH` 读取该 Markdown 文件，校验第一条非空内容是一级标题（形如 `# 代码审查报告 - {PROJECT_NAME}`）。不得上传会在飞书显示为 `untitled` 的无标题内容；校验不通过时必须先修正本地报告文件标题行再执行上传。
+
+#### 步骤 2：按 FEISHU_UPLOAD_OPTION 执行飞书上传
+
+- **包含 `上传到云文档`**：通过 `lark-cli` + `lark-doc` skill 创建飞书云文档。CLI 固定使用 `lark-cli docs +create --api-version v2 --doc-format markdown --content @{REPORT_BASENAME}`，先 `cd` 到报告文件所在目录再用相对文件名。文档标题由 Markdown 一级标题承载，不要传 `--title`。从响应 `data.doc_url` 提取云文档链接 `DOC_URL`。详细步骤见 `${CLAUDE_PLUGIN_ROOT}/references/feishu-integration.md`「上传报告到飞书云文档」章节。
+- **包含 `上传到多维表格`**：通过 `lark-cli` + `lark-base` skill 创建飞书多维表格并录入问题清单。按 17 字段定义创建表 → 重命名默认主字段为"备注" → 创建其余 16 字段 → 批量录入问题数据（从子 agent 返回的完整报告内容中解析各级别问题）→ 清理默认字段。从响应提取多维表格链接 `BASE_URL`。详细步骤见 `${CLAUDE_PLUGIN_ROOT}/references/feishu-integration.md`「创建飞书多维表格」章节。
+- **只含 `本地 Markdown 报告`、或值为 `lark-cli未安装` / `飞书上传不可用`**：跳过飞书上传，直接进入步骤 3 的「未上传飞书」分支。
+
+#### 步骤 3：输出最终汇总
+
+根据是否完成飞书上传，套用对应模板。模板中的统计字段（问题总数/P0数/覆盖率/最高风险项/一句话建议）从子 agent 返回的结构化摘要中提取，链接字段从步骤 2 的上传结果中提取。
+
+**已上传飞书时**（FEISHU_UPLOAD_OPTION 包含云文档或多维表格，且上传成功）：
 
 ```
 ✅ 代码审查已完成！⏱️ 耗时 {X} 分 {Y} 秒
 
+📊 审查覆盖：{实际扫描文件数}/{审查文件数量} 文件（{实际扫描行数}/{审查代码行数} 行），覆盖率 {覆盖率}%
 📊 审查结果：{问题总数} 个问题（P0: {n} / P1: {n} / P2: {n} / P3: {n} / 待确认: {n}）
 
 🔥 最高风险项：
   - P0-1: {问题一句话描述} — {位置}
   （最多列 5 条）
 
-📄 审查报告：{链接}
-📋 问题清单：{链接}
+{按实际 FEISHU_UPLOAD_OPTION 展示对应链接；如果包含 `本地 Markdown 报告`，同时展示本地报告路径}
+📄 本地报告：{REPORT_FILE_PATH}
+📄 审查报告：{DOC_URL}  ← 仅包含上传到云文档时显示
+📋 问题清单：{BASE_URL}  ← 仅包含上传到多维表格时显示
 
 💡 建议：{一句话关键建议}
 👉 详细报告请点击上方飞书链接查看。
 ```
 
-**未上传飞书时**：
+**未上传飞书时**（FEISHU_UPLOAD_OPTION 为本地 Markdown / lark-cli未安装 / 飞书上传不可用）：
 
 ```
 📄 审查报告已保存到本地文件：
-   {PROJECT_DIR}/code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
+   {REPORT_FILE_PATH}
 
 {完整报告内容}
 
@@ -1140,11 +1161,14 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 
 ✅ 代码审查已完成！⏱️ 耗时 {X} 分 {Y} 秒
 
-📊 审查结果：{从报告中提取问题总数}
-💡 建议：{从报告中提取一句话关键建议}
+📊 审查覆盖：{实际扫描文件数}/{审查文件数量} 文件（{实际扫描行数}/{审查代码行数} 行），覆盖率 {覆盖率}%
+📊 审查结果：{问题总数} 个问题（P0: {n} / P1: {n} / P2: {n} / P3: {n} / 待确认: {n}）
+💡 建议：{一句话关键建议}
 ```
 
-**飞书保存失败时**：降级为本地报告模式，输出完整报告并说明失败原因。
+#### 失败降级
+
+如果飞书上传任一步骤失败（云文档创建失败、多维表格创建/录入失败），降级为「未上传飞书」分支：展示子 agent 返回的本地报告文件路径 + 完整报告内容，并说明上传失败原因。本地报告文件已由子 agent 落盘，主 skill 无需重新生成。
 
 ---
 
@@ -1161,7 +1185,7 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merg
 - **单模块项目自动跳过步骤4**：`PROJECT_TYPE` 为 `*-single` 且选择存量审查时，自动设 `REVIEW_SCOPE=全量代码`
 - **lark-cli 检测**：lark-cli、lark-doc、lark-base 任一不可用时自动设 `FEISHU_UPLOAD_OPTION=仅本地 Markdown 报告`
 - **Git 分支选择**：仅在 Git 仓库且多分支时执行前置分支选择步骤
-- **飞书保存执行**：子 agent 使用 `lark-doc`/`lark-base` skill，通过 `lark-cli` 执行
+- **飞书保存执行**：主 skill 使用 `lark-doc`/`lark-base` skill，通过 `lark-cli` 执行；子 agent 不执行飞书上传，只返回本地报告文件路径由主 skill 统一上传
 
 ---
 
