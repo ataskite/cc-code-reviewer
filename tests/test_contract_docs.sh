@@ -707,9 +707,9 @@ grep -q "语言探测与路由" "$SKILL_FILE"
 grep -q "CANDIDATE_LANGUAGE:frontend" "$SKILL_FILE"
 grep -q "cc-code-reviewer-frontend" "$SKILL_FILE"
 # 前端 agent 必须被实际 dispatch（subagent_type 按 LANGUAGE_ID 选择，不能只硬编码 Java agent）
-grep -q 'cc-code-reviewer-frontend:cc-code-reviewer-frontend' "$SKILL_FILE"
-# 前端 agent 在三处 dispatch 点都必须按 LANGUAGE_ID 条件化（至少出现 3 次）
-FRONTEND_DISPATCH_COUNT="$(grep -c 'cc-code-reviewer-frontend:cc-code-reviewer-frontend' "$SKILL_FILE")"
+grep -q 'cc-code-reviewer:cc-code-reviewer-frontend' "$SKILL_FILE"
+# 前端 agent 在 dispatch 点必须按 LANGUAGE_ID 条件化（至少出现 2 次）
+FRONTEND_DISPATCH_COUNT="$(grep -c 'cc-code-reviewer:cc-code-reviewer-frontend' "$SKILL_FILE")"
 test "$FRONTEND_DISPATCH_COUNT" -ge 2
 
 # 前端矩阵与 React 规则必须被前端 Agent 引用
