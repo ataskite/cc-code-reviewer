@@ -4,6 +4,13 @@ set -euo pipefail
 PROJECT_DIR="${1:?请输入项目路径}"
 RUNS_ROOT="$PROJECT_DIR/.cc-code-reviewer/runs"
 
+# 复用语言中立的耗时模型（ceil_div / target_review_minutes / TARGET_REVIEW_COST_BASE），
+# 与单 agent 预估耗时（scripts/core/estimate-review-minutes.sh）保持单一真相源。
+# shellcheck source=core/estimate-review-minutes.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/core/estimate-review-minutes.sh"
+
 json_get() {
   local file="$1"
   local key="$2"
@@ -152,25 +159,14 @@ status_label() {
   esac
 }
 
-ceil_div() {
-  local numerator="${1:-0}"
-  local denominator="${2:-1}"
-  if [ "$denominator" -le 0 ]; then
-    denominator=1
-  fi
-  echo $(((numerator + denominator - 1) / denominator))
-}
+# ceil_div 已由 core/estimate-review-minutes.sh 提供（source 引入），此处不再重复定义
 
 TARGET_REVIEW_COST_BASE=52000
 TARGET_REVIEW_COST="$TARGET_REVIEW_COST_BASE"
 
 target_batch_minutes() {
-  case "${1:-standard}" in
-    fast) echo 4 ;;
-    deep) echo 15 ;;
-    security) echo 10 ;;
-    *) echo 8 ;;
-  esac
+  # 委托给共享实现（单一真相源），保留函数名以兼容既有调用点与 plan.json 语义
+  target_review_minutes "$@"
 }
 
 batch_estimate_minutes() {
@@ -184,10 +180,13 @@ batch_estimate_minutes() {
   planned_loc="${planned_loc:-0}"
   planned_files="${planned_files:-0}"
   if [ "$planned_cost" -le 0 ]; then
-    planned_cost=$((planned_loc + planned_files * 25))
+    # 与 core/estimate-review-minutes.sh 的 review_cost_of 一致：loc + files × 25
+    planned_cost="$(review_cost_of "$planned_loc" "$planned_files")"
   fi
-  target_minutes="$(target_batch_minutes "$review_mode")"
+  target_minutes="$(target_review_minutes "$review_mode")"
   local minutes
+  # 注意：批次模式使用从 plan.json budget 读取的动态 TARGET_REVIEW_COST（随 CONTEXT_SCALE 缩放），
+  # 因此不复用 core 的 estimate_review_minutes（它用固定基准），而是就地保留历史算式，保证输出逐字节不变。
   minutes="$(ceil_div $((planned_cost * target_minutes)) "$TARGET_REVIEW_COST")"
   if [ "$minutes" -lt 1 ]; then
     minutes=1
