@@ -411,13 +411,13 @@ require_literal "$AGENT_FILE" "context_roots are read-only context" "agent must 
 require_literal "$AGENT_FILE" '`src/main/java` 生产 Java 文件作为本批正式审查范围' "batch agent must scan only production Java sources"
 require_literal "$AGENT_FILE" '`src/test/java` 只能作为测试质量判断的只读上下文' "batch agent must keep test sources contextual"
 
-require_match "planner 必须定义目标批次成本（基于 52000 基准 × scale）" '52000 \* CONTEXT_SCALE' "$ROOT_DIR/scripts/phase11-plan-large-batches.sh"
-require_match "planner 必须定义硬上限成本（基于 65000 基准 × scale）" '65000 \* CONTEXT_SCALE' "$ROOT_DIR/scripts/phase11-plan-large-batches.sh"
-require_match "planner 必须接收 CONTEXT_SCALE 参数" "CONTEXT_SCALE" "$ROOT_DIR/scripts/phase11-plan-large-batches.sh"
-require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "review_cost" "planner must compute review cost"
-require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "context_roots" "planner must emit context roots"
-require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "semantic-cost-batching" "planner must emit semantic-cost strategy"
-require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "SELECTED_MODULE_OUTSIDE_PROJECT" "planner must reject selected modules outside project root"
+require_match "planner 必须定义目标批次成本（基于 52000 基准 × scale）" '52000 \* CONTEXT_SCALE' "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh"
+require_match "planner 必须定义硬上限成本（基于 65000 基准 × scale）" '65000 \* CONTEXT_SCALE' "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh"
+require_match "planner 必须接收 CONTEXT_SCALE 参数" "CONTEXT_SCALE" "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "review_cost" "planner must compute review cost"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "context_roots" "planner must emit context roots"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "semantic-cost-batching" "planner must emit semantic-cost strategy"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "SELECTED_MODULE_OUTSIDE_PROJECT" "planner must reject selected modules outside project root"
 require_match "status 须定义批次成本基准（随 CONTEXT_SCALE 缩放）" 'TARGET_REVIEW_COST' "$ROOT_DIR/scripts/core/show-batch-status.sh"
 require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "RUN_BATCH_IDS" "merge must honor the current-run batch set"
 require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "[合并阻塞]" "merge must report blocked current-run batches"
@@ -624,11 +624,11 @@ require_literal "$SKILL_FILE" "RUNNABLE_COUNT=1" "single runnable batch must ski
 require_literal "$SKILL_FILE" "不调用 AskUserQuestion" "single runnable batch must not ask for batch selection"
 require_literal "$SKILL_FILE" "但描述里又显示" "batch options must not show impossible fixed limits"
 require_literal "$ROOT_DIR/scripts/core/show-batch-status.sh" "display_dynamic_plan_rows" "batch status script must render dynamic execution plans"
-require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "large planner run dir must be timestamp-branch-mode only"
-require_literal "$ROOT_DIR/scripts/phase11-plan-file-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "file planner run dir must be timestamp-branch-mode only"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "large planner run dir must be timestamp-branch-mode only"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-file-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "file planner run dir must be timestamp-branch-mode only"
 require_literal "$SKILL_FILE" '`RUN_DIR` 目录名固定为 `{YYYYMMDD-HHMMSS}-{branch_slug}-{REVIEW_MODE}`' "skill contract must document concise run directory naming"
 require_literal "$SKILL_FILE" '审查范围、分批策略和任务类型必须从 `plan.json` 读取' "scope and strategy must live in plan.json instead of run dir name"
-if grep -q 'RUN_ID=.*large-maven\|RUN_ID=.*file-batches\|RUN_SCOPE_SLUG\|RUN_STRATEGY_SLUG' "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$ROOT_DIR/scripts/phase11-plan-file-batches.sh"; then
+if grep -q 'RUN_ID=.*large-maven\|RUN_ID=.*file-batches\|RUN_SCOPE_SLUG\|RUN_STRATEGY_SLUG' "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$ROOT_DIR/scripts/languages/java/plan-file-batches.sh"; then
   echo "run directory name must not include scope, strategy, or batch-type suffixes" >&2
   exit 1
 fi
