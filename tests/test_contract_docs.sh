@@ -85,7 +85,7 @@ grep -q "| 技术栈 | 识别证据 | 建议维度 | 专项规则 |" "$SKILL_FIL
 grep -q "dependency:file:" "$SKILL_FILE"
 grep -q "另有 {N} 个" "$SKILL_FILE"
 grep -q "完整结果已注入子 agent" "$SKILL_FILE"
-grep -q "phase5-preview-recent-commits" "$SKILL_FILE"
+grep -q "preview-recent-commits" "$SKILL_FILE"
 grep -q "最近提交概览" "$SKILL_FILE"
 grep -q "prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据" "$SKILL_FILE"
 grep -q "| 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |" "$SKILL_FILE"
@@ -153,7 +153,7 @@ require_literal "$ROOT_DIR/references/languages/java/review-framework.md" "P0 �
 require_literal "$ROOT_DIR/references/report-format.md" "P0 证据门槛" "report format must require P0 gate evidence"
 require_literal "$ROOT_DIR/references/report-format.md" '**置信度**：高 | **所属维度**：维度名称' "P0 report template must require high confidence"
 
-grep -q "phase9-collect-fix-metadata" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
+grep -q "collect-fix-metadata" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
 if [ ! -f "$ARCHITECTURE_PNG" ]; then
   echo "架构总览图缺失: $ARCHITECTURE_PNG" >&2
   exit 1
@@ -212,7 +212,7 @@ if grep -q "请提供本次待修复问题确认清单的来源" "$FIX_WORKFLOW_
 fi
 grep -q "本地 Markdown 必须直接读取文件内容" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
 grep -q "不得使用 Python 脚本读取飞书云文档或飞书多维表格" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_FEISHU_FILE"
-grep -q "飞书云文档和飞书多维表格不得调用.*phase6-detect-fix-input" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
+grep -q "飞书云文档和飞书多维表格不得调用.*detect-fix-input" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
 grep -q "状态过滤" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_FEISHU_FILE"
 grep -q "STATUS_FILTERED_ISSUES" "$FIX_WORKFLOW_FILE"
 grep -q "SKIPPED_STATUS_COUNTS" "$FIX_WORKFLOW_FILE"
@@ -322,8 +322,8 @@ if grep -q "$QUICK_START_CN" "$FIX_EXAMPLES_FILE"; then
 fi
 
 grep -q "模式判定" "$FIX_SKILL_FILE"
-grep -q "phase6-detect-fix-input" "$FIX_SKILL_FILE"
-grep -q "phase7-detect-superpowers" "$FIX_SKILL_FILE"
+grep -q "detect-fix-input" "$FIX_SKILL_FILE"
+grep -q "detect-superpowers" "$FIX_SKILL_FILE"
 grep -q "修复输入解析完成" "$FIX_SKILL_FILE"
 grep -q "AskUserQuestion" "$FIX_SKILL_FILE"
 grep -q "待修复问题确认清单" "$FIX_SKILL_FILE"
@@ -380,10 +380,10 @@ require_match "marketplace.json 描述必须包含 report-driven fixing" "report
 
 # === Maven large repository batching contracts ===
 
-grep -q "phase10-detect-code-intelligence.sh" "$SKILL_FILE"
-grep -q "phase11-plan-large-batches.sh" "$SKILL_FILE"
-grep -q "phase12-merge-large-batches.sh" "$SKILL_FILE"
-grep -q "phase13-show-large-batch-status.sh" "$SKILL_FILE"
+grep -q "languages/java/detect-code-intelligence.sh" "$SKILL_FILE"
+grep -q "languages/java/plan-large-batches.sh" "$SKILL_FILE"
+grep -q "core/merge-batch-results.sh" "$SKILL_FILE"
+grep -q "core/show-batch-status.sh" "$SKILL_FILE"
 
 grep -q "Maven 多模块" "$SKILL_FILE"
 grep -q "存量审查" "$SKILL_FILE"
@@ -520,9 +520,9 @@ if grep -q "模块超过 10 个时展示前 9 个" "$SKILL_FILE"; then
   exit 1
 fi
 require_literal "$SKILL_FILE" "Maven 多模块项目不得使用内联 Bash 数组分批" "Maven batch planning must use deterministic planner scripts"
-require_literal "$SKILL_FILE" "phase11-plan-large-batches.sh" "Maven batch planning must call phase11 planner"
-require_literal "$SKILL_FILE" "phase11-plan-file-batches.sh" "single-module and non-Maven batching must call deterministic file planner"
-require_literal "$SKILL_FILE" 'Maven 多模块存量分批绝不调用 `phase11-plan-file-batches.sh`' "Maven selected-module batching must never fall back to whole-project file planner"
+require_literal "$SKILL_FILE" "languages/java/plan-large-batches.sh" "Maven batch planning must call plan-large-batches planner"
+require_literal "$SKILL_FILE" "languages/java/plan-file-batches.sh" "single-module and non-Maven batching must call deterministic file planner"
+require_literal "$SKILL_FILE" 'Maven 多模块存量分批绝不调用 `languages/java/plan-file-batches.sh`' "Maven selected-module batching must never fall back to whole-project file planner"
 require_literal "$SKILL_FILE" "即使只选择一个模块" "single selected Maven module must still use the scoped Maven planner"
 require_literal "$SKILL_FILE" "简要分批计划" "file batching must show a concise batch plan before concurrency selection"
 require_literal "$SKILL_FILE" "BATCH_FILE_LIST_DIR" "file batching must expose batch file list directory for batch agents"
@@ -597,7 +597,7 @@ if grep -q 'label: "仅显示报告"' "$SKILL_FILE"; then
   exit 1
 fi
 
-BATCH_SHOW_LINE="$(grep -n "phase13-show-large-batch-status.sh" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+BATCH_SHOW_LINE="$(grep -n "core/show-batch-status.sh" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 BATCH_PICK_LINE="$(grep -n 'question: "请选择本轮执行批次"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 CONCURRENCY_LINE="$(grep -n 'question: "请选择并发扫描策略"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 if [ -z "$BATCH_SHOW_LINE" ] || [ -z "$BATCH_PICK_LINE" ] || [ -z "$CONCURRENCY_LINE" ] || [ "$BATCH_SHOW_LINE" -ge "$BATCH_PICK_LINE" ] || [ "$BATCH_PICK_LINE" -ge "$CONCURRENCY_LINE" ]; then
@@ -756,5 +756,13 @@ fi
 # 前端矩阵与 React 规则必须被前端 Agent 引用
 grep -q "review-framework" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 grep -q "react-rules" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+
+# === 脚本目录重构断言 ===
+# SKILL.md 必须含「脚本调用顺序」编排段（执行顺序归文档，不编码进文件名）
+grep -q "脚本调用顺序" "$SKILL_FILE" || { echo "FAIL: cc-code-reviewer SKILL.md 缺「脚本调用顺序」段" >&2; exit 1; }
+grep -q "脚本调用顺序" "$ROOT_DIR/skills/cc-code-fixer/SKILL.md" || { echo "FAIL: cc-code-fixer SKILL.md 缺「脚本调用顺序」段" >&2; exit 1; }
+# 防回退：文档应引用新路径（core/ 或 languages/java/），证明迁移发生
+grep -q "scripts/core/detect-project.sh" "$SKILL_FILE" || { echo "FAIL: SKILL.md 应引用 core/detect-project.sh" >&2; exit 1; }
+grep -q "scripts/languages/java/project-scan.sh" "$SKILL_FILE" || { echo "FAIL: SKILL.md 应引用 languages/java/project-scan.sh" >&2; exit 1; }
 
 echo "✅ 契约文档测试通过"

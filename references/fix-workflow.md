@@ -34,21 +34,21 @@
 本地报告必须满足：
 
 - 文件存在且扩展名为 `.md`
-- 只有本地 Markdown 输入允许调用 `phase6-detect-fix-input.sh`，用于路径存在性校验和绝对路径归一化
+- 只有本地 Markdown 输入允许调用 `core/detect-fix-input.sh`，用于路径存在性校验和绝对路径归一化
 - 本地 Markdown 必须直接读取文件内容，再按 Markdown 报告规则解析
 - 内容包含可识别的问题编号、位置、问题描述和修复建议
 - 相对路径必须基于当前工作目录解析为绝对路径
 - 如果报告格式不完整，修复器只能提取可确认的问题，并把其余项列入「未修复问题」或「待人工确认」
 
-本地 Markdown 的识别基于用户输入的路径形态和文件存在性。识别为本地 Markdown 后才允许调用 `phase6-detect-fix-input.sh` 做路径校验和绝对路径归一化。
+本地 Markdown 的识别基于用户输入的路径形态和文件存在性。识别为本地 Markdown 后才允许调用 `core/detect-fix-input.sh` 做路径校验和绝对路径归一化。
 
 ### 飞书云文档
 
-飞书云文档输入必须根据用户粘贴的 URL 动态识别，常见形态包括飞书或 Lark 的 `/docx/`、`/docs/` 文档 URL。识别后必须先通过 `lark-cli docs` 和 `lark-doc` skill 读取文档内容，再按 Markdown 报告规则解析。飞书云文档和飞书多维表格不得调用 `phase6-detect-fix-input.sh`，不得使用 Bash 脚本识别、提取或归一化云端问题清单输入。不得使用 Python 脚本读取飞书云文档或飞书多维表格。读取失败时不得继续假装拥有完整问题上下文，应进入 degraded mode，并要求用户改用本地 Markdown 或飞书多维表格来源。
+飞书云文档输入必须根据用户粘贴的 URL 动态识别，常见形态包括飞书或 Lark 的 `/docx/`、`/docs/` 文档 URL。识别后必须先通过 `lark-cli docs` 和 `lark-doc` skill 读取文档内容，再按 Markdown 报告规则解析。飞书云文档和飞书多维表格不得调用 `core/detect-fix-input.sh`，不得使用 Bash 脚本识别、提取或归一化云端问题清单输入。不得使用 Python 脚本读取飞书云文档或飞书多维表格。读取失败时不得继续假装拥有完整问题上下文，应进入 degraded mode，并要求用户改用本地 Markdown 或飞书多维表格来源。
 
 ### 飞书多维表格
 
-飞书 Base 输入必须根据用户粘贴的 URL 或 token 动态识别，可以是 `/base/` URL、带 `table=` 参数的 `/wiki/` URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。输入必须解析出 `table_id`；可直接解析 `base_token` 时也要保留，并通过 `lark-cli base` 和 `lark-base` skill 读取记录。如果输入是 `/wiki/{WIKI_TOKEN}?table={TABLE_ID}&view={VIEW_ID}` 链接，必须从查询参数中提取 `table` 作为 `table_id`、可选提取 `view` 作为 `view_id`，并用 `lark-cli wiki spaces get_node` 将 wiki token 解析为真实 `base_token`（`.data.node.obj_token`）后再读取记录；不得把 wiki token 当作 base token 使用。如果 URL 无法稳定提取表 ID，必须要求用户补充 `base:{BASE_TOKEN}:{TABLE_ID}` 格式。读取记录时只处理具备「问题编号」「位置」「问题描述」「修复建议」「修复状态」字段的数据行。飞书 Base 输入不得调用 `phase6-detect-fix-input.sh`。
+飞书 Base 输入必须根据用户粘贴的 URL 或 token 动态识别，可以是 `/base/` URL、带 `table=` 参数的 `/wiki/` URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。输入必须解析出 `table_id`；可直接解析 `base_token` 时也要保留，并通过 `lark-cli base` 和 `lark-base` skill 读取记录。如果输入是 `/wiki/{WIKI_TOKEN}?table={TABLE_ID}&view={VIEW_ID}` 链接，必须从查询参数中提取 `table` 作为 `table_id`、可选提取 `view` 作为 `view_id`，并用 `lark-cli wiki spaces get_node` 将 wiki token 解析为真实 `base_token`（`.data.node.obj_token`）后再读取记录；不得把 wiki token 当作 base token 使用。如果 URL 无法稳定提取表 ID，必须要求用户补充 `base:{BASE_TOKEN}:{TABLE_ID}` 格式。读取记录时只处理具备「问题编号」「位置」「问题描述」「修复建议」「修复状态」字段的数据行。飞书 Base 输入不得调用 `core/detect-fix-input.sh`。
 
 ### 状态过滤
 

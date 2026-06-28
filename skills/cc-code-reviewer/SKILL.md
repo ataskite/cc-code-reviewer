@@ -36,10 +36,10 @@ description: Java 代码审查 — 支持增量/存量审查、15维度评估、
 
 仅支持 macOS / Linux（Bash）：
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase1-detect-project.sh" "<用户输入的路径>"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-project.sh" "<用户输入的路径>"
 # 输出：PROJECT_DIR=<路径> PROJECT_SOURCE=local|git-cache
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-detect-branches.sh" "$PROJECT_DIR"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-branches.sh" "$PROJECT_DIR"
 # 输出：IS_GIT_REPO=true/false CURRENT_BRANCH=<分支> BRANCH: ...（最多5个本地分支）
 ```
 
@@ -55,7 +55,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-detect-branches.sh" "$PROJECT_DIR"
 
 **用户响应后**：
 - 设置 TARGET_BRANCH
-- 如不是当前分支，执行 `bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-switch-branch.sh" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
+- 如不是当前分支，执行 `bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/switch-branch.sh" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
 - 切换失败时继续使用当前分支
 
 **单分支或非 Git 项目**：跳过交互，自动使用 CURRENT_BRANCH。
@@ -65,13 +65,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-detect-branches.sh" "$PROJECT_DIR"
 分支选择完成后，继续执行以下 3 个脚本：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase3-project-scan.sh" "$PROJECT_DIR"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/project-scan.sh" "$PROJECT_DIR"
 # 输出：PROJECT_TYPE=maven-single|maven-multi|... MODULE:模块名|相对路径|Java文件数|代码行数 TECH_STACK:技术栈|dependency:命中依赖|dimensions:建议维度|rules:专项规则
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase10-detect-code-intelligence.sh" "$PROJECT_DIR"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/detect-code-intelligence.sh" "$PROJECT_DIR"
 # 输出：CODE_INTELLIGENCE_AVAILABLE=true|false CODE_INTELLIGENCE_PROVIDER=jdtls-lsp|none CODE_INTELLIGENCE_REASON=...
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
 # 输出：LARK_PLUGIN_INSTALLED=true|false，失败时附带 LARK_PLUGIN_REASON
 ```
 
@@ -114,7 +114,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/detect-code-intelligence.
 # 输出 CODE_INTELLIGENCE_PROVIDER=typescript-lsp|none（覆盖 scan-project 的占位）
 # 主 skill 据此派生 SEMANTIC_LEVEL：CODE_INTELLIGENCE_PROVIDER=typescript-lsp → SEMANTIC_LEVEL=typescript-lsp；否则 SEMANTIC_LEVEL=none
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
 # 复用 lark-cli 检测
 ```
 
@@ -216,7 +216,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 
 ```bash
 for role in opus sonnet haiku; do
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase14-detect-model-context.sh" "$role"
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-model-context.sh" "$role"
 done
 ```
 解析每个角色的 `CONTEXT_WINDOW_TOKENS`、`CONTEXT_SCALE`、`ACTUAL_MODEL_NAME`。**把「（推荐）」标给 `CONTEXT_WINDOW_TOKENS` 最大的角色**——上下文窗口最大的模型能一次审查更多代码、减少分批，且通常是配置里质量最强的档位。若多个角色窗口相同，优先级 opus > sonnet > haiku。
@@ -238,7 +238,7 @@ done
 **用户响应后变量赋值**：
 - 选哪个角色 → REVIEW_MODEL = 该角色（opus / sonnet / haiku）
 
-**用户选定后，复用上一步已探测的该角色窗口数据**设置 `CONTEXT_WINDOW_TOKENS`、`CONTEXT_SCALE`、`CONTEXT_TIER`、`ACTUAL_MODEL_NAME`、`DETECTION_SOURCE`（无需再跑一次 phase14）。若用户选的角色上一步未探测（异常情况），则补跑一次 `phase14-detect-model-context.sh "$REVIEW_MODEL"`。
+**用户选定后，复用上一步已探测的该角色窗口数据**设置 `CONTEXT_WINDOW_TOKENS`、`CONTEXT_SCALE`、`CONTEXT_TIER`、`ACTUAL_MODEL_NAME`、`DETECTION_SOURCE`（无需再跑一次 phase14）。若用户选的角色上一步未探测（异常情况），则补跑一次 `core/detect-model-context.sh "$REVIEW_MODEL"`。
 
 > **设计依据**：模型选择放在分批之前，是因为分批预算（每批装多少代码）依赖模型的上下文窗口大小。大窗口模型（1M）可一次性审查 5 倍代码量，显著减少批次数。动态推荐窗口最大的角色，避免向用户推荐「逻辑档位中等但实际配置最弱」的模型。
 
@@ -281,7 +281,7 @@ BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
 - `STOCK_REVIEW_STRATEGY=ai-planned` 或 `module-sequential`
 - `TOTAL_JAVA_LOC >= 120000`，或用户已在存量审查方式中明确选择分批策略
 
-只要 `PROJECT_TYPE=maven-multi` 且用户已经选择 `STOCK_REVIEW_STRATEGY=ai-planned` 或 `module-sequential`，就必须进入 Maven 大仓库模式。即使只选择一个模块、即使所选模块低于 `TOTAL_JAVA_LOC >= 120000` 自动阈值，也必须调用 `phase11-plan-large-batches.sh`，并把 `REVIEW_SCOPE` 原样作为第 5 个参数传入。Maven 多模块存量分批绝不调用 `phase11-plan-file-batches.sh`；该文件级 planner 只服务 Maven 单模块、Gradle 或未知 Java 项目。
+只要 `PROJECT_TYPE=maven-multi` 且用户已经选择 `STOCK_REVIEW_STRATEGY=ai-planned` 或 `module-sequential`，就必须进入 Maven 大仓库模式。即使只选择一个模块、即使所选模块低于 `TOTAL_JAVA_LOC >= 120000` 自动阈值，也必须调用 `languages/java/plan-large-batches.sh`，并把 `REVIEW_SCOPE` 原样作为第 5 个参数传入。Maven 多模块存量分批绝不调用 `languages/java/plan-file-batches.sh`；该文件级 planner 只服务 Maven 单模块、Gradle 或未知 Java 项目。
 
 判定公式（以下为 CONTEXT_SCALE=1 即 200k 窗口下的基准值；实际值 = 基准值 × CONTEXT_SCALE）：
 ```text
@@ -297,7 +297,7 @@ SOFT_MAX_BATCH_COST = 60000
 HARD_MAX_BATCH_COST = 65000
 ```
 
-**CONTEXT_SCALE 缩放机制**：批次成本与 LOC 上限按模型上下文窗口缩放。`CONTEXT_SCALE` 由 `phase14-detect-model-context.sh` 探测得出：1M 窗口（如 `glm-5.2[1M]`）→ scale=5，单批可装 5 倍代码；200k 窗口 → scale=1（与旧行为一致）。调用 `phase11-plan-large-batches.sh` 时须把 `CONTEXT_SCALE` 作为第 7 个参数传入；文件级 planner 通过 `CC_REVIEW_CONTEXT_SCALE` 环境变量接收。
+**CONTEXT_SCALE 缩放机制**：批次成本与 LOC 上限按模型上下文窗口缩放。`CONTEXT_SCALE` 由 `core/detect-model-context.sh` 探测得出：1M 窗口（如 `glm-5.2[1M]`）→ scale=5，单批可装 5 倍代码；200k 窗口 → scale=1（与旧行为一致）。调用 `languages/java/plan-large-batches.sh` 时须把 `CONTEXT_SCALE` 作为第 7 个参数传入；文件级 planner 通过 `CC_REVIEW_CONTEXT_SCALE` 环境变量接收。
 
 Maven 大仓库规划使用 semantic-cost batching：
 - 先生成 work units，而不是直接把顶层 Maven module 当批次
@@ -334,8 +334,8 @@ if [ "$CODE_INTELLIGENCE_AVAILABLE" = "true" ]; then
   SEMANTIC_LEVEL="jdtls-lsp"
 fi
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "$SEMANTIC_LEVEL" "$REVIEW_SCOPE" "$STOCK_REVIEW_STRATEGY" "$CONTEXT_SCALE"
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/plan-large-batches.sh" "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "$SEMANTIC_LEVEL" "$REVIEW_SCOPE" "$STOCK_REVIEW_STRATEGY" "$CONTEXT_SCALE"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 ```
 
 ### 第五步：交互式参数收集
@@ -500,6 +500,48 @@ test -r "$REPORT_FORMAT_PATH"
 
 ---
 
+## 脚本调用顺序
+
+脚本文件名不再带 phase 编号（功能名描述职责，执行顺序在此编排）。通用脚本在 `scripts/core/`，Java 专属在 `scripts/languages/java/`，前端专属在 `scripts/languages/frontend/`。旧 `scripts/phaseN-*.sh` 路径保留为兼容转发 wrapper。
+
+### Java 扫描流程
+
+1. `core/detect-project.sh` → 识别项目路径
+2. `core/detect-branches.sh` → 列出分支（多分支则 AskUserQuestion 选）
+3. `core/switch-branch.sh` → 切换到选定分支（按需）
+4. `core/detect-language.sh` → 探测语言（固定 java）
+5. `languages/java/project-scan.sh` → Java 预扫描（Maven/技术栈）
+6. `languages/java/detect-code-intelligence.sh` → jdtls 探测
+7. `core/detect-lark-plugin.sh` → lark-cli 检测
+8. `core/detect-model-context.sh` → 模型窗口 → CONTEXT_SCALE
+9. 读 ignore 规则 → 输出预扫描摘要
+10. AskUserQuestion 交互（模式/报告/入口/范围…）
+11. `core/estimate-review-minutes.sh` → 计算预估耗时（单 agent 模式）
+12. [分批] `languages/java/plan-large-batches.sh` 或 `plan-file-batches.sh`
+13. [分批] `core/show-batch-status.sh` → 展示批次状态
+14. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
+15. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
+
+### 前端扫描流程
+
+1. `core/detect-project.sh` → 识别项目路径
+2. `core/detect-branches.sh` → 列出分支（多分支则 AskUserQuestion 选）
+3. `core/switch-branch.sh` → 切换到选定分支（按需）
+4. `core/detect-language.sh` → 探测语言（固定 frontend）
+5. `languages/frontend/scan-project.sh` → 前端预扫描（PROFILE_SCHEMA）
+6. `languages/frontend/detect-code-intelligence.sh` → typescript-lsp 探测
+7. `core/detect-lark-plugin.sh` → lark-cli 检测
+8. `core/detect-model-context.sh` → 模型窗口 → CONTEXT_SCALE
+9. 读 ignore 规则 → 输出预扫描摘要
+10. AskUserQuestion 交互（模式/报告/入口/范围…）
+11. `core/estimate-review-minutes.sh` → 计算预估耗时（单 agent 模式）
+12. [分批] `core/plan-file-batches.sh` → 前端文件级分批
+13. [分批] `core/show-batch-status.sh` → 展示批次状态
+14. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
+15. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
+
+---
+
 ## 交互式确认步骤定义
 
 > **强制规则**：
@@ -587,7 +629,7 @@ test -r "$REPORT_FORMAT_PATH"
 
 **增量审查时，必须先扫描并展示最近提交，再调用 AskUserQuestion 工具**：
 
-1. 执行最近提交预览脚本（仅用于交互式用户决策，不替代后续增量预处理）：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase5-preview-recent-commits.sh" "$PROJECT_DIR"`
+1. 执行最近提交预览脚本（仅用于交互式用户决策，不替代后续增量预处理）：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/preview-recent-commits.sh" "$PROJECT_DIR"`
 2. 展示脚本输出，格式如下；最多展示最近 10 次提交，不足 10 次时展示实际数量：
    ```text
    📜 最近提交概览：
@@ -685,9 +727,9 @@ test -r "$REPORT_FORMAT_PATH"
 
 触发此步骤前，必须先完成 Maven 大仓库分批规划，生成或恢复 `RUN_DIR/plan.json` 和 `RUN_DIR/batches/*.json`。
 
-在调用 AskUserQuestion 之前，必须先展示当前 run 状态、批次表、可执行批次和预估时间计划。`phase13-show-large-batch-status.sh` 只作为数据来源；不得只依赖 Bash 工具输出，因为 Claude Code 会折叠工具输出，导致用户必须按 `ctrl+o` 才能看到。主 skill 必须读取脚本输出，并在普通助手消息中重新展示完整 Markdown 表格和推荐计划，像技术栈扫描摘要一样直接展示给用户。
+在调用 AskUserQuestion 之前，必须先展示当前 run 状态、批次表、可执行批次和预估时间计划。`core/show-batch-status.sh` 只作为数据来源；不得只依赖 Bash 工具输出，因为 Claude Code 会折叠工具输出，导致用户必须按 `ctrl+o` 才能看到。主 skill 必须读取脚本输出，并在普通助手消息中重新展示完整 Markdown 表格和推荐计划，像技术栈扫描摘要一样直接展示给用户。
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 ```
 
 该输出必须包含：
@@ -734,7 +776,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase13-show-large-batch-status.sh" "$PROJEC
 
 **前置计算**：触发此步骤前，必须先完成分批计算（见「分批计算」章节），得到 BATCH_COUNT。
 - 若 `PROJECT_TYPE=maven-multi` 且 `STOCK_REVIEW_STRATEGY=module-sequential|ai-planned`，必须先完成 Maven 大仓库模式的步骤 5 批次表展示和本轮执行批次选择；不得改走文件级 planner。
-- 若不满足 Maven 大仓库模式但 `BATCH_MODE=true`（包括 Maven 单模块、Gradle 或其他 Java 项目），必须先调用 `phase11-plan-file-batches.sh` 生成文件级批次，并把脚本输出的 `简要分批计划` 原样展示到控制台；不得只输出总批次数后直接询问并发数。
+- 若不满足 Maven 大仓库模式但 `BATCH_MODE=true`（包括 Maven 单模块、Gradle 或其他 Java 项目），必须先调用 `languages/java/plan-file-batches.sh` 生成文件级批次，并把脚本输出的 `简要分批计划` 原样展示到控制台；不得只输出总批次数后直接询问并发数。
 
 在调用 AskUserQuestion 之前，先输出并发策略摘要：
 ```
@@ -872,7 +914,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 
 ### Maven 多模块分批
 
-Maven 多模块项目不得使用内联 Bash 数组分批，必须统一调用 `phase11-plan-large-batches.sh`：
+Maven 多模块项目不得使用内联 Bash 数组分批，必须统一调用 `languages/java/plan-large-batches.sh`：
 
 ```bash
 SEMANTIC_LEVEL="maven-static"
@@ -880,7 +922,7 @@ if [ "$CODE_INTELLIGENCE_AVAILABLE" = "true" ]; then
   SEMANTIC_LEVEL="jdtls-lsp"
 fi
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-large-batches.sh" \
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/plan-large-batches.sh" \
   "$PROJECT_DIR" \
   "$REVIEW_MODE" \
   "{TARGET_BRANCH 或 CURRENT_BRANCH}" \
@@ -900,13 +942,13 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-large-batches.sh" \
 
 ### 非 Maven 兼容分批
 
-仅当 `PROJECT_TYPE` 不是 Maven 多模块且 `BATCH_MODE=true` 时，必须统一调用 `phase11-plan-file-batches.sh` 生成简单文件级批次，覆盖 Maven 单模块、Gradle 项目和未知 Java 项目：
+仅当 `PROJECT_TYPE` 不是 Maven 多模块且 `BATCH_MODE=true` 时，必须统一调用 `languages/java/plan-file-batches.sh` 生成简单文件级批次，覆盖 Maven 单模块、Gradle 项目和未知 Java 项目：
 
-Maven 多模块存量分批绝不调用 `phase11-plan-file-batches.sh`。即使只选择一个模块，也必须使用 Maven 多模块 planner，以便 `REVIEW_SCOPE` 限定在所选模块内，避免生成全项目批次。
+Maven 多模块存量分批绝不调用 `languages/java/plan-file-batches.sh`。即使只选择一个模块，也必须使用 Maven 多模块 planner，以便 `REVIEW_SCOPE` 限定在所选模块内，避免生成全项目批次。
 
 ```bash
 CC_REVIEW_CONTEXT_SCALE="$CONTEXT_SCALE" \
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-file-batches.sh" \
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/plan-file-batches.sh" \
   "$PROJECT_DIR" \
   "$REVIEW_MODE" \
   "{TARGET_BRANCH 或 CURRENT_BRANCH}"
@@ -925,7 +967,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase11-plan-file-batches.sh" \
 
 ### 前端分批（LANGUAGE_ID=frontend）
 
-前端项目（含 React monorepo 单语言运行）必须使用 `scripts/core/plan-file-batches.sh`（语言中立），不得使用 Java 的 `phase11-plan-file-batches.sh` 或 `phase11-plan-large-batches.sh`：
+前端项目（含 React monorepo 单语言运行）必须使用 `scripts/core/plan-file-batches.sh`（语言中立），不得使用 Java 的 `languages/java/plan-file-batches.sh` 或 `languages/java/plan-large-batches.sh`：
 
 ```bash
 # 先生成不可变 source manifest（生产 .ts/.tsx/.js/.jsx，排除测试/产物/配置脚本）
@@ -1016,8 +1058,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `PROJECT_TYPE` | phase3 脚本输出 | `maven-single` 等 |
 | `REVIEW_MODE` | 交互步骤1 | `fast` / `standard` 等 |
 | `REVIEW_MODEL` | 第四步之后（模型选择已前移至分批前） | `sonnet` / `opus` / `haiku` |
-| `CONTEXT_SCALE` | phase14-detect-model-context.sh 输出 | `1`（200k 窗口）/ `5`（1M 窗口） |
-| `CONTEXT_WINDOW_TOKENS` | phase14-detect-model-context.sh 输出 | `200000` / `1000000` |
+| `CONTEXT_SCALE` | core/detect-model-context.sh 输出 | `1`（200k 窗口）/ `5`（1M 窗口） |
+| `CONTEXT_WINDOW_TOKENS` | core/detect-model-context.sh 输出 | `200000` / `1000000` |
 | `FEISHU_UPLOAD_OPTION` | 交互步骤2 | `本地 Markdown 报告` 或 `飞书云文档, 飞书多维表格` 等 |
 | `REVIEW_ENTRY` | 交互步骤3 | `增量审查` / `全量审查` / `指定模块` |
 | `REVIEW_TYPE` | 交互步骤3 | `增量审查` / `存量审查` |
@@ -1038,7 +1080,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 
 ### 增量审查预处理（仅增量审查时执行）
 
-在调用子 agent 之前，执行增量预处理脚本：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase5-prepare-incremental.sh" "$PROJECT_DIR" {N}`
+在调用子 agent 之前，执行增量预处理脚本：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/prepare-incremental.sh" "$PROJECT_DIR" {N}`
 
 脚本输出用 `# ===` 分隔为三部分：
 1. `# === 提交记录 ===` → GIT_LOG_OUTPUT
@@ -1053,7 +1095,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 
 Maven 大仓库模式必须通过确定性脚本合并，并把本轮主任务批次通过 `RUN_BATCH_IDS` 传给脚本：
 ```bash
-RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase12-merge-large-batches.sh" "$RUN_DIR"
+RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-batch-results.sh" "$RUN_DIR"
 ```
 
 该脚本会生成 `summary.json` 和 `final/code-review-report-*`，并在报告中写入“批次状态总览”，列明本轮主任务批次、已纳入合并的批次、失败/缺失/等待超时遗留批次，以及未纳入本轮的遗留批次。
