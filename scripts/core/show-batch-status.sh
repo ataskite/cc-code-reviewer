@@ -304,11 +304,8 @@ fi
 
 RUN_DIR=""
 while IFS= read -r plan_candidate; do
-  candidate_strategy="$(json_get "$plan_candidate" strategy)"
-  if [ "$candidate_strategy" != "file-token-batching" ]; then
-    RUN_DIR="$(dirname "$plan_candidate")"
-    break
-  fi
+  RUN_DIR="$(dirname "$plan_candidate")"
+  break
 done < <(find "$RUNS_ROOT" -maxdepth 2 -type f -name 'plan.json' -print 2>/dev/null | sort -r)
 if [ -z "$RUN_DIR" ] || [ ! -f "$RUN_DIR/plan.json" ]; then
   echo "未找到大仓库审查任务：$PROJECT_DIR"
