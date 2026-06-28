@@ -79,7 +79,7 @@ mkdir -p "$PROJECT_DIR/order-api/src/test/java/com/example/orderapi"
   echo "}"
 } > "$PROJECT_DIR/order-api/src/test/java/com/example/orderapi/OrderApiTest.java"
 
-OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-010203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "standard" "main" "jdtls-lsp")"
+OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-010203 bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$PROJECT_DIR" "standard" "main" "jdtls-lsp")"
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 RUN_ID="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_ID=//p')"
 
@@ -186,7 +186,7 @@ mkdir -p "$YUDAO_DIR/yudao-dependencies"
 printf '<project><artifactId>yudao-dependencies</artifactId></project>\n' > "$YUDAO_DIR/yudao-dependencies/pom.xml"
 create_nested_module "$YUDAO_DIR" "yudao-server" "yudao-server" "com/example/server" 150
 
-OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-010203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static")"
+OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-010203 bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static")"
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 
 jq -e '.strategy == "semantic-cost-batching"' "$RUN_DIR/plan.json" >/dev/null
@@ -244,7 +244,7 @@ if ! jq -r '.split_reason' "$RUN_DIR"/batches/batch-*.json | grep -qE 'oversized
   exit 1
 fi
 
-OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-020203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "yudao-module-mall")"
+OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-020203 bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "yudao-module-mall")"
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 
 jq -e '.review_scope == "yudao-module-mall"' "$RUN_DIR/plan.json" >/dev/null
@@ -269,13 +269,13 @@ XML
 printf 'package com.example.outside;\npublic class Outside {}\n' > "$OUTSIDE_DIR/src/main/java/com/example/outside/Outside.java"
 
 set +e
-OUTSIDE_OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-021203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "../outside-module" 2>&1)"
+OUTSIDE_OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-021203 bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "../outside-module" 2>&1)"
 OUTSIDE_STATUS=$?
 set -e
 test "$OUTSIDE_STATUS" -ne 0
 printf '%s\n' "$OUTSIDE_OUTPUT" | grep -q 'SELECTED_MODULE_OUTSIDE_PROJECT'
 
-OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-030203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "yudao-module-mes,yudao-framework" "module-sequential")"
+OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-030203 bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "yudao-module-mes,yudao-framework" "module-sequential")"
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 
 jq -e '.strategy == "module-sequential-batching"' "$RUN_DIR/plan.json" >/dev/null
@@ -291,7 +291,7 @@ if ! jq -e 'select(.large_batch == true and (.units[].name == "yudao-module-mes"
   exit 1
 fi
 
-OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-040203 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "yudao-module-mall" "module-sequential")"
+OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-040203 bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$YUDAO_DIR" "deep" "main" "maven-static" "yudao-module-mall" "module-sequential")"
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 RUN_ID="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_ID=//p')"
 
@@ -310,7 +310,7 @@ if jq -r '.units[].name? // empty' "$RUN_DIR"/batches/batch-*.json | grep -v '^y
   exit 1
 fi
 
-OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-020304 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$PROJECT_DIR" "standard" "main" "maven-static")"
+OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-020304 bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$PROJECT_DIR" "standard" "main" "maven-static")"
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 grep -q '"semantic_level": "maven-static"' "$RUN_DIR/plan.json"
 
@@ -330,7 +330,7 @@ cat > "$MISSING_PROJECT_DIR/pom.xml" <<'XML'
 XML
 
 set +e
-MISSING_OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-030405 bash "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$MISSING_PROJECT_DIR" "standard" "main" "maven-static" 2>&1)"
+MISSING_OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-030405 bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$MISSING_PROJECT_DIR" "standard" "main" "maven-static" 2>&1)"
 MISSING_STATUS=$?
 set -e
 test "$MISSING_STATUS" -ne 0

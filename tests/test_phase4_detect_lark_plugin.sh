@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
-OUTPUT="$(bash "$ROOT_DIR/scripts/phase4-detect-lark-plugin.sh")"
+OUTPUT="$(bash "$ROOT_DIR/scripts/core/detect-lark-plugin.sh")"
 
 echo "$OUTPUT" | grep -Eq '^LARK_PLUGIN_INSTALLED=(true|false)$'
 

@@ -18,7 +18,7 @@ cat > "$SRC_DIR/Foo.java" <<'JAVA'
 package com.example; public class Foo { public void m() {} }
 JAVA
 
-OUTPUT="$(bash "$ROOT_DIR/scripts/phase3-project-scan.sh" "$PROJECT_DIR")"
+OUTPUT="$(bash "$ROOT_DIR/scripts/languages/java/project-scan.sh" "$PROJECT_DIR")"
 
 # Java 用户可见输出字段必须保持不变
 grep -q "项目类型: Maven" <<< "$OUTPUT"
@@ -37,7 +37,7 @@ for i in 1 2 3 4 5; do
   { echo "package com.example.svc;"; echo "public class S${i} {"; seq 1 9000 | sed 's/.*/  public void m&() {}/'; echo "}"; } > "$SRC2/S${i}.java"
 done
 
-BOUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260623-000000 bash "$ROOT_DIR/scripts/phase11-plan-file-batches.sh" "$PROJECT_DIR" "standard" "main")"
+BOUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260623-000000 bash "$ROOT_DIR/scripts/languages/java/plan-file-batches.sh" "$PROJECT_DIR" "standard" "main")"
 grep -q "RUN_ID=" <<< "$BOUT"
 grep -q "RUN_DIR=" <<< "$BOUT"
 grep -q "BATCH_COUNT=" <<< "$BOUT"
@@ -74,7 +74,7 @@ cat > "$LRUN_DIR/results/batch-001.md" <<'MD'
 ## 发现列表
 （无正式发现）
 MD
-MOUT="$(MERGE_WAIT_TIMEOUT_SECONDS=0 bash "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "$LRUN_DIR")"
+MOUT="$(MERGE_WAIT_TIMEOUT_SECONDS=0 bash "$ROOT_DIR/scripts/core/merge-batch-results.sh" "$LRUN_DIR")"
 grep -q "SUMMARY_PATH=" <<< "$MOUT"
 grep -q "FINAL_REPORT_PATH=" <<< "$MOUT"
 SUMMARY="$(printf '%s\n' "$MOUT" | sed -n 's/^SUMMARY_PATH=//p')"

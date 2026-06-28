@@ -87,7 +87,7 @@ cat > "$RUN_DIR/results/batch-002.status.json" <<'JSON'
 JSON
 
 set +e
-OUTPUT="$(MERGE_WAIT_TIMEOUT_SECONDS=0 bash "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "$RUN_DIR" 2>&1)"
+OUTPUT="$(MERGE_WAIT_TIMEOUT_SECONDS=0 bash "$ROOT_DIR/scripts/core/merge-batch-results.sh" "$RUN_DIR" 2>&1)"
 STATUS=$?
 set -e
 test "$STATUS" -ne 0
@@ -138,7 +138,7 @@ cat > "$FULL_RUN_DIR/results/batch-001.md" <<'MD'
 本批次未发现问题。
 MD
 
-FULL_OUTPUT="$(bash "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "$FULL_RUN_DIR")"
+FULL_OUTPUT="$(bash "$ROOT_DIR/scripts/core/merge-batch-results.sh" "$FULL_RUN_DIR")"
 FULL_REPORT="$(printf '%s\n' "$FULL_OUTPUT" | sed -n 's/^FINAL_REPORT_PATH=//p')"
 test -f "$FULL_REPORT"
 if grep -q '\[阶段性\]' "$FULL_REPORT"; then
@@ -178,7 +178,7 @@ cat > "$PARTIAL_RUN_DIR/results/batch-003.status.json" <<'JSON'
 {"batch_id":"batch-003","status":"pending","planned_java_loc":100,"planned_java_file_count":2}
 JSON
 
-PARTIAL_OUTPUT="$(RUN_BATCH_IDS="batch-001,batch-002" bash "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "$PARTIAL_RUN_DIR")"
+PARTIAL_OUTPUT="$(RUN_BATCH_IDS="batch-001,batch-002" bash "$ROOT_DIR/scripts/core/merge-batch-results.sh" "$PARTIAL_RUN_DIR")"
 PARTIAL_REPORT="$(printf '%s\n' "$PARTIAL_OUTPUT" | sed -n 's/^FINAL_REPORT_PATH=//p')"
 test -f "$PARTIAL_REPORT"
 grep -q '\[阶段性\]' "$PARTIAL_REPORT"
@@ -217,7 +217,7 @@ JSON
   printf '## 发现列表\n\n### P1 | [维度1-正确性] %s 问题\n- 文件：%s/src/main/java/Demo.java:10\n- 置信度：高\n- 证据：示例\n- 影响：示例\n- 建议：示例\n' "$batch_id" "$batch_id" > "$SUBSET_RUN_DIR/results/$batch_id.md"
 done
 
-SUBSET_OUTPUT="$(RUN_BATCH_IDS="batch-001,batch-002" bash "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "$SUBSET_RUN_DIR")"
+SUBSET_OUTPUT="$(RUN_BATCH_IDS="batch-001,batch-002" bash "$ROOT_DIR/scripts/core/merge-batch-results.sh" "$SUBSET_RUN_DIR")"
 SUBSET_REPORT="$(printf '%s\n' "$SUBSET_OUTPUT" | sed -n 's/^FINAL_REPORT_PATH=//p')"
 test -f "$SUBSET_REPORT"
 grep -q '"merge_blocked": false' "$SUBSET_RUN_DIR/summary.json"
@@ -260,7 +260,7 @@ JSON
 MD
 done
 
-DEDUP_OUTPUT="$(bash "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "$DEDUP_RUN_DIR")"
+DEDUP_OUTPUT="$(bash "$ROOT_DIR/scripts/core/merge-batch-results.sh" "$DEDUP_RUN_DIR")"
 DEDUP_REPORT="$(printf '%s\n' "$DEDUP_OUTPUT" | sed -n 's/^FINAL_REPORT_PATH=//p')"
 test -f "$DEDUP_REPORT"
 grep -q '"finding_count": 1' "$DEDUP_RUN_DIR/summary.json"
@@ -287,7 +287,7 @@ cat > "$PENDING_RUN_DIR/results/batch-001.status.json" <<'JSON'
 {"batch_id":"batch-001","status":"pending","planned_java_loc":100,"planned_java_file_count":2}
 JSON
 set +e
-PENDING_OUTPUT="$(MERGE_WAIT_TIMEOUT_SECONDS=0 bash "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "$PENDING_RUN_DIR" 2>&1)"
+PENDING_OUTPUT="$(MERGE_WAIT_TIMEOUT_SECONDS=0 bash "$ROOT_DIR/scripts/core/merge-batch-results.sh" "$PENDING_RUN_DIR" 2>&1)"
 PENDING_STATUS=$?
 set -e
 test "$PENDING_STATUS" -ne 0

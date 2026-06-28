@@ -41,7 +41,7 @@ public class UserServiceTest {
 }
 JAVA
 
-OUTPUT="$(bash "$ROOT_DIR/scripts/phase3-project-scan.sh" "$PROJECT_DIR")"
+OUTPUT="$(bash "$ROOT_DIR/scripts/languages/java/project-scan.sh" "$PROJECT_DIR")"
 
 echo "$OUTPUT" | grep -q "PROJECT_TYPE=maven-multi"
 echo "$OUTPUT" | grep -q "Java文件总数: 1"
@@ -60,7 +60,7 @@ public class Plain {
 }
 JAVA
 
-UNKNOWN_OUTPUT="$(bash "$ROOT_DIR/scripts/phase3-project-scan.sh" "$UNKNOWN_DIR")"
+UNKNOWN_OUTPUT="$(bash "$ROOT_DIR/scripts/languages/java/project-scan.sh" "$UNKNOWN_DIR")"
 
 echo "$UNKNOWN_OUTPUT" | grep -q "PROJECT_TYPE=unknown"
 echo "$UNKNOWN_OUTPUT" | grep -q "Java文件总数: 1"
@@ -94,7 +94,7 @@ metadata:
   name: demo
 YAML
 
-STACK_OUTPUT="$(bash "$ROOT_DIR/scripts/phase3-project-scan.sh" "$STACK_DIR")"
+STACK_OUTPUT="$(bash "$ROOT_DIR/scripts/languages/java/project-scan.sh" "$STACK_DIR")"
 
 echo "$STACK_OUTPUT" | grep -q "TECH_STACK:Spring Cloud Gateway|"
 echo "$STACK_OUTPUT" | grep -q "TECH_STACK:Nacos/Apollo Config|"

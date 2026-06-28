@@ -88,7 +88,7 @@ cat > "$RUN_DIR/results/batch-002.status.json" <<'JSON'
 }
 JSON
 
-OUTPUT="$(bash "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR")"
+OUTPUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR")"
 
 printf '%s\n' "$OUTPUT" | grep -q "大仓库审查任务"
 printf '%s\n' "$OUTPUT" | grep -q "| 批次 | 状态 | 行数 | 文件数 | 模块 |"
@@ -176,7 +176,7 @@ for batch_id in batch-001 batch-002 batch-003; do
 JSON
 done
 
-THREE_OUTPUT="$(bash "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR")"
+THREE_OUTPUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR")"
 printf '%s\n' "$THREE_OUTPUT" | grep -q "| batch-001 | 待执行 | 17,000 | 250 | trade-server,statistics-server,statistics-api |"
 if printf '%s\n' "$THREE_OUTPUT" | grep -q "yudao-module-trade-server"; then
   echo "batch module display should drop the shared yudao-module- prefix" >&2
@@ -206,7 +206,7 @@ if printf '%s\n' "$THREE_OUTPUT" | grep -qE "执行 (5|10) 批"; then
 fi
 
 # phase13 转发 wrapper 后，输出必须与 core/show-batch-status.sh 逐字节一致
-OLD_OUT="$(bash "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR" 2>&1)"
+OLD_OUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR" 2>&1)"
 NEW_OUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR" 2>&1)"
 if [ "$OLD_OUT" != "$NEW_OUT" ]; then
   echo "FAIL: phase13 转发后输出必须与 core/show-batch-status 一致" >&2

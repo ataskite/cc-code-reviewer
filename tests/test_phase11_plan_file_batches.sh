@@ -44,7 +44,7 @@ done
   echo "}"
 } > "$TEST_SRC_DIR/OrderServiceTest.java"
 
-OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260602-010203 bash "$ROOT_DIR/scripts/phase11-plan-file-batches.sh" "$PROJECT_DIR" "standard" "main")"
+OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260602-010203 bash "$ROOT_DIR/scripts/languages/java/plan-file-batches.sh" "$PROJECT_DIR" "standard" "main")"
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 RUN_ID="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_ID=//p')"
 BATCH_COUNT="$(printf '%s\n' "$OUTPUT" | sed -n 's/^BATCH_COUNT=//p')"

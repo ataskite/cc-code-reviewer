@@ -15,7 +15,7 @@ for i in $(seq 1 12); do
   git -C "$TMP_DIR" commit -q -m "message $i"
 done
 
-OUTPUT="$(bash "$ROOT_DIR/scripts/phase5-preview-recent-commits.sh" "$TMP_DIR")"
+OUTPUT="$(bash "$ROOT_DIR/scripts/core/preview-recent-commits.sh" "$TMP_DIR")"
 
 echo "$OUTPUT" | grep -q "# === 最近提交预览 ==="
 echo "$OUTPUT" | grep -Eq '^1\. [0-9a-f]+ message 12$'
