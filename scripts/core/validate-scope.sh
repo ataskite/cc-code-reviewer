@@ -1,4 +1,7 @@
 #!/bin/bash
+# 状态：预留脚本，当前未接入运行时流程。
+# 计划在后续 scope 校验增强中接入（多模块选择时的路径边界校验）。
+# 保留 test_contract_docs.sh 的存在性断言。
 set -euo pipefail
 
 PROJECT_DIR="${1:?请输入项目路径}"

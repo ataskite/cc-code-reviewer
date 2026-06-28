@@ -205,4 +205,13 @@ if printf '%s\n' "$THREE_OUTPUT" | grep -qE "执行 (5|10) 批"; then
   exit 1
 fi
 
+# phase13 转发 wrapper 后，输出必须与 core/show-batch-status.sh 逐字节一致
+OLD_OUT="$(bash "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR" 2>&1)"
+NEW_OUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR" 2>&1)"
+if [ "$OLD_OUT" != "$NEW_OUT" ]; then
+  echo "FAIL: phase13 转发后输出必须与 core/show-batch-status 一致" >&2
+  diff <(echo "$OLD_OUT") <(echo "$NEW_OUT") | head -20 >&2
+  exit 1
+fi
+
 echo "PASS: phase13 large Maven batch status"

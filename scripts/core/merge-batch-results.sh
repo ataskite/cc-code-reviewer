@@ -111,7 +111,9 @@ REVIEW_MODE="$(json_get "$PLAN_PATH" review_mode)"
 REVIEW_SCOPE="$(json_get "$PLAN_PATH" review_scope)"
 LANGUAGE_ID="$(json_get "$PLAN_PATH" language_id)"
 TOTAL_LOC="$(json_get "$PLAN_PATH" total_source_loc)"
+[ -n "$TOTAL_LOC" ] || TOTAL_LOC="$(json_get "$PLAN_PATH" total_java_loc)"
 TOTAL_FILE_COUNT="$(json_get "$PLAN_PATH" total_source_file_count)"
+[ -n "$TOTAL_FILE_COUNT" ] || TOTAL_FILE_COUNT="$(json_get "$PLAN_PATH" total_java_file_count)"
 BATCH_COUNT="$(json_get "$PLAN_PATH" batch_count)"
 
 [ -n "$PROJECT_NAME" ] || PROJECT_NAME="project"
@@ -193,14 +195,17 @@ for bp in "$RUN_DIR"/batches/batch-*.json; do
   [ -f "$bp" ] || continue
   bid="$(json_get "$bp" batch_id)"; [ -n "$bid" ] || bid="$(basename "$bp" .json)"
   planned_loc="$(json_get "$bp" planned_source_loc)"
+  [ -n "$planned_loc" ] || planned_loc="$(json_get "$bp" planned_java_loc)"
   planned_files="$(json_get "$bp" planned_source_file_count)"
+  [ -n "$planned_files" ] || planned_files="$(json_get "$bp" planned_java_file_count)"
   [ -n "$planned_loc" ] || planned_loc=0
   [ -n "$planned_files" ] || planned_files=0
 
   sp="$RUN_DIR/results/$bid.status.json"; status="pending"; result_path=""; finding_count=0; error=""
   if [ -f "$sp" ]; then
     status="$(json_get "$sp" status)"
-    sl="$(json_get "$sp" planned_source_loc)"; sf="$(json_get "$sp" planned_source_file_count)"
+    sl="$(json_get "$sp" planned_source_loc)"; [ -n "$sl" ] || sl="$(json_get "$sp" planned_java_loc)"
+    sf="$(json_get "$sp" planned_source_file_count)"; [ -n "$sf" ] || sf="$(json_get "$sp" planned_java_file_count)"
     result_path="$(json_get "$sp" result_path)"; finding_count="$(json_get "$sp" finding_count)"; error="$(json_get "$sp" error)"
     [ -n "$sl" ] && planned_loc="$sl"
     [ -n "$sf" ] && planned_files="$sf"
@@ -298,6 +303,34 @@ cat > "$RUN_DIR/summary.json.tmp" <<JSON
 JSON
 mv "$RUN_DIR/summary.json.tmp" "$RUN_DIR/summary.json"
 
+# Java 兼容：补写 java_* 别名字段，保持旧 phase12 调用方契约（java_loc_coverage_percent 等）。
+# source_* 字段保留不动（前端契约 + merge 内部用）。
+# 用正则就近插入，保持原 heredoc 的多行缩进格式（不重排字段、不改空格），避免破坏现有 grep 断言。
+if [ "$LANGUAGE_ID" != "frontend" ]; then
+  perl -i -pe '
+    if (/"covered_source_loc":\s*(\d+)/) {
+      my $v = $1;
+      s/("covered_source_loc":\s*$v,)/$1\n  "covered_java_loc": $v,/;
+    }
+    if (/"total_source_loc":\s*(\d+)/) {
+      my $v = $1;
+      s/("total_source_loc":\s*$v,)/$1\n  "total_java_loc": $v,/;
+    }
+    if (/"covered_source_file_count":\s*(\d+)/) {
+      my $v = $1;
+      s/("covered_source_file_count":\s*$v,)/$1\n  "covered_java_file_count": $v,/;
+    }
+    if (/"total_source_file_count":\s*(\d+)/) {
+      my $v = $1;
+      s/("total_source_file_count":\s*$v,)/$1\n  "total_java_file_count": $v,/;
+    }
+    if (/"source_file_coverage_percent":\s*(\d+)/) {
+      my $v = $1;
+      s/("source_file_coverage_percent":\s*$v,)/$1\n  "java_file_coverage_percent": $v,\n  "java_loc_coverage_percent": $v,/;
+    }
+  ' "$RUN_DIR/summary.json" 2>/dev/null || true
+fi
+
 cat > "$FINAL_REPORT.tmp" <<MD
 # $REPORT_TITLE
 
@@ -313,6 +346,40 @@ cat > "$FINAL_REPORT.tmp" <<MD
 - 已纳入合并批次：${INCLUDED_BATCHES}
 - 遗留批次：${LEFTOVER_BATCHES}
 - ${COVERAGE_LABEL}：${COVERED_FILES} / ${TOTAL_FILE_COUNT}（${FILE_COVERAGE}%）
+MD
+
+# Java 兼容：补发「审查范围说明」+「大仓库审查执行摘要」两个 Java 习惯的摘要段（前端报告保持精简）。
+if [ "$LANGUAGE_ID" != "frontend" ]; then
+  SEMANTIC_LEVEL="$(json_get "$PLAN_PATH" semantic_level)"
+  cat >> "$FINAL_REPORT.tmp" <<MD
+
+## 审查范围说明
+
+- 项目名称：${PROJECT_NAME}
+- 覆盖方式：仅合并本轮主任务中状态为“已完成”且结果文件存在的批次
+- 覆盖口径：${COVERAGE_LABEL}只统计已纳入合并的批次文件数
+- 未纳入范围：失败、待执行、执行中、结果缺失或未纳入本轮的批次，详见“批次状态总览”
+
+## 大仓库审查执行摘要
+
+- Run ID：${RUN_ID}
+- 审查模式：${REVIEW_MODE}
+- 审查范围：${REVIEW_SCOPE}
+- 语义增强：${SEMANTIC_LEVEL:-maven-static}
+- 本轮主任务批次：${TARGET_BATCH_COUNT} / ${BATCH_COUNT}
+- 批次完成：${COMPLETED_BATCHES} / ${BATCH_COUNT}
+- 失败待重试批次：${FAILED_BATCHES}
+- 待执行批次：${PENDING_BATCHES}
+- 执行中批次：${RUNNING_BATCHES}
+- 已纳入本次合并批次：${INCLUDED_BATCHES}
+- 遗留批次：${LEFTOVER_BATCHES}
+- ${COVERAGE_LABEL}：${COVERED_FILES} / ${TOTAL_FILE_COUNT}（${FILE_COVERAGE}%）
+- 已完成批次代码行规模：${COVERED_LOC} / ${TOTAL_LOC}（规划规模参考，不作为覆盖率口径）
+- 已合并问题数：${TOTAL_FINDINGS}
+MD
+fi
+
+cat >> "$FINAL_REPORT.tmp" <<'MD'
 
 ## 批次状态总览
 
@@ -333,11 +400,21 @@ cat >> "$FINAL_REPORT.tmp" <<'MD'
 MD
 if [ -s "$CROSS_BATCH_LEADS" ]; then sort -u "$CROSS_BATCH_LEADS" >> "$FINAL_REPORT.tmp"; else echo "暂无跨批依赖线索。" >> "$FINAL_REPORT.tmp"; fi
 
+# Java 兼容：补发「覆盖限制与未审查范围」段（前端报告保持精简）
+if [ "$LANGUAGE_ID" != "frontend" ]; then
+  cat >> "$FINAL_REPORT.tmp" <<'MD'
+
+## 覆盖限制与未审查范围
+
+本报告的正式问题结论只来自已纳入本次合并的批次。未纳入本轮、失败、待执行、执行中或结果缺失的批次不会进入正式问题结论；这些批次需要在后续轮次继续执行或重试后再合并。
+MD
+fi
+
 cat >> "$FINAL_REPORT.tmp" <<MD
 
 ## 覆盖说明
 
-本报告只合并本轮主任务中状态为"已完成"且结果文件存在的批次。失败、待执行、执行中、结果缺失或未纳入本轮的批次不会进入正式问题结论。
+本报告只合并本轮主任务中状态为"已完成"且结果文件存在的批次。失败、待执行、执行中、结果缺失或未纳入本轮的批次不会进入正式问题结论，详见"批次状态总览"。
 ${COVERAGE_LABEL}是唯一覆盖指标；LOC 与 review cost 仅作为分批规划和进度参考。
 MD
 

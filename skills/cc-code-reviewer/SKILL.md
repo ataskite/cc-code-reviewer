@@ -942,6 +942,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
 RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-batch-results.sh" "$RUN_DIR"
 ```
 
+前端批次状态展示：在前端分批规划完成后、启动 agent 前（或本轮批次跑完准备合并时），调用批次状态展示脚本向用户展示批次表与动态执行计划。此脚本按前端 plan.json 的 `language_id=frontend` 读取 `total_source_loc`/`planned_source_loc`，展示「前端源码行数」「前端源码行覆盖」：
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
+```
+
 `scripts/core/merge-batch-results.sh` 的覆盖率展示名根据 `plan.json.language_id` 自动切换为「前端源码文件覆盖率」。前端 batch agent 使用 `cc-code-reviewer-frontend` 子代理，注入 PROFILE 行、source manifest、`SEMANTIC_LEVEL`、批次参数（`RUN_DIR`/`BATCH_PLAN_PATH`/`BATCH_STATUS_PATH`/`BATCH_RESULT_PATH`）。
 
 ---
