@@ -75,7 +75,7 @@ maxTurns: 50
   - 增量审查时：`最近N次提交`（同时会提供增量提交记录）
 - **审查模式**（`REVIEW_MODE`）：`fast` / `standard` / `deep` / `security`
 - **审查模型**（`REVIEW_MODEL`）：`sonnet` / `opus` / `haiku`。主 agent 通过 Task 工具的 `model` 字段把该模型应用到本子代理；此处仅用于在审查报告配置快照中记录使用的模型。
-- **上下文窗口**（`CONTEXT_WINDOW_TOKENS` / `CONTEXT_SCALE`）：由 `phase14-detect-model-context.sh` 探测得出的实际模型上下文窗口大小及缩放系数。`CONTEXT_SCALE=1` 表示 200k 窗口（默认），`CONTEXT_SCALE=5` 表示 1M 窗口（如底层配置了 `glm-5.2[1M]`）。仅用于信息展示，不影响子 agent 的审查行为——批次大小已由 phase11 按 scale 规划完成。
+- **上下文窗口**（`CONTEXT_WINDOW_TOKENS` / `CONTEXT_SCALE`）：由 `core/detect-model-context.sh` 探测得出的实际模型上下文窗口大小及缩放系数。`CONTEXT_SCALE=1` 表示 200k 窗口（默认），`CONTEXT_SCALE=5` 表示 1M 窗口（如底层配置了 `glm-5.2[1M]`）。仅用于信息展示，不影响子 agent 的审查行为——批次大小已由 `languages/java/plan-large-batches.sh`（或 `plan-file-batches.sh`）按 scale 规划完成。
 - **飞书上传选项**（`FEISHU_UPLOAD_OPTION`）：
   - 这是主 skill 步骤 2 的多选结果，可能是单个 label，也可能是用 `, ` 分隔的多个 label
   - **此参数仅供本子 agent 在配置快照中记录，本子 agent 不执行任何飞书上传操作**
