@@ -28,7 +28,7 @@ MAX_SCALE=10
 ONE_M_WHITELIST="deepseek-v4-flash deepseek-v4-pro qwen3.7-plus qwen3.7-max glm-5.2 minimax-m3 mimo-v2.5-pro"
 
 usage() {
-  echo "用法: bash phase14-detect-model-context.sh <opus|sonnet|haiku>" >&2
+  echo "用法: bash core/detect-model-context.sh <opus|sonnet|haiku>" >&2
   echo "  读取 ~/.claude/settings.json 侦测实际模型的上下文窗口大小" >&2
 }
 
