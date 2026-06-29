@@ -181,13 +181,12 @@ batch_estimate_minutes() {
   local review_mode="${4:-standard}"
   local target_minutes
 
-  planned_cost="${planned_cost:-0}"
   planned_loc="${planned_loc:-0}"
   planned_files="${planned_files:-0}"
-  if [ "$planned_cost" -le 0 ]; then
-    # 与 estimate-review-minutes.sh 的 review_cost_of 一致：loc + files × 25
-    planned_cost="$(review_cost_of "$planned_loc" "$planned_files")"
-  fi
+  # 始终用 review_cost_of(loc, files) = loc + files×25 重算成本，统一为时间估算口径。
+  # 不使用 plan.json 的 planned_review_cost：对 Maven 它恰好是 loc+files×25（重算结果一致，零影响），
+  # 但对前端文件级分批它是 token 口径（loc×3+files×500），量级大 3-6 倍，会严重虚高时间估算。
+  planned_cost="$(review_cost_of "$planned_loc" "$planned_files")"
   target_minutes="$(target_review_minutes "$review_mode")"
   local minutes
   # 注意：批次模式使用从 plan.json budget 读取的动态 TARGET_REVIEW_COST（随 CONTEXT_SCALE 缩放），
