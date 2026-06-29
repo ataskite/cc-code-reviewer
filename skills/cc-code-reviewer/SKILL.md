@@ -50,7 +50,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-branches.sh" "$PROJECT_DIR"
 **分支选择交互**：
 - question: "检测到 Git 仓库（当前分支：{CURRENT_BRANCH}），请选择要审查的分支"
 - header: "选择分支"
-- options: 从 phase2 输出的 BRANCH: 行动态生成选项（最多5个本地分支，按最近活动时间排序）
+- options: 从 detect-branches.sh 输出的 BRANCH: 行动态生成选项（最多5个本地分支，按最近活动时间排序）
 - multiSelect: false
 
 **用户响应后**：
@@ -87,7 +87,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-language.sh" "$PROJECT_DIR"
 ```
 
 **路由规则**：
-- **纯 Java**（仅 `CANDIDATE_LANGUAGE:java`）：走现有 Java 预扫描（phase1/2/3/10/4），流程不变。
+- **纯 Java**（仅 `CANDIDATE_LANGUAGE:java`）：走现有 Java 预扫描（detect-project → detect-branches → project-scan → detect-code-intelligence → detect-lark-plugin），流程不变。
 - **纯前端**（仅 `CANDIDATE_LANGUAGE:frontend`）：走「前端预扫描」分支。
 - **混合仓库**（两者皆有）：**必须调用 AskUserQuestion** 让用户选择一种语言：
   - question: "检测到多语言仓库（Java + 前端），本次审查目标语言？"
@@ -101,7 +101,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-language.sh" "$PROJECT_DIR"
   - 用户选择后设 `LANGUAGE_ID`，另一语言仅作仓库背景，不得产出正式问题。
 - **none**：输出"❌ 未识别到支持的审查目标（Java 或 React/TS/JS）"并终止。
 
-**前端预扫描分支**（`LANGUAGE_ID=frontend` 时执行，替代 phase3/phase10）：
+**前端预扫描分支**（`LANGUAGE_ID=frontend` 时执行，替代 Java 的 project-scan/detect-code-intelligence）：
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/detect-project.sh" "$PROJECT_DIR"
@@ -118,7 +118,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
 # 复用 lark-cli 检测
 ```
 
-> 前端分支下，后续交互步骤（模式/报告/入口/范围/确认）、增量预处理（phase5）、模型侦测（phase14）、分批、合并、报告保存、飞书输出**全部复用现有流程**；差异仅在：预扫描数据来自前端 PROFILE，`SEMANTIC_LEVEL` 从 `CODE_INTELLIGENCE_PROVIDER` 派生（`typescript-lsp`/`none`，非 Java 的 `jdtls-lsp`/`maven-static`），分批用 `scripts/core/plan-file-batches.sh` + source manifest，合并用 `scripts/core/merge-batch-results.sh`，子 agent 用 `cc-code-reviewer-frontend`。
+> 前端分支下，后续交互步骤（模式/报告/入口/范围/确认）、增量预处理（`core/prepare-incremental.sh`）、模型侦测（`core/detect-model-context.sh`）、分批、合并、报告保存、飞书输出**全部复用现有流程**；差异仅在：预扫描数据来自前端 PROFILE，`SEMANTIC_LEVEL` 从 `CODE_INTELLIGENCE_PROVIDER` 派生（`typescript-lsp`/`none`，非 Java 的 `jdtls-lsp`/`maven-static`），分批用 `scripts/core/plan-file-batches.sh` + source manifest，合并用 `scripts/core/merge-batch-results.sh`，子 agent 用 `cc-code-reviewer-frontend`。
 
 ### 第三步之后：读取项目级 ignore 规则
 
@@ -201,7 +201,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 ```
 
 **技术栈扫描展示规则**：
-- 数据来源：{LANGUAGE_ID=java 时为 phase3 输出；LANGUAGE_ID=frontend 时为前端 scan-project.sh 输出}中的 `TECH_STACK:{技术栈}|dependency:{命中依赖或 file:路径}|dimensions:{建议维度}|rules:{专项规则}` 行
+- 数据来源：{LANGUAGE_ID=java 时为 languages/java/project-scan.sh 输出；LANGUAGE_ID=frontend 时为前端 scan-project.sh 输出}中的 `TECH_STACK:{技术栈}|dependency:{命中依赖或 file:路径}|dimensions:{建议维度}|rules:{专项规则}` 行
 - 必须逐行解析所有 `TECH_STACK:` 行，`PROJECT_SCAN_RESULT` 注入子 agent 时仍保留完整原文
 - `dependency:none` 表示未识别专项技术栈，不展示表格，只展示通用审查规则提示
 - `dependency:file:` 表示通过配置文件识别，摘要中的识别证据展示为 `文件:{路径}`
@@ -238,7 +238,7 @@ done
 **用户响应后变量赋值**：
 - 选哪个角色 → REVIEW_MODEL = 该角色（opus / sonnet / haiku）
 
-**用户选定后，复用上一步已探测的该角色窗口数据**设置 `CONTEXT_WINDOW_TOKENS`、`CONTEXT_SCALE`、`CONTEXT_TIER`、`ACTUAL_MODEL_NAME`、`DETECTION_SOURCE`（无需再跑一次 phase14）。若用户选的角色上一步未探测（异常情况），则补跑一次 `core/detect-model-context.sh "$REVIEW_MODEL"`。
+**用户选定后，复用上一步已探测的该角色窗口数据**设置 `CONTEXT_WINDOW_TOKENS`、`CONTEXT_SCALE`、`CONTEXT_TIER`、`ACTUAL_MODEL_NAME`、`DETECTION_SOURCE`（无需再跑一次 detect-model-context）。若用户选的角色上一步未探测（异常情况），则补跑一次 `core/detect-model-context.sh "$REVIEW_MODEL"`。
 
 > **设计依据**：模型选择放在分批之前，是因为分批预算（每批装多少代码）依赖模型的上下文窗口大小。大窗口模型（1M）可一次性审查 5 倍代码量，显著减少批次数。动态推荐窗口最大的角色，避免向用户推荐「逻辑档位中等但实际配置最弱」的模型。
 
@@ -260,7 +260,7 @@ BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
 
 **参数来源**：
 - `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 的来源按语言分支：
-  - `LANGUAGE_ID=java`：从 phase3-project-scan.sh 输出中解析（`Java文件总数` 和 `代码总行数`），口径仅包含 `src/main/java` 生产源码
+  - `LANGUAGE_ID=java`：从 languages/java/project-scan.sh 输出中解析（`Java文件总数` 和 `代码总行数`），口径仅包含 `src/main/java` 生产源码
   - `LANGUAGE_ID=frontend`：从前端 `scan-project.sh` 输出的 PROFILE_SCHEMA 行解析（`SOURCE_FILE_COUNT` 和 `SOURCE_LINE_COUNT`），口径仅包含 `src/` 下生产 `.ts/.tsx/.js/.jsx`
 - `500`：每个文件的工具调用 + agent 评估开销（token）
 - `3`：每行代码平均 token 数
@@ -1052,10 +1052,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 
 | 变量名 | 来源 | 示例值 |
 |--------|------|--------|
-| `PROJECT_DIR` | phase1 脚本输出 | `/tmp/{仓库名}` 或本地路径 |
-| `PROJECT_SOURCE` | phase1 脚本输出 | `local` / `git-cache` |
+| `PROJECT_DIR` | detect-project.sh 脚本输出 | `/tmp/{仓库名}` 或本地路径 |
+| `PROJECT_SOURCE` | detect-project.sh 脚本输出 | `local` / `git-cache` |
 | `PROJECT_NAME` | `basename "$PROJECT_DIR"` | `spring-ai-agent-utils` |
-| `PROJECT_TYPE` | phase3 脚本输出 | `maven-single` 等 |
+| `PROJECT_TYPE` | languages/java/project-scan.sh 脚本输出 | `maven-single` 等 |
 | `REVIEW_MODE` | 交互步骤1 | `fast` / `standard` 等 |
 | `REVIEW_MODEL` | 第四步之后（模型选择已前移至分批前） | `sonnet` / `opus` / `haiku` |
 | `CONTEXT_SCALE` | core/detect-model-context.sh 输出 | `1`（200k 窗口）/ `5`（1M 窗口） |
@@ -1065,8 +1065,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `REVIEW_TYPE` | 交互步骤3 | `增量审查` / `存量审查` |
 | `REVIEW_SCOPE` | 交互步骤4 | `最近5次提交` / `全量代码` / `yudao-module-mes,yudao-framework` |
 | `STOCK_REVIEW_STRATEGY` | 交互步骤4B（仅 Maven 多模块存量） | `module-sequential` / `ai-planned` |
-| `PROJECT_SCAN_RESULT` | phase3 完整输出 | 项目概况、模块结构 |
-| `SEMANTIC_LEVEL` | Java：phase10 输出转换（`CODE_INTELLIGENCE_AVAILABLE=true` → `jdtls-lsp`，否则 `maven-static`）；前端：`detect-code-intelligence.sh` 输出转换（`CODE_INTELLIGENCE_PROVIDER=typescript-lsp` → `typescript-lsp`，否则 `none`） | `jdtls-lsp` / `typescript-lsp` |
+| `PROJECT_SCAN_RESULT` | languages/java/project-scan.sh 完整输出 | 项目概况、模块结构 |
+| `SEMANTIC_LEVEL` | Java：languages/java/detect-code-intelligence.sh 输出转换（`CODE_INTELLIGENCE_AVAILABLE=true` → `jdtls-lsp`，否则 `maven-static`）；前端：`detect-code-intelligence.sh` 输出转换（`CODE_INTELLIGENCE_PROVIDER=typescript-lsp` → `typescript-lsp`，否则 `none`） | `jdtls-lsp` / `typescript-lsp` |
 | `DETECTED_TECH_STACK` | 从 `PROJECT_SCAN_RESULT` 的 `TECH_STACK:` 行解析，来源为 Maven/Gradle 依赖指纹 | `Spring Boot, MyBatis, Redis/Cache` |
 | `REVIEW_FILE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `76` |
 | `REVIEW_LINE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `16637` |
@@ -1074,9 +1074,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `REACT_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/react-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/react-rules.md` |
 | `SOURCE_SCOPE_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/source-scope.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/source-scope.md` |
 | `REPORT_FORMAT_PATH` | `${CLAUDE_PLUGIN_ROOT}/references/report-format.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/report-format.md` |
-| `GIT_LOG_OUTPUT` | phase5 脚本输出（仅增量） | `git log --oneline -N` |
-| `CHANGED_FILES_OUTPUT` | phase5 脚本输出（仅增量） | `git diff --name-only` |
-| `DIFF_STATS_OUTPUT` | phase5 脚本输出（仅增量） | `git diff --stat` |
+| `GIT_LOG_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git log --oneline -N` |
+| `CHANGED_FILES_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git diff --name-only` |
+| `DIFF_STATS_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git diff --stat` |
 
 ### 增量审查预处理（仅增量审查时执行）
 

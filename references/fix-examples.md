@@ -84,7 +84,7 @@
 用户：fix/review-confirmed-issues
 ```
 
-最终确认后，直接修复路线由主 skill 调用 `phase8-prepare-fix-workspace.sh` 准备工作区，然后执行修复、测试、验证和输出目标处理。若选择 `使用 Superpowers 修复`，则从 `brainstorming` 开始，并由 `subagent-driven-development` 调度修复。
+最终确认后，直接修复路线由主 skill 调用 `core/prepare-fix-workspace.sh` 准备工作区，然后执行修复、测试、验证和输出目标处理。若选择 `使用 Superpowers 修复`，则从 `brainstorming` 开始，并由 `subagent-driven-development` 调度修复。
 
 完成后输出：
 

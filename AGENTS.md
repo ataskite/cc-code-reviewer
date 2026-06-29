@@ -29,7 +29,7 @@ flowchart TD
     OptionalSuperpowers["Optional Superpowers route<br/>brainstorming / subagent-driven-development"]
 
     subgraph ScanPhase["Scan phase"]
-      ReviewSkill --> ScanScripts["phase1-5 + phase10-13 scripts<br/>project / branches / stack / code intelligence / batch plans"]
+      ReviewSkill --> ScanScripts["core/ + languages/ scripts<br/>project / branches / stack / code intelligence / batch plans"]
       IgnoreRules -.read.-> ReviewSkill
       ScanScripts -->|"small repo"| ReviewAgent
       ReviewAgent --> Reports
@@ -46,7 +46,7 @@ flowchart TD
 
     subgraph FixPhase["Fix phase"]
       Reports --> FixSkill
-      FixSkill --> FixScripts["phase6-9 scripts<br/>local input / capabilities / workspace / metadata"]
+      FixSkill --> FixScripts["core/ fix scripts<br/>local input / capabilities / workspace / metadata"]
       FixScripts --> DirectFix
       FixScripts -.available + selected.-> OptionalSuperpowers
       DirectFix --> FixReports
@@ -224,7 +224,7 @@ bash scripts/core/detect-model-context.sh opus
 ### Modifying Fix Logic
 
 1. **Fix flow**: Edit `skills/cc-code-fixer/SKILL.md`
-2. **Input/workspace scripts**: Edit phase6-9 Bash scripts together when the fix contract changes
+2. **Input/workspace scripts**: Edit `core/detect-fix-input.sh` + `core/prepare-fix-workspace.sh` + `core/collect-fix-metadata.sh` together when the fix contract changes
 3. **Fix report or Feishu contracts**: Edit `references/fix-report-format.md` and `references/fix-feishu-integration.md`
 
 **Critical**: Keep fix statuses, report filename conventions, and Feishu field names consistent across skill, references, and tests.

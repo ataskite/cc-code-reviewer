@@ -232,4 +232,4 @@ fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md
 **报告版本**：1.0
 ```
 
-`生成时间` 和所有写回字段中的 `修复时间` 必须使用 `phase9-collect-fix-metadata.sh` 输出的 `FIX_COMPLETED_AT`；`修复分支` 必须使用同一脚本输出的 `FIX_BRANCH`；`修复人` 必须使用同一脚本输出的 `FIX_ACTOR`，即当前修复工作区的 Git 用户。
+`生成时间` 和所有写回字段中的 `修复时间` 必须使用 `core/collect-fix-metadata.sh` 输出的 `FIX_COMPLETED_AT`；`修复分支` 必须使用同一脚本输出的 `FIX_BRANCH`；`修复人` 必须使用同一脚本输出的 `FIX_ACTOR`，即当前修复工作区的 Git 用户。

@@ -25,7 +25,7 @@
 | `OUTPUT_TARGET` | `original-source`、`report-local-markdown`、`report-feishu-doc` 或 `report-feishu-base` |
 | `EXECUTION_ROUTE` | `direct` 或 `superpowers` |
 | `WORKSPACE_STRATEGY` | 直接修复路线下为 `current`、`branch` 或 `worktree` |
-| `FIX_COMPLETED_AT` | 修复完成后由 `phase9-collect-fix-metadata.sh` 输出的当前时间 |
+| `FIX_COMPLETED_AT` | 修复完成后由 `core/collect-fix-metadata.sh` 输出的当前时间 |
 | `FIX_BRANCH` | 修复完成后由实际修复工作区 Git 状态输出的当前分支 |
 | `FIX_ACTOR` | 修复完成后由实际修复工作区 `git config user.name/user.email` 输出的当前 Git 用户 |
 
@@ -122,7 +122,7 @@ Superpowers 不完整安装时，不进入 degraded mode，也不展示 `使用 
 
 ## Direct Fix Flow
 
-直接修复路线由主 skill 执行，不能调用 Superpowers skill 或 dedicated fix sub-agent。直接修复路线必须确认工作区策略，并在代码变更前调用 `phase8-prepare-fix-workspace.sh`：
+直接修复路线由主 skill 执行，不能调用 Superpowers skill 或 dedicated fix sub-agent。直接修复路线必须确认工作区策略，并在代码变更前调用 `core/prepare-fix-workspace.sh`：
 
 1. `current`：在当前分支和当前工作区修复。
 2. `branch`：在当前仓库创建或切换修复分支。
@@ -136,7 +136,7 @@ Superpowers 不完整安装时，不进入 degraded mode，也不展示 `使用 
 2. 优先补充或定位能暴露问题的测试；无法写测试时必须说明原因，并采用最小可验证命令替代。
 3. 只修复用户确认的问题，不扩大范围。
 4. 验证命令和 `git diff --check` 通过前，不得声称完成。
-5. 修复完成后在实际修复工作区执行 `phase9-collect-fix-metadata.sh`，用 `FIX_COMPLETED_AT` 填写修复时间、`FIX_BRANCH` 填写修复分支、`FIX_ACTOR` 填写修复人；这些值不得再次询问用户。
+5. 修复完成后在实际修复工作区执行 `core/collect-fix-metadata.sh`，用 `FIX_COMPLETED_AT` 填写修复时间、`FIX_BRANCH` 填写修复分支、`FIX_ACTOR` 填写修复人；这些值不得再次询问用户。
 6. 按 `OUTPUT_TARGET` 写回原始问题清单来源，或创建独立修复报告。
 
 ---
@@ -151,7 +151,7 @@ Superpowers 路线仅在 `SUPERPOWERS_AVAILABLE=true` 且用户明确选择 `使
 4. 使用 `test-driven-development` 优先补充或定位能暴露问题的测试；无法写测试时必须说明原因，并采用最小可验证命令替代。
 5. 使用 `verification-before-completion` 在报告、飞书更新和最终答复前执行完整验证命令。
 6. 使用 `subagent-driven-development` 执行 brainstorming 产出的修复计划。
-7. 修复完成后在实际修复工作区执行 `phase9-collect-fix-metadata.sh`，用 `FIX_COMPLETED_AT` 填写修复时间、`FIX_BRANCH` 填写修复分支、`FIX_ACTOR` 填写修复人；这些值不得再次询问用户。
+7. 修复完成后在实际修复工作区执行 `core/collect-fix-metadata.sh`，用 `FIX_COMPLETED_AT` 填写修复时间、`FIX_BRANCH` 填写修复分支、`FIX_ACTOR` 填写修复人；这些值不得再次询问用户。
 8. 按 `OUTPUT_TARGET` 写回原始问题清单来源，或创建独立修复报告。
 
 ---
@@ -222,4 +222,4 @@ degraded mode 下必须继续保护用户代码：
 - 当前分支名称、上游信息和工作区状态必须在执行计划中可见
 - 用户未确认前不得在当前分支直接修改
 - 推荐使用 `codex/fix-*` 分支或独立 worktree 执行修复
-- 如果工作区存在未提交修改，直接修复路线只能在用户明确选择当前分支修复后继续；新分支和 worktree 策略必须由 `phase8-prepare-fix-workspace.sh` 阻止脏工作区创建
+- 如果工作区存在未提交修改，直接修复路线只能在用户明确选择当前分支修复后继续；新分支和 worktree 策略必须由 `core/prepare-fix-workspace.sh` 阻止脏工作区创建

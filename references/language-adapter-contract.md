@@ -6,11 +6,11 @@
 
 | Java 现有输出 | 公共中性字段 | 说明 |
 |---|---|---|
-| `Java文件总数`（phase3 文本行） | `source_file_count` | 仅 src/main/java 生产源码 |
+| `Java文件总数`（languages/java/project-scan.sh 文本行） | `source_file_count` | 仅 src/main/java 生产源码 |
 | `代码总行数` | `source_line_count` | 仅 src/main/java |
 | `MODULE:` 行 | `COMPONENT:` 行 | 公共层只保存展示 |
 | `TECH_STACK:` 行 | `TECH_STACK:` 行 | 透传，公共层不解释 |
-| phase10 输出 | `CODE_INTELLIGENCE_PROVIDER` | jdtls-lsp / none |
+| languages/java/detect-code-intelligence.sh 输出 | `CODE_INTELLIGENCE_PROVIDER` | jdtls-lsp / none |
 
 > Java 适配器在迁移前（Phase 4 之前）继续输出原有字段；前端适配器已直接输出 PROFILE_SCHEMA v1。公共层 `scripts/core/` 使用 `source_file_count` 等中性概念消费所有语言。
 
