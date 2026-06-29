@@ -395,7 +395,7 @@ test -r "$REPORT_FORMAT_PATH"
 - `CURRENT_RUN_BATCH_LIMIT=3|5|10` 时，只调度状态表顺序中前 N 个 `pending` / `failed` 批次
 - `CURRENT_RUN_BATCH_LIMIT=all` 时，调度全部 `pending` / `failed` 批次
 - `completed` 批次永远不进入 `RUN_BATCH_IDS`
-- 后续启动、预估耗时和合并文案都必须使用 `RUN_BATCH_IDS` / `RUN_BATCH_COUNT`，不得用总 `BATCH_COUNT` 代替本轮执行批次
+- 后续启动和合并文案都必须使用 `RUN_BATCH_IDS` / `RUN_BATCH_COUNT`，不得用总 `BATCH_COUNT` 代替本轮执行批次
 
 以 CONCURRENCY=2、BATCH_COUNT=6 为例：
 
@@ -848,7 +848,6 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 - 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "已启用 .cc-code-reviewer/ignore/issues.yml（已忽略 {IGNORE_RULE_COUNT} 个问题）"；否则显示 "未配置"}
 - 报告保存方式：{FEISHU_UPLOAD_OPTION}
 - 扫描策略：分批并行扫描（本轮 {RUN_BATCH_COUNT 或 BATCH_COUNT} / 总 {BATCH_COUNT} 批 / {CONCURRENCY} 路并发）  ← 仅 BATCH_MODE=true 时显示
-- 预计耗时：约 {total_min} 分钟  ← 仅 BATCH_MODE=true 时显示
 ```
 
 **必须调用 AskUserQuestion 工具，参数如下**：

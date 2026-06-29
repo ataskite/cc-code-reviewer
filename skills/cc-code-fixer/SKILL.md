@@ -350,7 +350,7 @@ brainstorming 负责形成：
 - 工作区隔离建议
 - 产出 spec 和 plan
 
-如果 brainstorming 建议使用 worktree 或新分支策略，调用 phase8 工作区准备脚本：
+如果 brainstorming 建议使用 worktree 或新分支策略，调用工作区准备脚本：
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/prepare-fix-workspace.sh" "$PROJECT_DIR" "{WORKSPACE_STRATEGY}" "{FIX_BRANCH}"
