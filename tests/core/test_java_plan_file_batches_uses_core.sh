@@ -1,5 +1,5 @@
 #!/bin/bash
-# 测试：phase11-plan-file-batches.sh 委托 core/plan-file-batches.sh
+# 测试：languages/java/plan-file-batches.sh 委托 core/plan-file-batches.sh
 # 验证：生成的 plan.json 含 language_id=java（证明走了 core/ 版本，而非旧 Java 内联实现）
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"

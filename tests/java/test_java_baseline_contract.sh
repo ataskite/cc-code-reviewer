@@ -30,7 +30,7 @@ grep -q "TECH_STACK:" <<< "$OUTPUT"
 
 echo "PASS: java baseline prescan contract"
 
-# === 文件批次 planner 字段契约（现有 phase11-plan-file-batches.sh）===
+# === 文件批次 planner 字段契约（现有 languages/java/plan-file-batches.sh）===
 SRC2="$PROJECT_DIR/src/main/java/com/example/svc"
 mkdir -p "$SRC2"
 for i in 1 2 3 4 5; do
@@ -53,7 +53,7 @@ test -f "$BRUN_DIR/batches/batch-001.json"
 
 echo "PASS: java baseline file-batch planner contract"
 
-# === 合并报告字段契约（现有 phase12-merge-large-batches.sh）===
+# === 合并报告字段契约（现有 core/merge-batch-results.sh）===
 LRUN_DIR="$TMP_DIR/large-run"
 mkdir -p "$LRUN_DIR/batches" "$LRUN_DIR/results"
 cat > "$LRUN_DIR/plan.json" <<'JSON'

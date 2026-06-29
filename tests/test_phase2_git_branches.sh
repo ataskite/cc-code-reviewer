@@ -30,7 +30,7 @@ test "$(git -C "$TMP_DIR" branch --show-current)" = "review-target"
 printf 'dirty\n' >> "$TMP_DIR/A.java"
 DIRTY_OUTPUT="$TMP_DIR/phase2-dirty.out"
 if bash "$ROOT_DIR/scripts/core/switch-branch.sh" "$TMP_DIR" "$CURRENT_BRANCH" review-target local >"$DIRTY_OUTPUT" 2>&1; then
-  echo "phase2-switch should fail when a local project is dirty" >&2
+  echo "switch-branch should fail when a local project is dirty" >&2
   exit 1
 fi
 

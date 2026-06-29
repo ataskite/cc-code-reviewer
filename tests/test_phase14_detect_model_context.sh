@@ -1,5 +1,5 @@
 #!/bin/bash
-# 测试：phase14-detect-model-context.sh
+# 测试：core/detect-model-context.sh
 # 覆盖场景：
 #   1. settings.json 含 [1M] 后缀 → 1M 窗口（suffix_marker）
 #   2. 模型名匹配白名单 → 1M 窗口（whitelist_match）
