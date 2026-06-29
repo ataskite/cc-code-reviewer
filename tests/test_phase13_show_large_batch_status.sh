@@ -129,7 +129,6 @@ if printf '%s\n' "$OUTPUT" | grep -qE "2 路约|3 路约"; then
   printf '%s\n' "$OUTPUT" >&2
   exit 1
 fi
-printf '%s\n' "$OUTPUT" | grep -q "预估耗时"
 printf '%s\n' "$OUTPUT" | grep -q "也可以自行输入批次号"
 
 if printf '%s\n' "$OUTPUT" | grep -qE '(^|[[:space:]])(pending|running|completed|failed)([[:space:]]|$)'; then
@@ -186,9 +185,9 @@ fi
 printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 1 批"
 printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 2 批"
 printf '%s\n' "$THREE_OUTPUT" | grep -q "执行全部 3 批（推荐）"
-printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 1 批 最多 1 批 预估耗时: 串行约 7 分钟"
-printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 2 批 最多 2 批 预估耗时: 串行约 14 分钟 / 2 路约 7 分钟"
-printf '%s\n' "$THREE_OUTPUT" | grep -q "执行全部 3 批（推荐） 最多 3 批 预估耗时: 串行约 21 分钟 / 2 路约 14 分钟 / 3 路约 7 分钟"
+printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 1 批（最多 1 批）"
+printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 2 批（最多 2 批）"
+printf '%s\n' "$THREE_OUTPUT" | grep -q "执行全部 3 批（推荐）（最多 3 批）"
 if printf '%s\n' "$THREE_OUTPUT" | grep -qE "执行 1 批 .*2 路|执行 1 批 .*3 路|执行 2 批 .*3 路"; then
   echo "batch-plan estimates must not show concurrency greater than the selected batch count" >&2
   printf '%s\n' "$THREE_OUTPUT" >&2

@@ -516,11 +516,10 @@ test -r "$REPORT_FORMAT_PATH"
 8. `core/detect-model-context.sh` → 模型窗口 → CONTEXT_SCALE
 9. 读 ignore 规则 → 输出预扫描摘要
 10. AskUserQuestion 交互（模式/报告/入口/范围…）
-11. `core/estimate-review-minutes.sh` → 计算预估耗时（单 agent 模式）
-12. [分批] `languages/java/plan-large-batches.sh` 或 `plan-file-batches.sh`
-13. [分批] `core/show-batch-status.sh` → 展示批次状态
-14. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
-15. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
+11. [分批] `languages/java/plan-large-batches.sh` 或 `plan-file-batches.sh`
+12. [分批] `core/show-batch-status.sh` → 展示批次状态
+13. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
+14. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
 
 ### 前端扫描流程
 
@@ -534,11 +533,10 @@ test -r "$REPORT_FORMAT_PATH"
 8. `core/detect-model-context.sh` → 模型窗口 → CONTEXT_SCALE
 9. 读 ignore 规则 → 输出预扫描摘要
 10. AskUserQuestion 交互（模式/报告/入口/范围…）
-11. `core/estimate-review-minutes.sh` → 计算预估耗时（单 agent 模式）
-12. [分批] `core/plan-file-batches.sh` → 前端文件级分批
-13. [分批] `core/show-batch-status.sh` → 展示批次状态
-14. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
-15. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
+11. [分批] `core/plan-file-batches.sh` → 前端文件级分批
+12. [分批] `core/show-batch-status.sh` → 展示批次状态
+13. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
+14. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
 
 ---
 
@@ -737,7 +735,6 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 - 模块列必须使用缩略名展示；当同一批次内模块存在共同工程前缀（例如 `yudao-module-`）时，去掉共同前缀，只展示真正的业务模块含义名称，例如 `trade-server,statistics-api`。
 - 本轮可执行批次：`pending` 和 `failed` 批次；`completed` 批次只展示不调度
 - 推荐执行计划：必须根据本轮可执行批次数动态生成，不能固定展示 3 / 5 / 10 批选项
-- 预估耗时：按当前 `REVIEW_MODE` 和 1 / 2 / 3 路并发给出参考
 - 自行输入批次号提示：允许用户根据表格在 Other/free-form 中输入若干批次号，例如 `batch-002,batch-004` 或 `2,4,7`
 
 **展示要求**：
@@ -754,7 +751,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 - `RUNNABLE_COUNT=4|5` → options 只包含 `执行 2 批`、`执行 3 批（推荐）`、`执行全部 {RUNNABLE_COUNT} 批` 和 Other/free-form。
 - `RUNNABLE_COUNT=6..10` → options 只包含 `执行 3 批`、`执行 5 批（推荐）`、`执行全部 {RUNNABLE_COUNT} 批` 和 Other/free-form；不得出现 `执行 10 批`。
 - `RUNNABLE_COUNT>10` → options 只包含 `执行 3 批`、`执行 5 批（推荐）`、`执行 10 批`、`执行全部 {RUNNABLE_COUNT} 批` 和 Other/free-form。
-- 固定选项描述中的批次数和预估耗时必须使用实际 `RUNNABLE_COUNT` 截断后的数量；不得出现“执行 5 批”但描述里又显示“最多 3 批”。
+- 固定选项描述中的批次数必须使用实际 `RUNNABLE_COUNT` 截断后的数量；不得出现“执行 5 批”但描述里又显示“最多 3 批”。
 
 **必须调用 AskUserQuestion 工具，参数如下**：
 - question: "请选择本轮执行批次"
@@ -872,7 +869,6 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 🚀 正在启动独立代码审查子代理...
 
 📋 任务配置：{REVIEW_MODE} 模式（{REVIEW_MODEL}） · {REVIEW_TYPE} · {REVIEW_SCOPE}
-⏱️ 预估耗时：{预估时间}
 📌 子代理将独立执行完整审查流程，完成后自动返回结果。
 
 {选择飞书输出时追加}
@@ -888,7 +884,6 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 
 📋 任务配置：{REVIEW_MODE} 模式（{REVIEW_MODEL}） · {REVIEW_TYPE} · {REVIEW_SCOPE}
 📊 扫描策略：本轮 {RUN_BATCH_COUNT 或 BATCH_COUNT} / 总 {BATCH_COUNT} 批 / {CONCURRENCY} 路并发
-⏱️ 预估耗时：约 {total_min} 分钟
 📌 本轮 {RUN_BATCH_COUNT 或 BATCH_COUNT} 批次将按 {CONCURRENCY} 路并发执行；未调度批次保持 pending，完成后生成阶段性或完整合并结果。
 
 {选择飞书输出时追加}
@@ -896,15 +891,6 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 
 💡 温馨提示：审查期间您可以输入 `/btw` 继续与本会话交互。
 ```
-
-**预估时间参考**：
-
-| 模式 | 小型（<50类） | 中型（50-200类） | 大型（>200类） |
-|------|:---:|:---:|:---:|
-| fast | 2-3 分钟 | 3-5 分钟 | 5-8 分钟 |
-| standard | 5-8 分钟 | 8-15 分钟 | 15-25 分钟 |
-| deep | 10-15 分钟 | 15-30 分钟 | 30-60 分钟 |
-| security | 5-10 分钟 | 10-20 分钟 | 20-35 分钟 |
 
 ---
 

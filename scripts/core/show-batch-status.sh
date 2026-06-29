@@ -241,18 +241,9 @@ display_plan_row() {
   if [ "$effective_limit" -lt 1 ]; then
     effective_limit=0
   fi
-  local estimate_text
-  estimate_text="串行约 $(estimate_minutes "$effective_limit" 1) 分钟"
-  if [ "$effective_limit" -ge 2 ]; then
-    estimate_text="$estimate_text / 2 路约 $(estimate_minutes "$effective_limit" 2) 分钟"
-  fi
-  if [ "$effective_limit" -ge 3 ]; then
-    estimate_text="$estimate_text / 3 路约 $(estimate_minutes "$effective_limit" 3) 分钟"
-  fi
-  printf '%s 最多 %s 批 预估耗时: %s\n' \
-    "$label" \
-    "$effective_limit" \
-    "$estimate_text"
+  # 不再展示预估耗时（系数未经充分校准，实际偏差大，反而误导）。
+  # 保留批次选择信息，帮助用户选并发数。
+  printf '%s（最多 %s 批）\n' "$label" "$effective_limit"
 }
 
 display_dynamic_plan_rows() {
@@ -428,8 +419,6 @@ echo "说明: 已完成批次会自动跳过；待执行和失败待重试批次
 echo "也可以自行输入批次号，例如 batch-002,batch-004 或 2,4,7。"
 
 RUNNABLE_COUNT="${#RUNNABLE_BATCHES[@]}"
-TARGET_MINUTES_PER_BATCH="$(target_batch_minutes "$REVIEW_MODE")"
 echo
 echo "推荐执行计划"
-echo "预估耗时基于 ${REVIEW_MODE:-standard} 模式、各批 planned_review_cost 和 ${TARGET_REVIEW_COST} 目标批次成本；目标批次约 ${TARGET_MINUTES_PER_BATCH} 分钟，最终耗时会随机器性能和代码复杂度波动。"
 display_dynamic_plan_rows "$RUNNABLE_COUNT"
