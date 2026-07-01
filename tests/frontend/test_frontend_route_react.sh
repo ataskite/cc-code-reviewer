@@ -15,6 +15,17 @@ LOUT="$(bash "$ROOT_DIR/scripts/core/detect-language.sh" "$D")"
 grep -q "CANDIDATE_LANGUAGE:frontend" <<< "$LOUT"
 ! grep -q "CANDIDATE_LANGUAGE:java" <<< "$LOUT"
 
+JSD="$TMP_DIR/react_js"; mkdir -p "$JSD/src"
+cat > "$JSD/package.json" <<'JSON'
+{"name":"app","dependencies":{"react":"^18.2.0","react-dom":"^18.2.0"}}
+JSON
+cat > "$JSD/src/App.js" <<'JS'
+import { createElement } from 'react';
+export default function App(){ return createElement('div'); }
+JS
+JSOUT="$(bash "$ROOT_DIR/scripts/core/detect-language.sh" "$JSD")"
+grep -q "CANDIDATE_LANGUAGE:frontend" <<< "$JSOUT"
+
 # 2. 前端 scan-project 产出 PROFILE_SCHEMA v1
 SOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/scan-project.sh" "$D")"
 grep -q "PROFILE_SCHEMA_VERSION=1" <<< "$SOUT"

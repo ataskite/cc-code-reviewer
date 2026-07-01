@@ -7,6 +7,9 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 D="$TMP_DIR/app"
 mkdir -p "$D/src/components" "$D/src/test" "$D/src/types" "$D/dist" "$D/node_modules" "$D/scripts" "$D/tools"
 D="$(cd "$D" && pwd -P)"
+cat > "$D/package.json" <<'JSON'
+{"dependencies":{"react":"^18.2.0"}}
+JSON
 
 # 正式生产源码（应被收集）
 echo 'export const A: number = 1;' > "$D/src/a.ts"
@@ -48,3 +51,22 @@ grep -F "$D/src/b.js" <<< "$OUT"
 ! grep -F "global.d.ts" <<< "$OUT"
 
 echo "PASS: frontend collect-source-files"
+
+# React workspace packages must be collected from package-local src roots,
+# not only from PROJECT_DIR/src.
+W="$TMP_DIR/workspace"; mkdir -p "$W/apps/web/src" "$W/packages/admin/src"
+W="$(cd "$W" && pwd -P)"
+cat > "$W/package.json" <<'JSON'
+{"name":"root","workspaces":["apps/*","packages/*"]}
+JSON
+cat > "$W/apps/web/package.json" <<'JSON'
+{"dependencies":{"react":"^18.2.0"}}
+JSON
+cat > "$W/packages/admin/package.json" <<'JSON'
+{"dependencies":{"react":"^18.2.0"}}
+JSON
+echo 'export function App(){return <div/>}' > "$W/apps/web/src/App.tsx"
+echo 'export function Admin(){return <div/>}' > "$W/packages/admin/src/Admin.jsx"
+WOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/collect-source-files.sh" "$W")"
+grep -F "$W/apps/web/src/App.tsx" <<< "$WOUT"
+grep -F "$W/packages/admin/src/Admin.jsx" <<< "$WOUT"

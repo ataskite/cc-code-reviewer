@@ -42,3 +42,17 @@ grep -q "CODE_INTELLIGENCE_PROVIDER=" <<< "$OUT"
 grep -q "^COMPONENT:components|src/components|" <<< "$OUT"
 
 echo "PASS: frontend scan-project"
+
+W="$TMP_DIR/workspace"; mkdir -p "$W/apps/web/src/components"
+cat > "$W/package.json" <<'JSON'
+{"name":"root","workspaces":["apps/*"]}
+JSON
+cat > "$W/apps/web/package.json" <<'JSON'
+{"name":"web","dependencies":{"react":"^18.2.0","react-dom":"^18.2.0"}}
+JSON
+printf 'export function App(){return <div/>}\n' > "$W/apps/web/src/App.tsx"
+printf 'export function C(){return <span/>}\n' > "$W/apps/web/src/components/C.tsx"
+WOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/scan-project.sh" "$W")"
+grep -qE "^SOURCE_FILE_COUNT=2$" <<< "$WOUT"
+grep -q "^SOURCE_ROOT:formal|apps/web/src$" <<< "$WOUT"
+grep -q "^COMPONENT:components|apps/web/src/components|" <<< "$WOUT"

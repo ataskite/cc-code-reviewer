@@ -28,7 +28,7 @@ if has_dep_anywhere "nuxt"; then
   echo "PROJECT_TYPE=frontend-unsupported|reason=nuxt"; exit 0
 fi
 
-# 需要 react 依赖 + tsx/jsx 入口证据
+# 需要 react 依赖 + tsx/jsx 或 React JS/TS 入口证据
 has_react=0
 if has_dep_anywhere "react"; then has_react=1; fi
 
@@ -38,6 +38,14 @@ if [ "$has_react" -eq 1 ]; then
     -o \( -name '*.tsx' -o -name '*.jsx' \) -print -quit 2>/dev/null | grep -q .; then
     echo "PROJECT_TYPE=frontend-react"; exit 0
   fi
+  while IFS= read -r src; do
+    [ -n "$src" ] || continue
+    if grep -Eq "from ['\"]react['\"]|require\\(['\"]react['\"]\\)|React\\.createElement|createElement\\(" "$src" 2>/dev/null; then
+      echo "PROJECT_TYPE=frontend-react"; exit 0
+    fi
+  done < <(find "$PROJECT_DIR" \
+    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune \
+    -o \( -name '*.ts' -o -name '*.js' \) -type f -print 2>/dev/null)
 fi
 
 # 有 TS/JS 但无 React → 通用 TS/JS，首期不支持

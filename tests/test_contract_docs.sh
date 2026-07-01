@@ -3,7 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT_FILE="$ROOT_DIR/agents/cc-code-reviewer.md"
+FRONTEND_AGENT_FILE="$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 FEISHU_FILE="$ROOT_DIR/references/feishu-integration.md"
+REPORT_FORMAT_FILE="$ROOT_DIR/references/report-format.md"
 SKILL_FILE="$ROOT_DIR/skills/cc-code-reviewer/SKILL.md"
 AGENTS_FILE="$ROOT_DIR/AGENTS.md"
 CLAUDE_FILE="$ROOT_DIR/CLAUDE.md"
@@ -71,6 +73,18 @@ fi
 
 grep -q "### 第一步：提取项目路径" "$SKILL_FILE"
 grep -q "优先提取 Git URL" "$SKILL_FILE"
+require_literal "$SKILL_FILE" "### 第三步：语言探测与路由" "language detection must be the third explicit step before language-specific pre-scan"
+require_literal "$SKILL_FILE" "### 第四步：按语言执行项目预扫描" "language-specific pre-scan must be explicitly routed after language detection"
+if grep -q "### 第三步之后：语言探测与路由" "$SKILL_FILE"; then
+  echo "language detection must not be documented after Java pre-scan" >&2
+  exit 1
+fi
+LANG_DETECT_LINE="$(grep -n 'scripts/core/detect-language.sh' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+JAVA_SCAN_LINE="$(grep -n 'scripts/languages/java/project-scan.sh' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+if [ -z "$LANG_DETECT_LINE" ] || [ -z "$JAVA_SCAN_LINE" ] || [ "$LANG_DETECT_LINE" -ge "$JAVA_SCAN_LINE" ]; then
+  echo "detect-language must run before Java project-scan in the scan skill" >&2
+  exit 1
+fi
 
 for scan_contract_file in "$SKILL_FILE" "$EXAMPLES_FILE" "$AGENTS_FILE" "$CLAUDE_FILE"; do
   if grep -qE "$SCAN_BYPASS_PATTERN" "$scan_contract_file"; then
@@ -102,6 +116,11 @@ fi
 grep -q "REVIEW_FRAMEWORK_PATH" "$AGENT_FILE"
 grep -q "REPORT_FORMAT_PATH" "$AGENT_FILE"
 grep -q "优先读取主 agent 注入的绝对路径" "$AGENT_FILE"
+if grep -q "| 飞书上传选项 |" "$AGENT_FILE"; then
+  echo "review agent must not document FEISHU_UPLOAD_OPTION as an injected parameter; main skill owns upload handling" >&2
+  exit 1
+fi
+require_literal "$AGENT_FILE" "报告保存方式不注入本子 agent" "review agent must explicitly state report handling is not injected"
 grep -q "IGNORE_RULES_PATH" "$AGENT_FILE"
 grep -q "IGNORE_RULES_CONTENT" "$AGENT_FILE"
 grep -q "先应用项目 ignore 规则" "$AGENT_FILE"
@@ -124,6 +143,20 @@ if grep -Fq "置信度不影响级别判断" "$AGENT_FILE"; then
   echo "confidence must participate in severity classification; remove the obsolete rule" >&2
   exit 1
 fi
+
+require_literal "$REPORT_FORMAT_FILE" '### P0-N | [维度名称] {问题一句话标题}' "report format must use third-level headings for issue entries"
+require_literal "$REPORT_FORMAT_FILE" '### P1-N | [维度名称] {问题一句话标题}' "report format must use third-level headings for P1 issue entries"
+require_literal "$REPORT_FORMAT_FILE" '### 待确认-N | [维度名称] {问题一句话标题}' "report format must use third-level headings for pending issue entries"
+if grep -qE '^## P[0-3]-N \|' "$REPORT_FORMAT_FILE" || grep -qE '^## 待确认-N \|' "$REPORT_FORMAT_FILE"; then
+  echo "issue entries must not use the same heading level as severity sections" >&2
+  exit 1
+fi
+if grep -qE '^\*\*问题编号\*\*：P[0-3]-N' "$REPORT_FORMAT_FILE"; then
+  echo "report format must not allow legacy bold 问题编号 entries for scan findings" >&2
+  exit 1
+fi
+require_literal "$AGENT_FILE" '三级标题 `### {编号} | [维度] 标题`' "review agent must instruct third-level issue headings"
+require_literal "$FRONTEND_AGENT_FILE" '三级标题 `### {问题编号} | [维度名称] {问题一句话标题}`' "frontend agent must follow shared third-level issue headings"
 
 BATCH_P0_TEMPLATE="$(awk '
   /^## Batch 发现清单输出格式$/ { in_batch_format = 1; next }
@@ -526,6 +559,12 @@ require_literal "$SKILL_FILE" 'Maven 多模块存量分批绝不调用 `language
 require_literal "$SKILL_FILE" "即使只选择一个模块" "single selected Maven module must still use the scoped Maven planner"
 require_literal "$SKILL_FILE" "简要分批计划" "file batching must show a concise batch plan before concurrency selection"
 require_literal "$SKILL_FILE" "BATCH_FILE_LIST_DIR" "file batching must expose batch file list directory for batch agents"
+require_literal "$SKILL_FILE" "filter-source-manifest.sh" "frontend selected-directory scope must use the tested manifest filter"
+require_literal "$SKILL_FILE" '*/src/{目录名}/' "frontend selected-directory scope must support package-local src roots in monorepos"
+if grep -q 'PROJECT_DIR/src/\$sub' "$SKILL_FILE" || grep -q 'PREFIXES_FILE' "$SKILL_FILE"; then
+  echo "frontend selected-directory scope must not assume a top-level PROJECT_DIR/src root" >&2
+  exit 1
+fi
 if grep -q "当 BATCH_MODE=true 时，主 skill 在 prompt 中执行以下步骤（不使用脚本）" "$SKILL_FILE"; then
   echo "batch calculation must not instruct the agent to improvise inline shell batching" >&2
   exit 1
@@ -538,6 +577,12 @@ fi
 MODE_PICK_LINE="$(grep -n 'question: "请选择审查模式"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 UPLOAD_PICK_LINE="$(grep -n 'question: "请选择审查报告的保存方式"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 ENTRY_PICK_LINE="$(grep -n 'question: "请选择本次审查入口"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+MODE_SECTION="$(awk '/### 步骤 1：选择审查模式/{flag=1; next} /### 步骤 2：选择审查报告保存方式/{flag=0} flag {print}' "$SKILL_FILE")"
+if printf '%s\n' "$MODE_SECTION" | grep -q "RUN_BATCH_COUNT"; then
+  echo "review mode selection must be unconditional and cannot depend on RUN_BATCH_COUNT" >&2
+  exit 1
+fi
+require_literal "$SKILL_FILE" "审查模式选择是固定必问步骤" "review mode selection must be documented as always required"
 require_literal "$SKILL_FILE" 'label: "fast（仅输出 P0）"' "fast option must state its P0-only output"
 require_literal "$SKILL_FILE" '只报告已证实、足以阻断上线的 P0；P1/P2/P3 和待确认项均不输出' "fast option must explain excluded severities"
 require_literal "$SKILL_FILE" 'fast（仅输出 P0） → REVIEW_MODE=fast' "fast option response must normalize to the internal fast enum"
@@ -702,6 +747,17 @@ for f in \
   "references/languages/frontend/react-rules.md"; do
   [ -f "$ROOT_DIR/$f" ] || { echo "MISSING: $f" >&2; exit 1; }
 done
+
+if find "$ROOT_DIR/scripts" -maxdepth 1 -type f -name 'phase*.sh' -print -quit | grep -q .; then
+  echo "legacy phase wrappers must be removed from scripts/ root" >&2
+  exit 1
+fi
+if grep -qE "phaseN-\*\.sh|Legacy paths|compat forwarding wrappers|兼容转发 wrapper" "$AGENTS_FILE" "$CLAUDE_FILE" "$SKILL_FILE" "$FIX_SKILL_FILE"; then
+  echo "active docs must not advertise legacy phase wrappers" >&2
+  exit 1
+fi
+
+require_literal "$ROOT_DIR/.gitignore" ".superpowers/" "local Superpowers work artifacts must be ignored"
 
 # shared-review-framework.md 必须已删除（过度设计，不再维护公共维度分类法）
 if [ -f "$ROOT_DIR/references/shared-review-framework.md" ]; then

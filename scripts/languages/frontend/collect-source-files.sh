@@ -8,10 +8,30 @@ PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd -P)"
 # 不遍历项目根：根级配置脚本（vite.config.ts/jest.config.ts/.eslintrc.js 等）、
 # 非 src 目录（scripts/ tools/）、生成代码、测试、node_modules、dist/build 均不计入正式源码。
 # .d.ts 是类型声明（只读上下文，spec 7.2），不计入正式源码。
+has_react_dep() {
+  grep -Eq '"react"\s*:\s*"[^"]+' "$1" 2>/dev/null
+}
+has_unsupported_meta_framework() {
+  grep -Eq '"(next|nuxt)"\s*:\s*"[^"]+' "$1" 2>/dev/null
+}
+
 SOURCE_ROOTS=()
-for root in "$PROJECT_DIR/src"; do
-  [ -d "$root" ] && SOURCE_ROOTS+=("$root")
-done
+while IFS= read -r pkg; do
+  [ -n "$pkg" ] || continue
+  has_react_dep "$pkg" || continue
+  has_unsupported_meta_framework "$pkg" && continue
+  pkg_root="$(cd "$(dirname "$pkg")" && pwd -P)"
+  root="$pkg_root/src"
+  [ -d "$root" ] || continue
+  exists=0
+  for existing in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
+    [ "$existing" = "$root" ] && { exists=1; break; }
+  done
+  [ "$exists" -eq 0 ] && SOURCE_ROOTS+=("$root")
+done < <(find "$PROJECT_DIR" -maxdepth 3 \
+  \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune -o \
+  -name 'package.json' -type f -print 2>/dev/null | sort)
+
 [ "${#SOURCE_ROOTS[@]}" -gt 0 ] || exit 0
 
 for root in "${SOURCE_ROOTS[@]}"; do

@@ -156,8 +156,8 @@ scripts/
   │       ├── scan-project.sh            # Frontend PROFILE_SCHEMA scan
   │       ├── detect-code-intelligence.sh # typescript-lsp detection
   │       ├── collect-source-files.sh    # Production source file manifest
+  │       ├── filter-source-manifest.sh  # Selected src-directory manifest filter
   │       └── detect-project.sh          # Frontend project type detection
-  └── phaseN-*.sh                        # Legacy paths: compat forwarding wrappers (exec → new path)
 ```
 
 ## Common Development Tasks
@@ -258,6 +258,7 @@ Verify installation by triggering the skill with a Java review request such as `
 - Maven multi-module stock batching must never fall back to `languages/java/plan-file-batches.sh`; that planner is only for Maven single-module, Gradle, or unknown Java projects.
 - Pre-scan, batch-planning, and batch-agent formal scan Java file/line counts must include only `src/main/java` production sources; `src/test/java` test sources must not contribute to review scale, file batch manifests, or formal batch findings.
 - Selected module paths must be relative paths inside `PROJECT_DIR`; absolute paths, `..` path traversal, and resolved paths outside the project root must be rejected before planning.
+- Frontend selected-directory reviews must filter the immutable source manifest through `languages/frontend/filter-source-manifest.sh`; `src/components` or `components` matches every React package-local `*/src/components/` in monorepos, while full paths such as `apps/web/src/components` match only that package.
 - `RUN_DIR` names are fixed as `{YYYYMMDD-HHMMSS}-{branch_slug}-{REVIEW_MODE}`. Scope, strategy, task type, selected modules, and totals must be read from `plan.json`, not inferred from the directory name.
 - Merged batch reports are complete only when all planned batches are included in the merge. Completed but non-target batches remain leftovers, keep the report `[阶段性]`, and must not inflate the merged finding count.
 - `core/merge-batch-results.sh` must deterministically deduplicate identical finding blocks across included batch results before writing `summary.json.finding_count`.

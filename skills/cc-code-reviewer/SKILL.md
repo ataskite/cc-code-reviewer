@@ -60,26 +60,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-branches.sh" "$PROJECT_DIR"
 
 **单分支或非 Git 项目**：跳过交互，自动使用 CURRENT_BRANCH。
 
-### 第三步：项目预扫描（3 个脚本按顺序执行）
+### 第三步：语言探测与路由
 
-分支选择完成后，继续执行以下 3 个脚本：
-
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/project-scan.sh" "$PROJECT_DIR"
-# 输出：PROJECT_TYPE=maven-single|maven-multi|... MODULE:模块名|相对路径|Java文件数|代码行数 TECH_STACK:技术栈|dependency:命中依赖|dimensions:建议维度|rules:专项规则
-
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/detect-code-intelligence.sh" "$PROJECT_DIR"
-# 输出：CODE_INTELLIGENCE_AVAILABLE=true|false CODE_INTELLIGENCE_PROVIDER=jdtls-lsp|none CODE_INTELLIGENCE_REASON=...
-
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
-# 输出：LARK_PLUGIN_INSTALLED=true|false，失败时附带 LARK_PLUGIN_REASON
-```
-
-> ⚠️ 3 个脚本必须全部执行完成后才能继续。此阶段禁止调用 AskUserQuestion，禁止输出任何交互式提问。
-
-### 第三步之后：语言探测与路由
-
-预扫描脚本执行前，先识别候选语言：
+分支选择完成后，必须先识别候选语言，再执行任何语言专属预扫描脚本：
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-language.sh" "$PROJECT_DIR"
@@ -101,7 +84,24 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-language.sh" "$PROJECT_DIR"
   - 用户选择后设 `LANGUAGE_ID`，另一语言仅作仓库背景，不得产出正式问题。
 - **none**：输出"❌ 未识别到支持的审查目标（Java 或 React/TS/JS）"并终止。
 
-**前端预扫描分支**（`LANGUAGE_ID=frontend` 时执行，替代 Java 的 project-scan/detect-code-intelligence）：
+### 第四步：按语言执行项目预扫描
+
+语言已确定后，按 `LANGUAGE_ID` 执行且只执行对应语言的预扫描脚本。此阶段必须全部脚本执行完成后才能继续；禁止调用 AskUserQuestion，禁止输出任何交互式提问。
+
+**Java 预扫描分支**（`LANGUAGE_ID=java` 时执行）：
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/project-scan.sh" "$PROJECT_DIR"
+# 输出：PROJECT_TYPE=maven-single|maven-multi|... MODULE:模块名|相对路径|Java文件数|代码行数 TECH_STACK:技术栈|dependency:命中依赖|dimensions:建议维度|rules:专项规则
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/detect-code-intelligence.sh" "$PROJECT_DIR"
+# 输出：CODE_INTELLIGENCE_AVAILABLE=true|false CODE_INTELLIGENCE_PROVIDER=jdtls-lsp|none CODE_INTELLIGENCE_REASON=...
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
+# 输出：LARK_PLUGIN_INSTALLED=true|false，失败时附带 LARK_PLUGIN_REASON
+```
+
+**前端预扫描分支**（`LANGUAGE_ID=frontend` 时执行）：
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/detect-project.sh" "$PROJECT_DIR"
@@ -150,9 +150,9 @@ IGNORE_RULE_COUNT="$(
 
 ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI 指令型 ignore 文件，不存报告编号，只描述同类问题的跳过规则。
 
-### 第四步：输出预扫描摘要（不允许跳过）
+### 第五步：输出预扫描摘要（不允许跳过）
 
-3 个脚本全部完成后，必须输出以下格式的摘要（这是预扫描阶段的唯一输出）：
+语言专属预扫描脚本全部完成后，必须输出以下格式的摘要（这是预扫描阶段的唯一输出）：
 
 ```
 🔍 预扫描完成
@@ -177,6 +177,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 - 前端源码文件（src 下 .ts/.tsx/.js/.jsx）：{SOURCE_FILE_COUNT} 个
 - 代码行数：{SOURCE_LINE_COUNT} 行
 - 配置文件：{FORMAL_CONFIG_FILE_COUNT} 个
+- src 目录概览：{解析预扫描 `COMPONENT:` 行，格式为 `目录名(文件数)` 逗号分隔，如 `components(42), pages(18), hooks(8)`；无 `COMPONENT:` 行时显示"无可选子目录"}
 
 🧩 技术栈扫描：
 - 识别数量：{解析 `TECH_STACK:` 行数量；未识别专项技术栈时显示 0}
@@ -208,7 +209,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 - 识别证据超过 80 字可截断，但不得截断技术栈名称、建议维度和专项规则
 - 摘要表最多展示 12 个技术栈；超过 12 个时追加 `另有 {N} 个技术栈未在摘要表中展示，完整结果已注入子 agent。`
 
-### 第四步之后：选择审查模型 + 上下文窗口侦测
+### 第五步之后：选择审查模型 + 上下文窗口侦测
 
 **时机**：在步骤 4B（选择存量审查方式）之后、分批判定之前执行。
 
@@ -242,7 +243,7 @@ done
 
 > **设计依据**：模型选择放在分批之前，是因为分批预算（每批装多少代码）依赖模型的上下文窗口大小。大窗口模型（1M）可一次性审查 5 倍代码量，显著减少批次数。动态推荐窗口最大的角色，避免向用户推荐「逻辑档位中等但实际配置最弱」的模型。
 
-### 第四步之后：分批判定
+### 第五步之后：分批判定
 
 **时机**：在模型选择 + 上下文窗口侦测完成后、步骤 5 前执行判定。
 
@@ -502,7 +503,7 @@ test -r "$REPORT_FORMAT_PATH"
 
 ## 脚本调用顺序
 
-脚本文件名不再带 phase 编号（功能名描述职责，执行顺序在此编排）。通用脚本在 `scripts/core/`，Java 专属在 `scripts/languages/java/`，前端专属在 `scripts/languages/frontend/`。旧 `scripts/phaseN-*.sh` 路径保留为兼容转发 wrapper。
+脚本文件名不再带 phase 编号（功能名描述职责，执行顺序在此编排）。通用脚本在 `scripts/core/`，Java 专属在 `scripts/languages/java/`，前端专属在 `scripts/languages/frontend/`。1.4.0 起不再保留旧 phase 脚本入口。
 
 ### Java 扫描流程
 
@@ -548,11 +549,11 @@ test -r "$REPORT_FORMAT_PATH"
 > - 不允许在一次回复中包含多个交互步骤的动作
 > - 用户响应后，处理结果、设置变量，然后才能进入下一步
 
-> **注意**：分支选择已在第二步（项目识别与分支检测）完成，本步骤从选择审查模式开始；审查模式和报告保存方式必须在审查入口前确认。审查模型在步骤 5C 最后选择。
+> **注意**：分支选择已在第二步（项目识别与分支检测）完成，本步骤从选择审查模式开始；审查模式和报告保存方式必须在审查入口前确认。审查模型已前移到分批判定之前选择。
 
 ### 步骤 1：选择审查模式
 
-当 `RUN_BATCH_COUNT>=2` 时，**必须调用 AskUserQuestion 工具，参数如下**：
+审查模式选择是固定必问步骤。无论是否进入分批、无论当前项目是 Java 还是前端，都**必须调用 AskUserQuestion 工具，参数如下**：
 - question: "请选择审查模式"
 - header: "审查模式"
 - options:
@@ -621,9 +622,12 @@ test -r "$REPORT_FORMAT_PATH"
 
 **触发条件**：
 - 增量审查时 → 必须执行
-- 指定模块 + 多模块 → 必须执行
+- 指定模块 + 多模块 → 必须执行（模块选择流程见下）
+- 指定模块 + 前端（`LANGUAGE_ID=frontend`，`PROJECT_TYPE=frontend-react`）→ 按前端目录选择流程处理（见下）；若预扫描无 `COMPONENT:` 行（`src/` 下无子目录），跳过并自动设 `REVIEW_SCOPE=全量代码`，提示用户"前端项目未识别到可选择的 src 子目录，将进行全量审查"
 - 指定模块 + 单模块 → 跳过，自动设 REVIEW_SCOPE=全量代码
 - 全量审查 → 跳过，已在步骤 3 设 REVIEW_SCOPE=全量代码
+
+> 前端项目（`PROJECT_TYPE=frontend-react`）既非 `*-single` 也非 `maven-multi`，不进入 Java 的模块树流程；前端的"模块"语义是 `src/` 下的顶层目录（即预扫描 `COMPONENT:` 行）。
 
 **增量审查时，必须先扫描并展示最近提交，再调用 AskUserQuestion 工具**：
 
@@ -696,6 +700,55 @@ test -r "$REPORT_FORMAT_PATH"
 - 全部模块 → REVIEW_SCOPE=全量代码
 - 前 5 个大模块 → REVIEW_SCOPE=模块路径（逗号分隔）
 - 自定义模块路径 → REVIEW_SCOPE=模块路径（逗号分隔）
+
+---
+
+**指定模块 + 前端时，先展示 src 目录概览，再调用 AskUserQuestion 工具**：
+
+前端没有 Maven 模块，其可选择的"分区"是 `src/` 下的顶层目录（如 `components`/`pages`/`hooks`/`store`），由前端 `scan-project.sh` 输出的 `COMPONENT:` 行提供。
+
+**展示目录概览**（在调用 AskUserQuestion 之前，用文本输出；完整目录列表只能作为普通文本展示，不得放入 AskUserQuestion options）：
+```
+📂 前端目录概览：
+
+{项目名称}/src/
+├── {目录1}/     {N} 文件 · {M} 行
+├── {目录2}/     {N} 文件 · {M} 行
+└── {目录3}/     {N} 文件 · {M} 行
+
+合计：{总文件数} 文件 · {总行数} 行
+```
+
+数据来源：解析阶段四预扫描输出的 `COMPONENT:` 行（格式 `COMPONENT:{目录名}|{相对路径}|{文件数}|{代码行数}`），提取每个目录的名称、文件数、代码行数。单包项目相对路径通常是 `src/{目录名}`；monorepo/package 项目可能是 `apps/web/src/{目录名}` 或 `packages/admin/src/{目录名}`。仅展示 `COMPONENT:` 行，不展示 `src/` 下的零散文件。
+
+**AskUserQuestion payload 约束**：
+- 不得把每个目录都作为 AskUserQuestion option；目录数量可能较多
+- 该步骤最多 3 个固定选项，目录路径通过 Other/free-form 或后续输入步骤收集
+
+**然后调用 AskUserQuestion 工具，参数如下**：
+- question: "请选择本次希望 AI 扫描的 src 目录"
+- header: "扫描目录"
+- options:
+  - label: "全部目录"
+    description: "扫描 src 下的全部生产源码，等同全量审查"
+  - label: "手动输入目录路径"
+    description: "在 Other/free-form 中输入一个或多个 src 下相对路径（如 src/components,src/pages），逗号分隔"
+  - label: "前 3 个大目录"
+    description: "按代码行数选择预扫描结果中最大的 3 个 src 目录，适合先覆盖主要复杂度"
+- multiSelect: false
+
+**指定模块 + 前端用户响应后**：
+- 选择"全部目录" → REVIEW_SCOPE=全量代码
+- 选择"前 3 个大目录" → REVIEW_SCOPE=按 `COMPONENT:` 行代码行数降序取前 3 个目录的相对路径（如 `src/components`），逗号分隔
+- 选择"手动输入目录路径" 或 Other/free-form → 读取用户提供的相对路径，支持逗号、中文逗号、顿号、空格或换行分隔多个目录；若 AskUserQuestion 当前交互没有返回自定义文本，追加一次 AskUserQuestion 收集目录路径，header 使用 "输入目录"，仍只提供固定选项并要求用户在 Other/free-form 填写目录路径
+- 目录路径必须是 `src/` 下的相对路径（形如 `src/{目录名}` 或 `{目录名}`，后者自动补 `src/` 前缀）；不得接受绝对路径、`..` 路径穿越或解析后位于 `PROJECT_DIR/src/` 之外的路径
+- 自定义目录路径必须逐个校验是否存在于预扫描结果的 `COMPONENT:` 行中；不存在时提示有效目录列表并重新收集，最多重试 3 次
+- 校验通过后，主 skill 在前端 manifest 生成阶段（见「前端分批」段落）按所选目录过滤 source manifest，使分批与扫描真正收敛到所选目录
+
+**变量赋值**：
+- 全部目录 → REVIEW_SCOPE=全量代码
+- 前 3 个大目录 → REVIEW_SCOPE=src 子目录相对路径（逗号分隔，如 `src/components,src/pages,src/hooks`）
+- 自定义目录路径 → REVIEW_SCOPE=src 子目录相对路径（逗号分隔）
 
 ### 步骤 4B：选择存量审查方式（条件步骤）
 
@@ -826,7 +879,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 
 ### 步骤 5C：（已前移）
 
-审查模型选择已前移到「第四步之后：选择审查模型 + 上下文窗口侦测」段（在分批判定之前执行），因为分批预算依赖模型上下文窗口大小。此处不再重复询问。
+审查模型选择已前移到「第五步之后：选择审查模型 + 上下文窗口侦测」段（在分批判定之前执行），因为分批预算依赖模型上下文窗口大小。此处不再重复询问。
 
 执行计划展示中的「审查模型」行直接引用前移步骤确定的 `REVIEW_MODEL`。
 
@@ -959,10 +1012,27 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/plan-file-batches.sh" \
 MANIFEST="$(mktemp)"
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/collect-source-files.sh" "$PROJECT_DIR" > "$MANIFEST"
 
+# 若用户在步骤 4 选了「指定目录」（REVIEW_SCOPE 为 src 子目录路径列表，非"全量代码"），
+# 用前端专属过滤脚本收敛 manifest：只保留落在所选 src 子目录内的文件。
+# 这是前端「指定模块」真正缩小扫描范围的唯一关卡——分批脚本只读 manifest，
+# manifest 收敛后，分批/扫描/文件计数自动收敛，无需改分批脚本或子 agent。
+# 过滤脚本支持单包和 monorepo：`src/components` 或 `components` 会匹配所有 React package-local
+# `*/src/components/`；`apps/web/src/components` 这类完整相对路径只匹配对应 package。
+if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_SCOPE" != "全量代码" ]; then
+  FILTERED="$(mktemp)"
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/filter-source-manifest.sh" \
+    "$PROJECT_DIR" "$MANIFEST" "$REVIEW_SCOPE" > "$FILTERED"
+  mv "$FILTERED" "$MANIFEST"
+fi
+
 CC_REVIEW_CONTEXT_SCALE="$CONTEXT_SCALE" \
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
   "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "frontend" "$MANIFEST"
 ```
+
+**REVIEW_SCOPE 过滤后必须重算审查规模**：manifest 收敛后，`REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 必须按过滤后的 manifest 重新统计（文件数 = `grep -c . "$MANIFEST"`，行数 = 各文件 `wc -l` 之和），覆盖步骤 4 之前按全项目算的值。重算后的值用于子 agent 参数表的「审查文件数量/审查代码行数」、最终汇总的覆盖率分母、以及前端分批表展示。`REVIEW_SCOPE=全量代码` 时跳过过滤和重算，保持原行为。
+
+> 过滤规则：manifest 中每行是绝对路径。`src/{目录名}` 或 `{目录名}` 按 `*/src/{目录名}/` 边界匹配，因此 monorepo 多包场景下，同名子目录（如两个包都有 `src/components`）会同时命中；`apps/web/src/{目录名}` 这类完整相对路径只匹配对应 package。过滤脚本必须拒绝绝对路径和 `..` 路径穿越；过滤后为空时必须终止并提示有效目录，而不是继续生成空批次。
 
 合并：
 ```bash
@@ -1042,7 +1112,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `PROJECT_NAME` | `basename "$PROJECT_DIR"` | `spring-ai-agent-utils` |
 | `PROJECT_TYPE` | languages/java/project-scan.sh 脚本输出 | `maven-single` 等 |
 | `REVIEW_MODE` | 交互步骤1 | `fast` / `standard` 等 |
-| `REVIEW_MODEL` | 第四步之后（模型选择已前移至分批前） | `sonnet` / `opus` / `haiku` |
+| `REVIEW_MODEL` | 第五步之后（模型选择已前移至分批前） | `sonnet` / `opus` / `haiku` |
 | `CONTEXT_SCALE` | core/detect-model-context.sh 输出 | `1`（200k 窗口）/ `5`（1M 窗口） |
 | `CONTEXT_WINDOW_TOKENS` | core/detect-model-context.sh 输出 | `200000` / `1000000` |
 | `FEISHU_UPLOAD_OPTION` | 交互步骤2 | `本地 Markdown 报告` 或 `飞书云文档, 飞书多维表格` 等 |

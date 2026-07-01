@@ -370,7 +370,7 @@ brainstorming 产出 plan 后，调用 `subagent-driven-development` skill 执�
 
 ## 脚本调用顺序
 
-脚本文件名不再带 phase 编号（功能名描述职责，执行顺序在此编排）。通用脚本在 `scripts/core/`，Java 专属在 `scripts/languages/java/`。旧 `scripts/phaseN-*.sh` 路径保留为兼容转发 wrapper。
+脚本文件名不再带 phase 编号（功能名描述职责，执行顺序在此编排）。通用脚本在 `scripts/core/`，Java 专属在 `scripts/languages/java/`。1.4.0 起不再保留旧 phase 脚本入口。
 
 ### 修复流程
 

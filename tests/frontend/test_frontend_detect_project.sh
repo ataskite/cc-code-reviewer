@@ -16,6 +16,17 @@ import { defineConfig } from 'vite'; export default defineConfig({})
 TS
 }
 
+mk_react_js() {
+  local d="$TMP_DIR/$1"; mkdir -p "$d/src"
+  cat > "$d/package.json" <<'JSON'
+{"name":"app","dependencies":{"react":"^18.2.0","react-dom":"^18.2.0"}}
+JSON
+  cat > "$d/src/App.js" <<'JS'
+import React from 'react';
+export default function App(){ return React.createElement('h1', null, 'hi'); }
+JS
+}
+
 mk_nextjs() {
   local d="$TMP_DIR/$1"; mkdir -p "$d/src/app"
   cat > "$d/package.json" <<'JSON'
@@ -27,6 +38,10 @@ JSON
 # React + Vite → frontend-react
 mk_react_vite react_vite
 grep -q "PROJECT_TYPE=frontend-react" < <(bash "$ROOT_DIR/scripts/languages/frontend/detect-project.sh" "$TMP_DIR/react_vite")
+
+# React + plain JS → frontend-react（首期承诺支持 React/JS，不要求必须 .tsx/.jsx）
+mk_react_js react_js
+grep -q "PROJECT_TYPE=frontend-react" < <(bash "$ROOT_DIR/scripts/languages/frontend/detect-project.sh" "$TMP_DIR/react_js")
 
 # Next.js → 不支持
 mk_nextjs nx
