@@ -11,7 +11,7 @@ printf '# brainstorming\n' >"$SKILL_ROOT/brainstorming/SKILL.md"
 printf '# tdd\n' >"$SKILL_ROOT/test-driven-development/SKILL.md"
 printf '# verification\n' >"$SKILL_ROOT/verification-before-completion/SKILL.md"
 
-OUTPUT="$(SUPERPOWERS_SKILL_ROOTS="$SKILL_ROOT" bash "$ROOT_DIR/scripts/phase7-detect-superpowers.sh")"
+OUTPUT="$(SUPERPOWERS_SKILL_ROOTS="$SKILL_ROOT" bash "$ROOT_DIR/scripts/core/detect-superpowers.sh")"
 echo "$OUTPUT" | grep -Fq "SUPERPOWERS_AVAILABLE=false"
 echo "$OUTPUT" | grep -Fq "SUPERPOWER_SKILL:brainstorming=available"
 echo "$OUTPUT" | grep -Fq "SUPERPOWER_SKILL:test-driven-development=available"
@@ -24,7 +24,7 @@ printf '# worktrees\n' >"$SKILL_ROOT/using-git-worktrees/SKILL.md"
 printf '# finishing\n' >"$SKILL_ROOT/finishing-a-development-branch/SKILL.md"
 printf '# subagent-driven\n' >"$SKILL_ROOT/subagent-driven-development/SKILL.md"
 
-FULL_OUTPUT="$(SUPERPOWERS_SKILL_ROOTS="$SKILL_ROOT" bash "$ROOT_DIR/scripts/phase7-detect-superpowers.sh")"
+FULL_OUTPUT="$(SUPERPOWERS_SKILL_ROOTS="$SKILL_ROOT" bash "$ROOT_DIR/scripts/core/detect-superpowers.sh")"
 echo "$FULL_OUTPUT" | grep -Fq "SUPERPOWERS_AVAILABLE=true"
 echo "$FULL_OUTPUT" | grep -Fq "SUPERPOWER_MISSING=none"
 
@@ -38,11 +38,11 @@ printf '# verification\n' >"$SECOND_ROOT/verification-before-completion/SKILL.md
 printf '# finishing\n' >"$SECOND_ROOT/finishing-a-development-branch/SKILL.md"
 printf '# subagent-driven\n' >"$SECOND_ROOT/subagent-driven-development/SKILL.md"
 
-COLON_OUTPUT="$(SUPERPOWERS_SKILL_ROOTS="$FIRST_ROOT:$SECOND_ROOT" bash "$ROOT_DIR/scripts/phase7-detect-superpowers.sh")"
+COLON_OUTPUT="$(SUPERPOWERS_SKILL_ROOTS="$FIRST_ROOT:$SECOND_ROOT" bash "$ROOT_DIR/scripts/core/detect-superpowers.sh")"
 echo "$COLON_OUTPUT" | grep -Fq "SUPERPOWERS_AVAILABLE=true"
 echo "$COLON_OUTPUT" | grep -Fq "SUPERPOWER_MISSING=none"
 
-EMPTY_PART_OUTPUT="$(SUPERPOWERS_SKILL_ROOTS="$FIRST_ROOT::$SECOND_ROOT:" bash "$ROOT_DIR/scripts/phase7-detect-superpowers.sh")"
+EMPTY_PART_OUTPUT="$(SUPERPOWERS_SKILL_ROOTS="$FIRST_ROOT::$SECOND_ROOT:" bash "$ROOT_DIR/scripts/core/detect-superpowers.sh")"
 echo "$EMPTY_PART_OUTPUT" | grep -Fq "SUPERPOWERS_AVAILABLE=true"
 echo "$EMPTY_PART_OUTPUT" | grep -Fq "SUPERPOWER_MISSING=none"
 
@@ -56,6 +56,6 @@ printf '# verification\n' >"$GLOB_ROOT/verification-before-completion/SKILL.md"
 printf '# finishing\n' >"$GLOB_ROOT/finishing-a-development-branch/SKILL.md"
 printf '# subagent-driven\n' >"$GLOB_ROOT/subagent-driven-development/SKILL.md"
 
-GLOB_OUTPUT="$(SUPERPOWERS_SKILL_ROOTS="$GLOB_ROOT" bash "$ROOT_DIR/scripts/phase7-detect-superpowers.sh")"
+GLOB_OUTPUT="$(SUPERPOWERS_SKILL_ROOTS="$GLOB_ROOT" bash "$ROOT_DIR/scripts/core/detect-superpowers.sh")"
 echo "$GLOB_OUTPUT" | grep -Fq "SUPERPOWERS_AVAILABLE=true"
 echo "$GLOB_OUTPUT" | grep -Fq "SUPERPOWER_MISSING=none"

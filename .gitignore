@@ -14,6 +14,9 @@ test-output/
 # Claude Code 配置目录
 .claude/
 
+# 本地 Superpowers/SDD 工作产物
+.superpowers/
+
 # 进程锁定文件
 .in_use/
 .orphaned_at

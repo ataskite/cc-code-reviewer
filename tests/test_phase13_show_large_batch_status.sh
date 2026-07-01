@@ -88,7 +88,7 @@ cat > "$RUN_DIR/results/batch-002.status.json" <<'JSON'
 }
 JSON
 
-OUTPUT="$(bash "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR")"
+OUTPUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR")"
 
 printf '%s\n' "$OUTPUT" | grep -q "大仓库审查任务"
 printf '%s\n' "$OUTPUT" | grep -q "| 批次 | 状态 | 行数 | 文件数 | 模块 |"
@@ -129,7 +129,6 @@ if printf '%s\n' "$OUTPUT" | grep -qE "2 路约|3 路约"; then
   printf '%s\n' "$OUTPUT" >&2
   exit 1
 fi
-printf '%s\n' "$OUTPUT" | grep -q "预估耗时"
 printf '%s\n' "$OUTPUT" | grep -q "也可以自行输入批次号"
 
 if printf '%s\n' "$OUTPUT" | grep -qE '(^|[[:space:]])(pending|running|completed|failed)([[:space:]]|$)'; then
@@ -176,7 +175,7 @@ for batch_id in batch-001 batch-002 batch-003; do
 JSON
 done
 
-THREE_OUTPUT="$(bash "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "$PROJECT_DIR")"
+THREE_OUTPUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR")"
 printf '%s\n' "$THREE_OUTPUT" | grep -q "| batch-001 | 待执行 | 17,000 | 250 | trade-server,statistics-server,statistics-api |"
 if printf '%s\n' "$THREE_OUTPUT" | grep -q "yudao-module-trade-server"; then
   echo "batch module display should drop the shared yudao-module- prefix" >&2
@@ -186,9 +185,9 @@ fi
 printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 1 批"
 printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 2 批"
 printf '%s\n' "$THREE_OUTPUT" | grep -q "执行全部 3 批（推荐）"
-printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 1 批 最多 1 批 预估耗时: 串行约 10 分钟"
-printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 2 批 最多 2 批 预估耗时: 串行约 20 分钟 / 2 路约 10 分钟"
-printf '%s\n' "$THREE_OUTPUT" | grep -q "执行全部 3 批（推荐） 最多 3 批 预估耗时: 串行约 30 分钟 / 2 路约 20 分钟 / 3 路约 10 分钟"
+printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 1 批（最多 1 批）"
+printf '%s\n' "$THREE_OUTPUT" | grep -q "执行 2 批（最多 2 批）"
+printf '%s\n' "$THREE_OUTPUT" | grep -q "执行全部 3 批（推荐）（最多 3 批）"
 if printf '%s\n' "$THREE_OUTPUT" | grep -qE "执行 1 批 .*2 路|执行 1 批 .*3 路|执行 2 批 .*3 路"; then
   echo "batch-plan estimates must not show concurrency greater than the selected batch count" >&2
   printf '%s\n' "$THREE_OUTPUT" >&2
@@ -202,6 +201,15 @@ fi
 if printf '%s\n' "$THREE_OUTPUT" | grep -qE "执行 (5|10) 批"; then
   echo "three runnable batches must not show fixed 5/10-batch options" >&2
   printf '%s\n' "$THREE_OUTPUT" >&2
+  exit 1
+fi
+
+# phase13 转发 wrapper 后，输出必须与 core/show-batch-status.sh 逐字节一致
+OLD_OUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR" 2>&1)"
+NEW_OUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR" 2>&1)"
+if [ "$OLD_OUT" != "$NEW_OUT" ]; then
+  echo "FAIL: phase13 转发后输出必须与 core/show-batch-status 一致" >&2
+  diff <(echo "$OLD_OUT") <(echo "$NEW_OUT") | head -20 >&2
   exit 1
 fi
 

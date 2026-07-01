@@ -8,7 +8,7 @@ SEMANTIC_LEVEL="${4:-maven-static}"
 REVIEW_SCOPE_INPUT="${5:-全量代码}"
 PLANNING_STRATEGY="${6:-semantic-cost-batching}"
 # 模型上下文窗口缩放系数：1 = 200k（现状默认），5 = 1M 窗口
-# 由 phase14-detect-model-context.sh 探测得出；缺失时回退 1，保持旧行为
+# 由 core/detect-model-context.sh 探测得出；缺失时回退 1，保持旧行为
 CONTEXT_SCALE="${7:-1}"
 # 允许通过环境变量覆盖（与位置参数二选一，环境变量优先级更低）
 CONTEXT_SCALE="${CC_REVIEW_CONTEXT_SCALE:-$CONTEXT_SCALE}"

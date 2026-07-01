@@ -15,7 +15,7 @@ fi
 
 case "$INPUT" in
   http://*docx/*|https://*docx/*|http://*docs/*|https://*docs/*|http://*base/*|https://*base/*|http://*wiki/*|https://*wiki/*|base:*:*)
-    echo "飞书云文档和飞书多维表格输入不得调用 phase6-detect-fix-input.sh；请使用 lark-doc 或 lark-base 读取并归一化问题清单" >&2
+    echo "飞书云文档和飞书多维表格输入不得调用 core/detect-fix-input.sh；请使用 lark-doc 或 lark-base 读取并归一化问题清单" >&2
     exit 1
     ;;
   *.md)

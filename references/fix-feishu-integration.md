@@ -143,7 +143,7 @@ Base 读取失败或缺少关键字段时，如果没有已归一化问题上下
 - `修复人`
 - `备注`
 
-`修复时间` 必须取 `phase9-collect-fix-metadata.sh` 输出的 `FIX_COMPLETED_AT`，`修复分支` 必须取 `FIX_BRANCH`，`修复人` 必须取 `FIX_ACTOR`。`备注` 中写入本地报告路径、验证命令摘要和未完成原因。不要把完整 Markdown 报告塞入单元格。
+`修复时间` 必须取 `core/collect-fix-metadata.sh` 输出的 `FIX_COMPLETED_AT`，`修复分支` 必须取 `FIX_BRANCH`，`修复人` 必须取 `FIX_ACTOR`。`备注` 中写入本地报告路径、验证命令摘要和未完成原因。不要把完整 Markdown 报告塞入单元格。
 
 ### 更新命令
 

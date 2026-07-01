@@ -1,19 +1,19 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "cc-code-reviewer",
-  "description": "Java code review and report-driven fixing plugin for Claude Code",
-  "version": "1.3.4",
+  "description": "Java 与前端（React/TS/JS）代码审查与 report-driven fixing 报告驱动修复插件 for Claude Code",
+  "version": "1.4.0",
   "owner": {
     "name": "ataskite"
   },
   "plugins": [
     {
       "name": "cc-code-reviewer",
-      "description": "AI-powered Java code review and report-driven fixing with TDD workflow support",
+      "description": "AI-powered Java 与前端代码审查与 report-driven fixing 报告驱动修复，多语言统一入口，支持 TDD code-fixer 工作流",
       "source": "./",
-      "version": "1.3.4",
+      "version": "1.4.0",
       "category": "development",
-      "tags": ["java", "code-review", "code-fix", "quality", "security"]
+      "tags": ["java", "react", "typescript", "code-review", "code-fix", "quality", "security", "frontend"]
     }
   ]
 }

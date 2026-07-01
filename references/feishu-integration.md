@@ -1,16 +1,16 @@
 # 飞书集成参考
 
-本文件定义代码审查报告中飞书上传功能的详细操作规范，供子 agent 在上传云文档和创建多维表格时使用。
+本文件定义代码审查报告中飞书上传功能的详细操作规范，供主 skill 在上传云文档和创建多维表格时使用。
 
 所有操作必须优先按 `lark-doc` / `lark-base` skill 执行，底层通过 `lark-cli` 命令行工具完成。**禁止使用 `feishu_create_doc`、`feishu_bitable_*` 等旧版工具。**
 
-为避免命令试错，scan 阶段飞书上传不得调用 `lark-cli doc create`，不得调用 `lark-cli docs create`，不得使用 `--content-file`，不得使用 `--markdown`。云文档创建固定使用 `lark-cli docs +create --api-version v2 --doc-format markdown --content @相对文件名`。
+为避免命令试错，飞书云文档上传不得调用 `lark-cli doc create`，不得调用 `lark-cli docs create`，不得使用 `--content-file`，不得使用 `--markdown`。云文档创建固定使用 `lark-cli docs +create --api-version v2 --doc-format markdown --content @相对文件名`。
 
 ---
 
 ## 一、上传报告到飞书云文档
 
-**前置条件**：`FEISHU_UPLOAD_OPTION` 包含 `上传到云文档`，且审查报告生成完毕。
+**前置条件**：`FEISHU_UPLOAD_OPTION` 包含 `飞书云文档`，且审查报告生成完毕。
 
 ### 1.1 命令格式
 
@@ -75,7 +75,7 @@ lark-cli docs +create \
 
 ## 二、创建飞书多维表格
 
-**前置条件**：`FEISHU_UPLOAD_OPTION` 包含 `上传到多维表格`，且审查报告生成完毕。
+**前置条件**：`FEISHU_UPLOAD_OPTION` 包含 `飞书多维表格`，且审查报告生成完毕。
 
 必须优先按 `lark-base` skill 执行多维表格创建和写入。若需要直接参考 CLI 命令，只能使用 `lark-cli base ...` 子命令，不得使用旧版 `feishu_bitable_*` 工具。
 

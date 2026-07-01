@@ -3,7 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT_FILE="$ROOT_DIR/agents/cc-code-reviewer.md"
+FRONTEND_AGENT_FILE="$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 FEISHU_FILE="$ROOT_DIR/references/feishu-integration.md"
+REPORT_FORMAT_FILE="$ROOT_DIR/references/report-format.md"
 SKILL_FILE="$ROOT_DIR/skills/cc-code-reviewer/SKILL.md"
 AGENTS_FILE="$ROOT_DIR/AGENTS.md"
 CLAUDE_FILE="$ROOT_DIR/CLAUDE.md"
@@ -71,6 +73,18 @@ fi
 
 grep -q "### 第一步：提取项目路径" "$SKILL_FILE"
 grep -q "优先提取 Git URL" "$SKILL_FILE"
+require_literal "$SKILL_FILE" "### 第三步：语言探测与路由" "language detection must be the third explicit step before language-specific pre-scan"
+require_literal "$SKILL_FILE" "### 第四步：按语言执行项目预扫描" "language-specific pre-scan must be explicitly routed after language detection"
+if grep -q "### 第三步之后：语言探测与路由" "$SKILL_FILE"; then
+  echo "language detection must not be documented after Java pre-scan" >&2
+  exit 1
+fi
+LANG_DETECT_LINE="$(grep -n 'scripts/core/detect-language.sh' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+JAVA_SCAN_LINE="$(grep -n 'scripts/languages/java/project-scan.sh' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+if [ -z "$LANG_DETECT_LINE" ] || [ -z "$JAVA_SCAN_LINE" ] || [ "$LANG_DETECT_LINE" -ge "$JAVA_SCAN_LINE" ]; then
+  echo "detect-language must run before Java project-scan in the scan skill" >&2
+  exit 1
+fi
 
 for scan_contract_file in "$SKILL_FILE" "$EXAMPLES_FILE" "$AGENTS_FILE" "$CLAUDE_FILE"; do
   if grep -qE "$SCAN_BYPASS_PATTERN" "$scan_contract_file"; then
@@ -85,12 +99,12 @@ grep -q "| 技术栈 | 识别证据 | 建议维度 | 专项规则 |" "$SKILL_FIL
 grep -q "dependency:file:" "$SKILL_FILE"
 grep -q "另有 {N} 个" "$SKILL_FILE"
 grep -q "完整结果已注入子 agent" "$SKILL_FILE"
-grep -q "phase5-preview-recent-commits" "$SKILL_FILE"
+grep -q "preview-recent-commits" "$SKILL_FILE"
 grep -q "最近提交概览" "$SKILL_FILE"
 grep -q "prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据" "$SKILL_FILE"
 grep -q "| 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |" "$SKILL_FILE"
 grep -q "| 报告格式路径 | {REPORT_FORMAT_PATH} |" "$SKILL_FILE"
-grep -q 'REVIEW_FRAMEWORK_PATH=.*references/review-framework.md' "$SKILL_FILE"
+grep -q 'REVIEW_FRAMEWORK_PATH=.*references/languages/java/review-framework.md' "$SKILL_FILE"
 grep -q 'REPORT_FORMAT_PATH=.*references/report-format.md' "$SKILL_FILE"
 GLOBAL_REFERENCE_LINE="$(grep -n "### 第六步之前：准备审查参考文件路径" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 TASK_LAUNCH_LINE="$(grep -n "### 第七步：调用子 agent 执行代码审查" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
@@ -102,6 +116,11 @@ fi
 grep -q "REVIEW_FRAMEWORK_PATH" "$AGENT_FILE"
 grep -q "REPORT_FORMAT_PATH" "$AGENT_FILE"
 grep -q "优先读取主 agent 注入的绝对路径" "$AGENT_FILE"
+if grep -q "| 飞书上传选项 |" "$AGENT_FILE"; then
+  echo "review agent must not document FEISHU_UPLOAD_OPTION as an injected parameter; main skill owns upload handling" >&2
+  exit 1
+fi
+require_literal "$AGENT_FILE" "报告保存方式不注入本子 agent" "review agent must explicitly state report handling is not injected"
 grep -q "IGNORE_RULES_PATH" "$AGENT_FILE"
 grep -q "IGNORE_RULES_CONTENT" "$AGENT_FILE"
 grep -q "先应用项目 ignore 规则" "$AGENT_FILE"
@@ -124,6 +143,20 @@ if grep -Fq "置信度不影响级别判断" "$AGENT_FILE"; then
   echo "confidence must participate in severity classification; remove the obsolete rule" >&2
   exit 1
 fi
+
+require_literal "$REPORT_FORMAT_FILE" '### P0-N | [维度名称] {问题一句话标题}' "report format must use third-level headings for issue entries"
+require_literal "$REPORT_FORMAT_FILE" '### P1-N | [维度名称] {问题一句话标题}' "report format must use third-level headings for P1 issue entries"
+require_literal "$REPORT_FORMAT_FILE" '### 待确认-N | [维度名称] {问题一句话标题}' "report format must use third-level headings for pending issue entries"
+if grep -qE '^## P[0-3]-N \|' "$REPORT_FORMAT_FILE" || grep -qE '^## 待确认-N \|' "$REPORT_FORMAT_FILE"; then
+  echo "issue entries must not use the same heading level as severity sections" >&2
+  exit 1
+fi
+if grep -qE '^\*\*问题编号\*\*：P[0-3]-N' "$REPORT_FORMAT_FILE"; then
+  echo "report format must not allow legacy bold 问题编号 entries for scan findings" >&2
+  exit 1
+fi
+require_literal "$AGENT_FILE" '三级标题 `### {编号} | [维度] 标题`' "review agent must instruct third-level issue headings"
+require_literal "$FRONTEND_AGENT_FILE" '三级标题 `### {问题编号} | [维度名称] {问题一句话标题}`' "frontend agent must follow shared third-level issue headings"
 
 BATCH_P0_TEMPLATE="$(awk '
   /^## Batch 发现清单输出格式$/ { in_batch_format = 1; next }
@@ -149,11 +182,11 @@ done
 
 require_literal "$EXAMPLES_FILE" "高置信已证实：生产订单请求参数直达未参数化 SQL，无有效校验或绑定防护，可破坏关键订单数据，必须阻断发布" "large-repo SQL injection P0 example must summarize all five gates"
 require_literal "$EXAMPLES_FILE" "高置信已证实：生产支付链路发生部分提交，无回滚或补偿防护，可造成资金错误，必须阻断发布" "large-repo transaction P0 example must summarize all five gates"
-require_literal "$ROOT_DIR/references/review-framework.md" "P0 五项硬门槛" "review framework must share the strict P0 contract"
+require_literal "$ROOT_DIR/references/languages/java/review-framework.md" "P0 五项硬门槛" "review framework must share the strict P0 contract"
 require_literal "$ROOT_DIR/references/report-format.md" "P0 证据门槛" "report format must require P0 gate evidence"
 require_literal "$ROOT_DIR/references/report-format.md" '**置信度**：高 | **所属维度**：维度名称' "P0 report template must require high confidence"
 
-grep -q "phase9-collect-fix-metadata" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
+grep -q "collect-fix-metadata" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
 if [ ! -f "$ARCHITECTURE_PNG" ]; then
   echo "架构总览图缺失: $ARCHITECTURE_PNG" >&2
   exit 1
@@ -212,7 +245,7 @@ if grep -q "请提供本次待修复问题确认清单的来源" "$FIX_WORKFLOW_
 fi
 grep -q "本地 Markdown 必须直接读取文件内容" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
 grep -q "不得使用 Python 脚本读取飞书云文档或飞书多维表格" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_FEISHU_FILE"
-grep -q "飞书云文档和飞书多维表格不得调用.*phase6-detect-fix-input" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
+grep -q "飞书云文档和飞书多维表格不得调用.*detect-fix-input" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
 grep -q "状态过滤" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_FEISHU_FILE"
 grep -q "STATUS_FILTERED_ISSUES" "$FIX_WORKFLOW_FILE"
 grep -q "SKIPPED_STATUS_COUNTS" "$FIX_WORKFLOW_FILE"
@@ -322,8 +355,8 @@ if grep -q "$QUICK_START_CN" "$FIX_EXAMPLES_FILE"; then
 fi
 
 grep -q "模式判定" "$FIX_SKILL_FILE"
-grep -q "phase6-detect-fix-input" "$FIX_SKILL_FILE"
-grep -q "phase7-detect-superpowers" "$FIX_SKILL_FILE"
+grep -q "detect-fix-input" "$FIX_SKILL_FILE"
+grep -q "detect-superpowers" "$FIX_SKILL_FILE"
 grep -q "修复输入解析完成" "$FIX_SKILL_FILE"
 grep -q "AskUserQuestion" "$FIX_SKILL_FILE"
 grep -q "待修复问题确认清单" "$FIX_SKILL_FILE"
@@ -380,10 +413,10 @@ require_match "marketplace.json 描述必须包含 report-driven fixing" "report
 
 # === Maven large repository batching contracts ===
 
-grep -q "phase10-detect-code-intelligence.sh" "$SKILL_FILE"
-grep -q "phase11-plan-large-batches.sh" "$SKILL_FILE"
-grep -q "phase12-merge-large-batches.sh" "$SKILL_FILE"
-grep -q "phase13-show-large-batch-status.sh" "$SKILL_FILE"
+grep -q "languages/java/detect-code-intelligence.sh" "$SKILL_FILE"
+grep -q "languages/java/plan-large-batches.sh" "$SKILL_FILE"
+grep -q "core/merge-batch-results.sh" "$SKILL_FILE"
+grep -q "core/show-batch-status.sh" "$SKILL_FILE"
 
 grep -q "Maven 多模块" "$SKILL_FILE"
 grep -q "存量审查" "$SKILL_FILE"
@@ -411,22 +444,22 @@ require_literal "$AGENT_FILE" "context_roots are read-only context" "agent must 
 require_literal "$AGENT_FILE" '`src/main/java` 生产 Java 文件作为本批正式审查范围' "batch agent must scan only production Java sources"
 require_literal "$AGENT_FILE" '`src/test/java` 只能作为测试质量判断的只读上下文' "batch agent must keep test sources contextual"
 
-require_match "planner 必须定义目标批次成本（基于 52000 基准 × scale）" '52000 \* CONTEXT_SCALE' "$ROOT_DIR/scripts/phase11-plan-large-batches.sh"
-require_match "planner 必须定义硬上限成本（基于 65000 基准 × scale）" '65000 \* CONTEXT_SCALE' "$ROOT_DIR/scripts/phase11-plan-large-batches.sh"
-require_match "planner 必须接收 CONTEXT_SCALE 参数" "CONTEXT_SCALE" "$ROOT_DIR/scripts/phase11-plan-large-batches.sh"
-require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "review_cost" "planner must compute review cost"
-require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "context_roots" "planner must emit context roots"
-require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "semantic-cost-batching" "planner must emit semantic-cost strategy"
-require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "SELECTED_MODULE_OUTSIDE_PROJECT" "planner must reject selected modules outside project root"
-require_match "status 须定义批次成本基准（随 CONTEXT_SCALE 缩放）" 'TARGET_REVIEW_COST' "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh"
-require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "RUN_BATCH_IDS" "merge must honor the current-run batch set"
-require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "[合并阻塞]" "merge must report blocked current-run batches"
-require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "批次状态总览" "merge report must include all batch statuses"
-require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "report_title" "merge summary must expose a cloud-doc title"
-require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "dedupe_issue_blocks" "merge must dedupe included batch findings"
-require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "INCLUDED_BATCHES" "merge completeness must depend on included batches"
-require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "审查配置快照" "merge report must include config snapshot section"
-require_literal "$ROOT_DIR/scripts/phase12-merge-large-batches.sh" "覆盖限制与未审查范围" "merge report must disclose coverage limitations"
+require_match "planner 必须定义目标批次成本（基于 52000 基准 × scale）" '52000 \* CONTEXT_SCALE' "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh"
+require_match "planner 必须定义硬上限成本（基于 65000 基准 × scale）" '65000 \* CONTEXT_SCALE' "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh"
+require_match "planner 必须接收 CONTEXT_SCALE 参数" "CONTEXT_SCALE" "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "review_cost" "planner must compute review cost"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "context_roots" "planner must emit context roots"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "semantic-cost-batching" "planner must emit semantic-cost strategy"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "SELECTED_MODULE_OUTSIDE_PROJECT" "planner must reject selected modules outside project root"
+require_match "status 须定义批次成本基准（随 CONTEXT_SCALE 缩放）" 'TARGET_REVIEW_COST' "$ROOT_DIR/scripts/core/show-batch-status.sh"
+require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "RUN_BATCH_IDS" "merge must honor the current-run batch set"
+require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "[合并阻塞]" "merge must report blocked current-run batches"
+require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "批次状态总览" "merge report must include all batch statuses"
+require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "report_title" "merge summary must expose a cloud-doc title"
+require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "dedupe_issue_blocks" "merge must dedupe included batch findings"
+require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "INCLUDED_BATCHES" "merge completeness must depend on included batches"
+require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "审查配置快照" "merge report must include config snapshot section"
+require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "覆盖限制与未审查范围" "merge report must disclose coverage limitations"
 require_literal "$SKILL_FILE" "合并脚本等待本轮批次进入终态" "skill must document merge waiting"
 require_literal "$SKILL_FILE" 'failed`，或 `completed` 但结果文件缺失' "skill must block failed or missing batch results"
 require_literal "$SKILL_FILE" "summary.json.report_title" "skill must validate merged cloud-doc title"
@@ -520,12 +553,18 @@ if grep -q "模块超过 10 个时展示前 9 个" "$SKILL_FILE"; then
   exit 1
 fi
 require_literal "$SKILL_FILE" "Maven 多模块项目不得使用内联 Bash 数组分批" "Maven batch planning must use deterministic planner scripts"
-require_literal "$SKILL_FILE" "phase11-plan-large-batches.sh" "Maven batch planning must call phase11 planner"
-require_literal "$SKILL_FILE" "phase11-plan-file-batches.sh" "single-module and non-Maven batching must call deterministic file planner"
-require_literal "$SKILL_FILE" 'Maven 多模块存量分批绝不调用 `phase11-plan-file-batches.sh`' "Maven selected-module batching must never fall back to whole-project file planner"
+require_literal "$SKILL_FILE" "languages/java/plan-large-batches.sh" "Maven batch planning must call plan-large-batches planner"
+require_literal "$SKILL_FILE" "languages/java/plan-file-batches.sh" "single-module and non-Maven batching must call deterministic file planner"
+require_literal "$SKILL_FILE" 'Maven 多模块存量分批绝不调用 `languages/java/plan-file-batches.sh`' "Maven selected-module batching must never fall back to whole-project file planner"
 require_literal "$SKILL_FILE" "即使只选择一个模块" "single selected Maven module must still use the scoped Maven planner"
 require_literal "$SKILL_FILE" "简要分批计划" "file batching must show a concise batch plan before concurrency selection"
 require_literal "$SKILL_FILE" "BATCH_FILE_LIST_DIR" "file batching must expose batch file list directory for batch agents"
+require_literal "$SKILL_FILE" "filter-source-manifest.sh" "frontend selected-directory scope must use the tested manifest filter"
+require_literal "$SKILL_FILE" '*/src/{目录名}/' "frontend selected-directory scope must support package-local src roots in monorepos"
+if grep -q 'PROJECT_DIR/src/\$sub' "$SKILL_FILE" || grep -q 'PREFIXES_FILE' "$SKILL_FILE"; then
+  echo "frontend selected-directory scope must not assume a top-level PROJECT_DIR/src root" >&2
+  exit 1
+fi
 if grep -q "当 BATCH_MODE=true 时，主 skill 在 prompt 中执行以下步骤（不使用脚本）" "$SKILL_FILE"; then
   echo "batch calculation must not instruct the agent to improvise inline shell batching" >&2
   exit 1
@@ -538,6 +577,12 @@ fi
 MODE_PICK_LINE="$(grep -n 'question: "请选择审查模式"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 UPLOAD_PICK_LINE="$(grep -n 'question: "请选择审查报告的保存方式"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 ENTRY_PICK_LINE="$(grep -n 'question: "请选择本次审查入口"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+MODE_SECTION="$(awk '/### 步骤 1：选择审查模式/{flag=1; next} /### 步骤 2：选择审查报告保存方式/{flag=0} flag {print}' "$SKILL_FILE")"
+if printf '%s\n' "$MODE_SECTION" | grep -q "RUN_BATCH_COUNT"; then
+  echo "review mode selection must be unconditional and cannot depend on RUN_BATCH_COUNT" >&2
+  exit 1
+fi
+require_literal "$SKILL_FILE" "审查模式选择是固定必问步骤" "review mode selection must be documented as always required"
 require_literal "$SKILL_FILE" 'label: "fast（仅输出 P0）"' "fast option must state its P0-only output"
 require_literal "$SKILL_FILE" '只报告已证实、足以阻断上线的 P0；P1/P2/P3 和待确认项均不输出' "fast option must explain excluded severities"
 require_literal "$SKILL_FILE" 'fast（仅输出 P0） → REVIEW_MODE=fast' "fast option response must normalize to the internal fast enum"
@@ -597,7 +642,7 @@ if grep -q 'label: "仅显示报告"' "$SKILL_FILE"; then
   exit 1
 fi
 
-BATCH_SHOW_LINE="$(grep -n "phase13-show-large-batch-status.sh" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+BATCH_SHOW_LINE="$(grep -n "core/show-batch-status.sh" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 BATCH_PICK_LINE="$(grep -n 'question: "请选择本轮执行批次"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 CONCURRENCY_LINE="$(grep -n 'question: "请选择并发扫描策略"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 if [ -z "$BATCH_SHOW_LINE" ] || [ -z "$BATCH_PICK_LINE" ] || [ -z "$CONCURRENCY_LINE" ] || [ "$BATCH_SHOW_LINE" -ge "$BATCH_PICK_LINE" ] || [ "$BATCH_PICK_LINE" -ge "$CONCURRENCY_LINE" ]; then
@@ -608,8 +653,8 @@ grep -q "普通助手消息" "$SKILL_FILE"
 grep -q "| 批次 | 状态 | 行数 | 文件数 | 模块 |" "$EXAMPLES_FILE"
 grep -q "|------|------|------:|------:|------|" "$EXAMPLES_FILE"
 grep -q "用户可见的 Markdown 表格" "$SKILL_FILE"
-require_literal "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "| 批次 | 状态 | 行数 | 文件数 | 模块 |" "phase13 status script must render a Markdown batch table"
-require_literal "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "|------|------|------:|------:|------|" "phase13 table separator should match user-facing Markdown table style"
+require_literal "$ROOT_DIR/scripts/core/show-batch-status.sh" "| 批次 | 状态 | 行数 | 文件数 | 模块 |" "batch status script must render a Markdown batch table"
+require_literal "$ROOT_DIR/scripts/core/show-batch-status.sh" "|------|------|------:|------:|------|" "batch status table separator should match user-facing Markdown table style"
 require_literal "$SKILL_FILE" "模块列必须使用缩略名展示" "batch module column must abbreviate common engineering prefixes"
 require_literal "$SKILL_FILE" "去掉共同前缀" "batch module abbreviation must remove shared prefixes"
 require_literal "$SKILL_FILE" "不得只依赖 Bash 工具输出" "batch status must be visible in assistant message, not only collapsed Bash output"
@@ -623,12 +668,12 @@ require_literal "$SKILL_FILE" "必须根据本轮可执行批次数动态生成"
 require_literal "$SKILL_FILE" "RUNNABLE_COUNT=1" "single runnable batch must skip batch-selection question"
 require_literal "$SKILL_FILE" "不调用 AskUserQuestion" "single runnable batch must not ask for batch selection"
 require_literal "$SKILL_FILE" "但描述里又显示" "batch options must not show impossible fixed limits"
-require_literal "$ROOT_DIR/scripts/phase13-show-large-batch-status.sh" "display_dynamic_plan_rows" "phase13 status script must render dynamic execution plans"
-require_literal "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "large planner run dir must be timestamp-branch-mode only"
-require_literal "$ROOT_DIR/scripts/phase11-plan-file-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "file planner run dir must be timestamp-branch-mode only"
+require_literal "$ROOT_DIR/scripts/core/show-batch-status.sh" "display_dynamic_plan_rows" "batch status script must render dynamic execution plans"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "large planner run dir must be timestamp-branch-mode only"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-file-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "file planner run dir must be timestamp-branch-mode only"
 require_literal "$SKILL_FILE" '`RUN_DIR` 目录名固定为 `{YYYYMMDD-HHMMSS}-{branch_slug}-{REVIEW_MODE}`' "skill contract must document concise run directory naming"
 require_literal "$SKILL_FILE" '审查范围、分批策略和任务类型必须从 `plan.json` 读取' "scope and strategy must live in plan.json instead of run dir name"
-if grep -q 'RUN_ID=.*large-maven\|RUN_ID=.*file-batches\|RUN_SCOPE_SLUG\|RUN_STRATEGY_SLUG' "$ROOT_DIR/scripts/phase11-plan-large-batches.sh" "$ROOT_DIR/scripts/phase11-plan-file-batches.sh"; then
+if grep -q 'RUN_ID=.*large-maven\|RUN_ID=.*file-batches\|RUN_SCOPE_SLUG\|RUN_STRATEGY_SLUG' "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$ROOT_DIR/scripts/languages/java/plan-file-batches.sh"; then
   echo "run directory name must not include scope, strategy, or batch-type suffixes" >&2
   exit 1
 fi
@@ -682,5 +727,98 @@ if [ -n "$SYNC_DIFF" ]; then
   echo "提示：修改时请同时编辑 AGENTS.md 和 CLAUDE.md；仅第 1 行标题和第 3 行首句允许不同。" >&2
   exit 1
 fi
+
+# === 前端多语言文档同步断言 ===
+for f in \
+  "scripts/core/detect-language.sh" \
+  "scripts/core/validate-scope.sh" \
+  "scripts/core/plan-file-batches.sh" \
+  "scripts/core/merge-batch-results.sh" \
+  "scripts/core/show-batch-status.sh" \
+  "scripts/languages/frontend/detect-project.sh" \
+  "scripts/languages/frontend/scan-project.sh" \
+  "scripts/languages/frontend/collect-source-files.sh" \
+  "scripts/languages/frontend/detect-code-intelligence.sh" \
+  "agents/cc-code-reviewer-frontend.md" \
+  "references/language-adapter-contract.md" \
+  "references/languages/java/review-framework.md" \
+  "references/languages/frontend/source-scope.md" \
+  "references/languages/frontend/review-framework.md" \
+  "references/languages/frontend/react-rules.md"; do
+  [ -f "$ROOT_DIR/$f" ] || { echo "MISSING: $f" >&2; exit 1; }
+done
+
+if find "$ROOT_DIR/scripts" -maxdepth 1 -type f -name 'phase*.sh' -print -quit | grep -q .; then
+  echo "legacy phase wrappers must be removed from scripts/ root" >&2
+  exit 1
+fi
+if grep -qE "phaseN-\*\.sh|Legacy paths|compat forwarding wrappers|兼容转发 wrapper" "$AGENTS_FILE" "$CLAUDE_FILE" "$SKILL_FILE" "$FIX_SKILL_FILE"; then
+  echo "active docs must not advertise legacy phase wrappers" >&2
+  exit 1
+fi
+
+require_literal "$ROOT_DIR/.gitignore" ".superpowers/" "local Superpowers work artifacts must be ignored"
+
+# shared-review-framework.md 必须已删除（过度设计，不再维护公共维度分类法）
+if [ -f "$ROOT_DIR/references/shared-review-framework.md" ]; then
+  echo "FAIL: shared-review-framework.md 应已删除，审查框架各语言独立" >&2
+  exit 1
+fi
+
+# 前端审查框架必须使用独立维度集，不得引用 Java 公共维度 ID（D01_CORRECTNESS 等）
+FE_FRAMEWORK="$ROOT_DIR/references/languages/frontend/review-framework.md"
+if grep -qE 'D(0[1-9]|1[0-5])_[A-Z_]+' "$FE_FRAMEWORK"; then
+  echo "FAIL: 前端框架不得引用 Java 公共维度 ID" >&2
+  exit 1
+fi
+# 正向断言：必须包含类型安全维度（中后台 P0 级）
+grep -q "类型安全" "$FE_FRAMEWORK" || { echo "FAIL: 前端框架必须包含类型安全维度" >&2; exit 1; }
+# 正向断言：必须声明 11 维度（硬断言，防止再次注水膨胀）
+FE_DIM_COUNT=$(grep -cE '^### [0-9]+\. ' "$FE_FRAMEWORK")
+if [ "$FE_DIM_COUNT" -ne 11 ]; then
+  echo "FAIL: 前端框架必须声明 11 维度，当前 $FE_DIM_COUNT" >&2
+  exit 1
+fi
+
+# SKILL.md 必须含语言路由分支
+grep -q "语言探测与路由" "$SKILL_FILE"
+grep -q "CANDIDATE_LANGUAGE:frontend" "$SKILL_FILE"
+grep -q "cc-code-reviewer-frontend" "$SKILL_FILE"
+# 前端 agent 必须被实际 dispatch（subagent_type 按 LANGUAGE_ID 选择，不能只硬编码 Java agent）
+grep -q 'cc-code-reviewer:cc-code-reviewer-frontend' "$SKILL_FILE"
+# 前端 agent 在 dispatch 点必须按 LANGUAGE_ID 条件化（至少出现 2 次）
+FRONTEND_DISPATCH_COUNT="$(grep -c 'cc-code-reviewer:cc-code-reviewer-frontend' "$SKILL_FILE")"
+test "$FRONTEND_DISPATCH_COUNT" -ge 2
+
+# SKILL.md 路径准备必须按 LANGUAGE_ID 分支，前端注入三个专属路径（不能写死 Java 路径）
+grep -q 'LANGUAGE_ID.*frontend' "$SKILL_FILE"
+grep -q 'REACT_RULES_PATH' "$SKILL_FILE"
+grep -q 'SOURCE_SCOPE_PATH' "$SKILL_FILE"
+grep -q 'references/languages/frontend/review-framework.md' "$SKILL_FILE"
+grep -q 'references/languages/frontend/react-rules.md' "$SKILL_FILE"
+grep -q 'references/languages/frontend/source-scope.md' "$SKILL_FILE"
+
+# 前端 agent 必须期望前端专属路径（不能只依赖 Java 的 REVIEW_FRAMEWORK_PATH）
+grep -q "前端审查框架路径" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+grep -q "React 规则路径" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+grep -q "源码范围路径" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+
+# 前端 agent 不得残留旧 15 维度编号（D01-D15）或维度 12-15 引用
+if grep -qE 'D(0[1-9]|1[0-5])[^0-9]|维度 ?1[2345]|1-15|15 维度' "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"; then
+  echo "FAIL: 前端 agent 残留旧 15 维度编号或维度 12-15 引用" >&2
+  exit 1
+fi
+
+# 前端矩阵与 React 规则必须被前端 Agent 引用
+grep -q "review-framework" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+grep -q "react-rules" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+
+# === 脚本目录重构断言 ===
+# SKILL.md 必须含「脚本调用顺序」编排段（执行顺序归文档，不编码进文件名）
+grep -q "脚本调用顺序" "$SKILL_FILE" || { echo "FAIL: cc-code-reviewer SKILL.md 缺「脚本调用顺序」段" >&2; exit 1; }
+grep -q "脚本调用顺序" "$ROOT_DIR/skills/cc-code-fixer/SKILL.md" || { echo "FAIL: cc-code-fixer SKILL.md 缺「脚本调用顺序」段" >&2; exit 1; }
+# 防回退：文档应引用新路径（core/ 或 languages/java/），证明迁移发生
+grep -q "scripts/core/detect-project.sh" "$SKILL_FILE" || { echo "FAIL: SKILL.md 应引用 core/detect-project.sh" >&2; exit 1; }
+grep -q "scripts/languages/java/project-scan.sh" "$SKILL_FILE" || { echo "FAIL: SKILL.md 应引用 languages/java/project-scan.sh" >&2; exit 1; }
 
 echo "✅ 契约文档测试通过"

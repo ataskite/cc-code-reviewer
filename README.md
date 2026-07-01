@@ -1,58 +1,50 @@
 # cc-code-reviewer
 
-> Claude Code 插件 · 企业级 Java 代码审查与报告驱动修复
+> Claude Code plugin · Java 与 React/TypeScript/JavaScript 代码审查 + 报告驱动修复
+
+`cc-code-reviewer` 是一个面向工程团队的代码审查插件。1.4.0 起，统一入口同时支持 **Java** 和 **React/TS/JS 前端**审查：先预扫描项目与语言，再通过结构化交互确认范围，最后生成可追踪的审查报告。Fix 阶段只消费人工确认后的问题清单，避免扫描和修复混在一起。
 
 ```mermaid
 flowchart LR
-    Scan["Scan<br/>发现问题"] --> Report["候选问题清单"]
-    Report --> Gate["人工确认"]
-    Gate --> Fix["Fix<br/>修复验证"]
-    Fix --> Output["修复报告 / 写回"]
+    Input["项目路径 / Git 仓库"] --> Prescan["预扫描<br/>语言 / 分支 / 技术栈"]
+    Prescan --> Gate["人工确认<br/>模式 / 范围 / 输出"]
+    Gate --> Scan["Scan Agent<br/>Java 或 Frontend"]
+    Scan --> Report["审查报告"]
+    Report --> Confirm["人工确认问题"]
+    Confirm --> Fix["Fix<br/>修复 / 验证 / 写回"]
 ```
 
-打通 **扫描 → 人工确认 → 修复 → 验证 → 报告/写回** 的完整闭环。Scan 只发现问题，Fix 只消费确认后的问题——两个阶段严格分离。
+## 适用范围
 
-## 快速上手
+| 语言 | 当前支持 | 说明 |
+|------|----------|------|
+| Java | Maven / Gradle / 常见企业 Java 项目 | 支持增量、全量、指定 Maven 模块、大仓库分批 |
+| Frontend | React + TypeScript / JavaScript | 支持 Vite / Webpack / workspace/monorepo 的 package-local `src` |
+| Mixed repo | Java + React 同仓 | 运行时选择一种语言；另一语言只作为背景，不产出正式问题 |
+
+首期前端范围聚焦 React。Next.js、Nuxt、通用 TS/JS、Node/BFF 暂不套用 React 规则，预扫描会标记为不支持并停止。
+
+## 安装
 
 ### 前置条件
 
-- macOS / Linux + Bash 3.0+ + `git`
-- `perl`（macOS/Linux 系统自带；用于 Git 仓库克隆超时控制、JSON 字段解析和文本归一化）
+- macOS / Linux
+- Bash 3.0+、`git`、系统自带 `perl`
 - 已安装 [Claude Code](https://claude.ai/code)
-- 可选：[lark-cli](https://github.com/larksuite/cli/blob/main/README.zh.md)（飞书云文档/多维表格支持）
+- 可选：`lark-cli`，用于飞书云文档 / 多维表格输出与写回
 
-### 安装
+### 安装插件
 
 ```bash
 claude plugin marketplace add ataskite/cc-code-reviewer
 claude plugin install cc-code-reviewer
 ```
 
-安装后在 Claude Code 会话内执行 `/reload-plugins` 即可使用。
-
-### 发起审查
+安装或更新后，在 Claude Code 会话内执行：
 
 ```text
-/cc-code-reviewer:cc-code-reviewer /path/to/project
+/reload-plugins
 ```
-
-也支持自然语言（`帮我审查 /path/to/project`）或 Git 仓库地址。
-
-### 发起修复
-
-```text
-/cc-code-reviewer:cc-code-fixer /path/to/project
-```
-
-输入本地 Markdown 路径、飞书云文档或飞书多维表格链接，按提示确认范围后执行修复。
-
-### 沉淀 Ignore 规则
-
-```text
-/cc-code-reviewer:cc-code-ignore /path/to/project
-```
-
-把反复出现的误报或项目特有设计沉淀到 `.cc-code-reviewer/ignore/issues.yml`，后续 Scan 自动跳过同类问题。
 
 ### 更新插件
 
@@ -60,69 +52,114 @@ claude plugin install cc-code-reviewer
 claude plugin update cc-code-reviewer@cc-code-reviewer
 ```
 
-更新后在会话内执行 `/reload-plugins`。
+## 快速使用
 
-## 核心能力
+### 代码审查
 
-- **端到端闭环** — Scan 发现问题 → 人工确认 → Fix 修复验证 → 报告/写回
-- **技术栈感知** — 自动识别 Spring Boot、MyBatis、Redis、Kafka 等，动态匹配专项审查规则
-- **15 个基础维度** — 正确性、代码质量、安全、性能、架构、缓存、消息队列、API 设计等
-- **4 种审查模式** — fast / standard / deep / security，按场景选择覆盖范围
-- **可恢复分批扫描** — 大型 Maven 多模块或大项目自动规划批次，支持跨会话续跑
-- **项目级 ignore** — 误报和项目特有设计沉淀为本地规则，后续自动跳过
-- **报告驱动 Fix** — 严格基于人工确认的问题清单修复，不扩大范围
-- **修复可追踪** — 自动采集修复时间、分支、Git 用户，支持写回原始来源
+```text
+/cc-code-reviewer:cc-code-reviewer /path/to/project
+```
 
-## 工作流
+也可以使用 Git 仓库地址：
 
-### Scan：发现问题
+```text
+/cc-code-reviewer:cc-code-reviewer https://github.com/org/repo.git
+```
 
-1. 预扫描 — 识别项目结构、模块、Git 分支、技术栈和 lark-cli 能力
-2. 交互确认 — 逐步选择分支、模式、范围和执行计划
-3. 执行审查 — Scan Agent 在确认参数下运行
-4. 生成报告 — `code-review-report-{PROJECT}-{TIME}.md`，可选同步飞书；分批合并报告按已纳入批次判断阶段性/完整，并对重复发现做确定性去重
+入口会先执行预扫描，再逐步询问分支、审查模式、报告保存方式、审查入口、范围、批次和最终确认。纯 Java / 纯前端会自动路由；混合仓库会让你选择本次审查目标语言。
 
-### 人工确认
+### 报告驱动修复
 
-Scan 报告进入 Fix 前，人工审核候选问题：确认误报、补充上下文、选择修复范围，形成待修复清单。未确认的问题不进入 Fix。
+```text
+/cc-code-reviewer:cc-code-fixer /path/to/project
+```
 
-### Fix：修复验证
+Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收集，可来自本地 Markdown、飞书云文档或飞书多维表格。确认问题范围和输出目标后才开始修复。
 
-1. 输入问题清单 — 本地 Markdown / 飞书云文档 / 飞书多维表格
-2. 确认范围 — 问题编号、修复意图、边界、输出目标
-3. 执行修复 — 默认直接修复；Superpowers 完整可用时可选辅助路线
-4. 生成报告 — `fix-report-{PROJECT}-{TIME}.md`，可选写回原始来源
+### Ignore 规则维护
+
+```text
+/cc-code-reviewer:cc-code-ignore /path/to/project
+```
+
+用于把项目内反复出现的误报或特定设计约束沉淀到 `.cc-code-reviewer/ignore/issues.yml`。ignore 文件保存的是“同类问题跳过规则”，不是某次报告里的临时问题编号。
+
+## 审查能力
+
+### Java 审查
+
+- 15 个审查维度：正确性、代码质量、异常处理、数据访问、安全、性能、资源管理、并发、缓存、消息队列、API 设计、架构、配置、测试、技术债等
+- 技术栈感知：Spring Boot、MyBatis / MyBatis Plus、JPA/Hibernate、Redis、Kafka/RocketMQ、Spring Security 等
+- Maven 多模块大仓库：支持 `module-sequential` 和 `ai-planned` 分批，批次可恢复，合并报告区分阶段性/完整
+- Java 覆盖率口径固定为 `src/main/java` 生产源码，测试源码只作为上下文
+
+### Frontend 审查
+
+- 11 个前端维度：正确性、类型安全、组件边界、React 规范、状态与数据请求、安全、性能、副作用与资源清理、可访问性、测试质量、API/错误处理
+- React TS/JS 支持：可识别 `.tsx/.jsx`，也支持有 React import / `createElement` 证据的 `.ts/.js`
+- 正式源码范围：只统计 React package 的 `src` 下生产 `.ts/.tsx/.js/.jsx`，排除测试、构建产物、配置脚本、`.d.ts`
+- Monorepo 范围选择：`src/components` 或 `components` 会匹配所有 React package-local `*/src/components/`；`apps/web/src/components` 只匹配指定 package
+- TypeScript LSP 可用时用于语义增强；不可用时降级到 import graph + 配置 + 文本检索
 
 ## 审查模式
 
-| 模式 | 覆盖范围 | 适用场景 | 预估耗时 |
-|------|----------|----------|----------|
-| `fast` | 正确性 + 事务/配置安全 + 资源管理；仅输出 P0 | PR 合并前快速卡口 | 2-8 分钟 |
-| `standard` | 维度 1-11 + 部分 14/15 | 日常迭代上线 | 5-25 分钟 |
-| `deep` | 全量 1-15 维度 | 大版本发布前 | 10-60 分钟 |
-| `security` | 安全核心 + 交叉维度 | 安全合规检查 | 5-35 分钟 |
+| 模式 | 输出边界 | 适用场景 |
+|------|----------|----------|
+| `fast` | 仅输出 P0（且必须满足全部 P0 硬门槛） | PR 合并前快速卡口 |
+| `standard` | 日常核心维度 | 常规迭代上线 |
+| `deep` | 全量维度 | 大版本发布前、重要模块审查 |
+| `security` | 安全核心 + 强相关交叉维度 | 安全合规、上线前安全检查 |
 
-审查范围支持 **增量**（最近 N 次提交）、**存量**（全量代码）和 **指定模块**。
+P0 必须同时满足：生产可达、证据完整且置信度高、事故级影响、缺少有效防护、必须阻断发布。`fast` 模式不会输出 P1/P2/P3 或待确认项。
+
+## 审查范围
+
+| 入口 | Java | Frontend |
+|------|------|----------|
+| 增量审查 | 最近 N 次提交的变更及必要关联上下文 | 最近 N 次提交的前端变更及必要关联上下文 |
+| 全量审查 | 全部 `src/main/java` 生产源码 | 全部 React package-local `src` 生产源码 |
+| 指定模块 | Maven 模块相对路径 | `src` 顶层目录或 package-local `src` 子目录 |
+
+范围选择会在分批、覆盖率、报告和子 agent 参数中保持一致。前端指定目录通过不可变 source manifest 收敛，不会误扫测试文件或构建产物。
+
+## 输出
+
+- 本地 Markdown 审查报告：`code-review-report-{PROJECT}-{YYYYMMDD-HHmmss}.md`
+- 本地 Markdown 修复报告：`fix-report-{PROJECT}-{YYYYMMDD-HHmmss}.md`
+- 可选飞书云文档：使用 Markdown 一级标题作为云文档标题
+- 可选飞书多维表格：按扫描/修复阶段字段契约写入和更新
+- 分批合并报告：支持 `[阶段性]` 与 `[合并阻塞]` 标题，明确已纳入批次、遗留批次和覆盖率
 
 ## 架构
 
 ![cc-code-reviewer 架构总览](docs/assets/architecture-overview.png)
 
-插件采用 Harness 架构：Skill 负责入口编排和交互门禁，Script 负责可重复的环境探测，Agent 负责高上下文审查任务，Fix 执行层在确认范围内完成修复与验证，lark-cli 作为可选集成提供飞书读写能力。每层只做自己的事，通过明确的输入输出契约连接。
+插件采用 skill-only 入口和专属子 agent：
+
+- `skills/cc-code-reviewer`：Scan 编排、预扫描、交互确认、批次调度、飞书输出
+- `agents/cc-code-reviewer`：Java 审查执行，只保存本地报告，不上传飞书
+- `agents/cc-code-reviewer-frontend`：React/TS/JS 前端审查执行
+- `skills/cc-code-fixer`：读取确认后的问题清单，执行修复、验证、报告和写回
+- `skills/cc-code-ignore`：维护项目级 ignore 规则
+- `scripts/core`：语言无关内核，负责项目获取、Git、模型窗口、分批、合并和状态展示
+- `scripts/languages/java` / `scripts/languages/frontend`：语言适配器，负责预扫描、源码边界和语言专属能力探测
 
 ## 详细文档
 
 | 文档 | 说明 |
 |------|------|
-| [审查维度与模式矩阵](references/review-framework.md) | 15 维度定义、技术栈匹配规则、模式 × 维度启用矩阵 |
-| [报告格式](references/report-format.md) | Scan 审查报告结构化输出规范 |
-| [飞书集成](references/feishu-integration.md) | 云文档上传、多维表格读写（基础字段（14 个）+ 预留字段 3 个，共 17 个字段）操作参考 |
-| [分批扫描](CLAUDE.md) | Maven 多模块 / 文件 token 分批规划与可恢复执行 |
-| [修复工作流](references/fix-workflow.md) | Fix 阶段完整契约、交互门禁、执行路线 |
-| [修复报告格式](references/fix-report-format.md) | 修复报告结构化输出规范 |
-| [修复飞书写回](references/fix-feishu-integration.md) | Fix 阶段飞书读写操作契约 |
-| [Ignore 规则](references/ignore-workflow.md) | 项目级 ignore 规则格式与维护流程 |
-| [示例对话](references/examples.md) | Scan / Fix / Ignore 完整示例 |
+| [Java 审查框架](references/languages/java/review-framework.md) | Java 15 维度、技术栈规则、模式矩阵 |
+| [Frontend 审查框架](references/languages/frontend/review-framework.md) | 前端 11 维度、模式矩阵、P0 门槛 |
+| [React 专项规则](references/languages/frontend/react-rules.md) | React / Router / 构建配置专项审查规则 |
+| [源码范围契约](references/languages/frontend/source-scope.md) | 前端正式源码、上下文和排除项 |
+| [语言适配器契约](references/language-adapter-contract.md) | Java / Frontend 与共享内核之间的 PROFILE_SCHEMA |
+| [报告格式](references/report-format.md) | Scan 报告结构化输出规范 |
+| [飞书集成](references/feishu-integration.md) | Scan 阶段云文档和多维表格输出 |
+| [Fix 工作流](references/fix-workflow.md) | 修复阶段输入、范围确认、执行路线和写回规则 |
+| [Fix 报告格式](references/fix-report-format.md) | 修复报告结构化输出规范 |
+| [Fix 飞书集成](references/fix-feishu-integration.md) | 修复阶段飞书读取、写回和降级规则 |
+| [Ignore 规则](references/ignore-workflow.md) | 项目级 ignore 文件格式与维护流程 |
+| [示例对话](references/examples.md) | Scan / Fix / Ignore 使用示例 |
 
 ## License
 

@@ -17,7 +17,7 @@ printf 'two\n' >> "$TMP_DIR/A.java"
 git -C "$TMP_DIR" add A.java
 git -C "$TMP_DIR" commit -q -m "second"
 
-OUTPUT="$(bash "$ROOT_DIR/scripts/phase5-prepare-incremental.sh" "$TMP_DIR" 2)"
+OUTPUT="$(bash "$ROOT_DIR/scripts/core/prepare-incremental.sh" "$TMP_DIR" 2)"
 
 echo "$OUTPUT" | grep -q "# === 提交记录 ==="
 echo "$OUTPUT" | grep -q "# === 变更文件列表 ==="

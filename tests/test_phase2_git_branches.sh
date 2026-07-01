@@ -17,20 +17,20 @@ CURRENT_BRANCH="$(git -C "$TMP_DIR" branch --show-current)"
 git -C "$TMP_DIR" checkout -q -b review-target
 git -C "$TMP_DIR" checkout -q "$CURRENT_BRANCH"
 
-OUTPUT="$(bash "$ROOT_DIR/scripts/phase2-detect-branches.sh" "$TMP_DIR")"
+OUTPUT="$(bash "$ROOT_DIR/scripts/core/detect-branches.sh" "$TMP_DIR")"
 
 echo "$OUTPUT" | grep -q "IS_GIT_REPO=true"
 echo "$OUTPUT" | grep -q "CURRENT_BRANCH=$CURRENT_BRANCH"
 echo "$OUTPUT" | grep -q "BRANCH: review-target"
 
-SWITCH_OUTPUT="$(bash "$ROOT_DIR/scripts/phase2-switch-branch.sh" "$TMP_DIR" review-target "$CURRENT_BRANCH" local)"
+SWITCH_OUTPUT="$(bash "$ROOT_DIR/scripts/core/switch-branch.sh" "$TMP_DIR" review-target "$CURRENT_BRANCH" local)"
 echo "$SWITCH_OUTPUT" | grep -q "已切换到本地分支: review-target"
 test "$(git -C "$TMP_DIR" branch --show-current)" = "review-target"
 
 printf 'dirty\n' >> "$TMP_DIR/A.java"
 DIRTY_OUTPUT="$TMP_DIR/phase2-dirty.out"
-if bash "$ROOT_DIR/scripts/phase2-switch-branch.sh" "$TMP_DIR" "$CURRENT_BRANCH" review-target local >"$DIRTY_OUTPUT" 2>&1; then
-  echo "phase2-switch should fail when a local project is dirty" >&2
+if bash "$ROOT_DIR/scripts/core/switch-branch.sh" "$TMP_DIR" "$CURRENT_BRANCH" review-target local >"$DIRTY_OUTPUT" 2>&1; then
+  echo "switch-branch should fail when a local project is dirty" >&2
   exit 1
 fi
 

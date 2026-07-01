@@ -1,7 +1,7 @@
 #!/bin/bash
-# 阶段十四：模型上下文窗口侦测
+# 模型上下文窗口侦测
 # 用途：根据 Claude Code 的逻辑模型名（opus/sonnet/haiku）侦测实际模型的上下文窗口大小，
-#       输出缩放系数供分批脚本（phase11）按窗口动态调整批次预算。
+#       输出缩放系数供分批脚本（core/plan-file-batches.sh、languages/java/plan-large-batches.sh）按窗口动态调整批次预算。
 #
 # 侦测原理：
 #   Claude Code 通过 ~/.claude/settings.json 的 env 块把逻辑模型名映射到实际模型：
@@ -28,7 +28,7 @@ MAX_SCALE=10
 ONE_M_WHITELIST="deepseek-v4-flash deepseek-v4-pro qwen3.7-plus qwen3.7-max glm-5.2 minimax-m3 mimo-v2.5-pro"
 
 usage() {
-  echo "用法: bash phase14-detect-model-context.sh <opus|sonnet|haiku>" >&2
+  echo "用法: bash core/detect-model-context.sh <opus|sonnet|haiku>" >&2
   echo "  读取 ~/.claude/settings.json 侦测实际模型的上下文窗口大小" >&2
 }
 
@@ -125,7 +125,7 @@ esac
 ACTUAL_MODEL_NAME="$(printf '%s' "$ACTUAL_MODEL" | sed 's/\[[^]]*\]//g')"
 [ -z "$ACTUAL_MODEL_NAME" ] && ACTUAL_MODEL_NAME="(未配置)"
 
-# ── 输出 key=value（与 phase1-3 风格一致，供主 skill 解析） ──
+# ── 输出 key=value（与 core 其他预扫描脚本风格一致，供主 skill 解析） ──
 echo "MODEL_ROLE=$MODEL_ROLE_LOWER"
 echo "ACTUAL_MODEL=$ACTUAL_MODEL"
 echo "ACTUAL_MODEL_NAME=$ACTUAL_MODEL_NAME"

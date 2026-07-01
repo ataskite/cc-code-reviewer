@@ -11,7 +11,7 @@ if [ -z "$FULL_REVIEW_LINE" ]; then
 fi
 
 FULL_REVIEW_BLOCK="$(sed -n "${FULL_REVIEW_LINE},$((FULL_REVIEW_LINE + 2))p" "$SKILL_FILE")"
-if ! printf '%s\n' "$FULL_REVIEW_BLOCK" | grep -Fq 'description: "审查当前分支的全部 Java 代码，适合历史遗留项目或周期性巡检"'; then
+if ! printf '%s\n' "$FULL_REVIEW_BLOCK" | grep -Fq 'description: "审查当前分支的全部代码，适合历史遗留项目或周期性巡检"'; then
   echo "full review entry description must match the approved wording" >&2
   exit 1
 fi

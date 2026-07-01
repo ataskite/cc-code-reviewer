@@ -8,6 +8,8 @@ This is a **Claude Code plugin skill** for enterprise-grade Java code review and
 
 **Important**: This repository intentionally uses **skill-only entry points** plus dedicated sub-agents. Claude Code can invoke the skills explicitly via `/cc-code-reviewer:cc-code-reviewer` for scan, `/cc-code-reviewer:cc-code-ignore` for scan ignore-rule maintenance, and `/cc-code-reviewer:cc-code-fixer` for fix.
 
+- **Multi-language support**: first phase supports both Java and React/TypeScript/JavaScript frontend review. The unified entry `/cc-code-reviewer:cc-code-reviewer` auto-routes by language detection; mixed repos require the user to pick one language. The frontend path is built on a language-neutral shared kernel (`scripts/core/`) plus a frontend adapter (`scripts/languages/frontend/`) and a dedicated sub-agent (`agents/cc-code-reviewer-frontend.md`). See `docs/superpowers/specs/2026-06-23-multi-language-reviewer-design.md`.
+
 ## Architecture
 
 ### Overview
@@ -27,7 +29,7 @@ flowchart TD
     OptionalSuperpowers["Optional Superpowers route<br/>brainstorming / subagent-driven-development"]
 
     subgraph ScanPhase["Scan phase"]
-      ReviewSkill --> ScanScripts["phase1-5 + phase10-13 scripts<br/>project / branches / stack / code intelligence / batch plans"]
+      ReviewSkill --> ScanScripts["core/ + languages/ scripts<br/>project / branches / stack / code intelligence / batch plans"]
       IgnoreRules -.read.-> ReviewSkill
       ScanScripts -->|"small repo"| ReviewAgent
       ReviewAgent --> Reports
@@ -44,7 +46,7 @@ flowchart TD
 
     subgraph FixPhase["Fix phase"]
       Reports --> FixSkill
-      FixSkill --> FixScripts["phase6-9 scripts<br/>local input / capabilities / workspace / metadata"]
+      FixSkill --> FixScripts["core/ fix scripts<br/>local input / capabilities / workspace / metadata"]
       FixScripts --> DirectFix
       FixScripts -.available + selected.-> OptionalSuperpowers
       DirectFix --> FixReports
@@ -66,7 +68,8 @@ flowchart TD
 - Interactive mode: Collect user config via AskUserQuestion after pre-scan: review mode → model → report handling → review entry → scope → optional stock strategy → optional batch selection/concurrency → final confirmation
 - Batch mode: Auto-triggered for large stock reviews or when a Maven multi-module stock strategy is selected; uses deterministic planner scripts, dispatches parallel sub-agents, gates merge on current-run batch status, and reports included/leftover batches
 - Maven large-repo mode: for Maven multi-module stock full-code or selected-module reviews using `module-sequential` or `ai-planned`, creates `.cc-code-reviewer/runs/{RUN_ID}` with atomic module/directory batches, status files, resumable execution, and staged/full merge reports
-- File batch mode: for Maven single-module, Gradle, or unknown Java projects when `BATCH_MODE=true`, uses `phase11-plan-file-batches.sh` and `file-token-batching`
+- File batch mode: for Maven single-module, Gradle, or unknown Java projects when `BATCH_MODE=true`, uses `languages/java/plan-file-batches.sh` and `file-token-batching`
+- Feishu upload: after the review sub-agent returns the local report file (single-agent mode) or after batch merge (batch mode), the main skill performs all Feishu cloud-doc / bitable uploads per `FEISHU_UPLOAD_OPTION`; sub-agents never upload to Feishu
 - **Never** execute code review itself
 
 **Review Agent (`agents/cc-code-reviewer.md`)**:
@@ -74,7 +77,7 @@ flowchart TD
 - Apply project ignore rules before generating the final issue list, and disclose matched rules / filtered issue counts
 - In Maven large-repo batches, read `BATCH_PLAN_PATH`, keep formal findings inside `scan_roots`, and use `jdtls-lsp` semantic queries when `SEMANTIC_LEVEL=jdtls-lsp`
 - Generate structured report
-- Upload to Feishu (if requested)
+- Save local Markdown report only; never upload to Feishu (the main skill handles all Feishu uploads)
 - **Never** interact with user via AskUserQuestion
 
 **Ignore Skill (`skills/cc-code-ignore/SKILL.md`)**:
@@ -112,7 +115,11 @@ skills/cc-code-ignore/SKILL.md      # Scan ignore-rule maintenance skill
 skills/cc-code-fixer/SKILL.md       # Fix-stage skill definition
 agents/cc-code-reviewer.md          # Sub agent for review execution
 references/
-  ├── review-framework.md             # 15 dimensions definition + mode matrix
+  ├── languages/
+  │   ├── java/
+  │   │   └── review-framework.md     # Java 15 dimensions definition + mode matrix
+  │   └── frontend/
+  │       └── review-framework.md     # Frontend 11 dimensions (independent set)
   ├── report-format.md                # Report output format specification
   ├── feishu-integration.md           # Feishu upload operation reference
   ├── ignore-workflow.md              # Project-level ignore rule format and workflow
@@ -121,23 +128,36 @@ references/
   ├── fix-feishu-integration.md       # Fix-stage Feishu read/write contract
   └── examples.md                     # Complete example dialogues
 scripts/
-  ├── phase1-detect-project.sh        # Project identification
-  ├── phase2-detect-branches.sh       # Branch detection
-  ├── phase2-switch-branch.sh         # Branch switching
-  ├── phase3-project-scan.sh          # Project structure scan
-  ├── phase4-detect-lark-plugin.sh    # lark-cli detection
-  ├── phase5-preview-recent-commits.sh # Recent commit preview for incremental scope choices
-  ├── phase5-prepare-incremental.sh   # Incremental review preparation
-  ├── phase6-detect-fix-input.sh      # Local Markdown fix input path validation
-  ├── phase7-detect-superpowers.sh    # Optional Superpowers capability detection
-  ├── phase8-prepare-fix-workspace.sh # Fix branch/worktree preparation
-  ├── phase9-collect-fix-metadata.sh  # Fix completion time, branch, and git user
-  ├── phase10-detect-code-intelligence.sh # jdtls/code-intelligence detection
-  ├── phase11-plan-large-batches.sh   # Maven multi-module stock batch planner
-  ├── phase11-plan-file-batches.sh    # File-token batch planner for non Maven-multi projects
-  ├── phase12-merge-large-batches.sh  # Large batch report merge
-  ├── phase13-show-large-batch-status.sh # User-visible batch status and dynamic execution plan
-  └── phase14-detect-model-context.sh # Model context window detection (CONTEXT_SCALE)
+  ├── core/                              # Language-neutral shared kernel (no phase numbering)
+  │   ├── detect-project.sh              # Project identification
+  │   ├── detect-branches.sh             # Branch detection
+  │   ├── switch-branch.sh               # Branch switching
+  │   ├── detect-lark-plugin.sh          # lark-cli detection
+  │   ├── preview-recent-commits.sh      # Recent commit preview for incremental scope choices
+  │   ├── prepare-incremental.sh         # Incremental review preparation
+  │   ├── detect-fix-input.sh            # Local Markdown fix input path validation
+  │   ├── detect-superpowers.sh          # Optional Superpowers capability detection
+  │   ├── prepare-fix-workspace.sh       # Fix branch/worktree preparation
+  │   ├── collect-fix-metadata.sh        # Fix completion time, branch, and git user
+  │   ├── detect-model-context.sh        # Model context window detection (CONTEXT_SCALE)
+  │   ├── detect-language.sh             # Language detection dispatcher
+  │   ├── estimate-review-minutes.sh     # Deterministic review time estimation
+  │   ├── validate-scope.sh              # Scope path boundary validation (reserved)
+  │   ├── plan-file-batches.sh           # Language-neutral file-token batch planner
+  │   ├── merge-batch-results.sh         # Batch result merge (dedup + coverage)
+  │   └── show-batch-status.sh           # User-visible batch status and dynamic execution plan
+  ├── languages/
+  │   ├── java/                          # Java-specific scripts
+  │   │   ├── project-scan.sh            # Java project structure scan (Maven/Gradle/stack)
+  │   │   ├── detect-code-intelligence.sh # jdtls-lsp detection
+  │   │   ├── plan-large-batches.sh      # Maven multi-module stock batch planner
+  │   │   └── plan-file-batches.sh       # Java file-token batch planner (delegates to core/)
+  │   └── frontend/                      # Frontend-specific scripts
+  │       ├── scan-project.sh            # Frontend PROFILE_SCHEMA scan
+  │       ├── detect-code-intelligence.sh # typescript-lsp detection
+  │       ├── collect-source-files.sh    # Production source file manifest
+  │       ├── filter-source-manifest.sh  # Selected src-directory manifest filter
+  │       └── detect-project.sh          # Frontend project type detection
 ```
 
 ## Common Development Tasks
@@ -151,20 +171,20 @@ bash tests/run_all.sh
 ```
 
 The suite runs every `tests/test_*.sh` file and then `git diff --check`. It covers:
-- `phase1-detect-project.sh`: local path detection and missing-path failures
-- `phase2-detect-branches.sh` / `phase2-switch-branch.sh`: branch discovery, clean local checkout, dirty local workspace protection
-- `phase3-project-scan.sh`: Maven multi-module scans, module paths with spaces, unknown-project line counts
-- `phase4-detect-lark-plugin.sh`: lark-cli detection output contract
-- `phase5-preview-recent-commits.sh`: recent commit preview for incremental AskUserQuestion choices
-- `phase5-prepare-incremental.sh`: incremental diff ranges that include the root commit
-- `phase10-detect-code-intelligence.sh`: jdtls-lsp availability and fallback messaging
-- `phase11-plan-large-batches.sh`: scoped Maven module planning, concise `RUN_DIR`, semantic-cost and module-sequential strategies
-- `phase11-plan-file-batches.sh`: deterministic file-token batching for Maven single-module, Gradle, and unknown Java projects
-- `phase12-merge-large-batches.sh`: current-run batch status gate, wait/blocked/staged/full report generation, batch status summary, and coverage accounting
-- `phase13-show-large-batch-status.sh`: Markdown batch table, dynamic execution plans, and cost-based time estimates
-- `phase6-detect-fix-input.sh`: local Markdown path validation only; Feishu Doc/Base inputs are read through `lark-doc` / `lark-base`
-- `phase7-detect-superpowers.sh`: optional Superpowers route capability detection
-- `phase8-prepare-fix-workspace.sh`: current/branch/worktree strategies and dirty workspace protection
+- `core/detect-project.sh`: local path detection and missing-path failures
+- `core/detect-branches.sh` / `core/switch-branch.sh`: branch discovery, clean local checkout, dirty local workspace protection
+- `languages/java/project-scan.sh`: Maven multi-module scans, module paths with spaces, unknown-project line counts
+- `core/detect-lark-plugin.sh`: lark-cli detection output contract
+- `core/preview-recent-commits.sh`: recent commit preview for incremental AskUserQuestion choices
+- `core/prepare-incremental.sh`: incremental diff ranges that include the root commit
+- `languages/java/detect-code-intelligence.sh`: jdtls-lsp availability and fallback messaging
+- `languages/java/plan-large-batches.sh`: scoped Maven module planning, concise `RUN_DIR`, semantic-cost and module-sequential strategies
+- `languages/java/plan-file-batches.sh`: deterministic file-token batching for Maven single-module, Gradle, and unknown Java projects
+- `core/merge-batch-results.sh`: current-run batch status gate, wait/blocked/staged/full report generation, batch status summary, and coverage accounting
+- `core/show-batch-status.sh`: Markdown batch table, dynamic execution plans, and cost-based time estimates
+- `core/detect-fix-input.sh`: local Markdown path validation only; Feishu Doc/Base inputs are read through `lark-doc` / `lark-base`
+- `core/detect-superpowers.sh`: optional Superpowers route capability detection
+- `core/prepare-fix-workspace.sh`: current/branch/worktree strategies and dirty workspace protection
 - Documentation contracts for interactive scan flow, report persistence, Feishu Base fields, fix-stage contracts, and test instructions
 
 The plugin only supports macOS and Linux. Scripts are written in Bash and call `perl` (system-provided on macOS/Linux) for timeouts, JSON parsing, and text normalization—keep this mix when editing and verify through the local Bash suite.
@@ -173,38 +193,38 @@ The plugin only supports macOS and Linux. Scripts are written in Bash and call `
 
 ```bash
 # Test pre-scan scripts independently
-bash scripts/phase1-detect-project.sh "/path/to/project"
-bash scripts/phase2-detect-branches.sh "/path/to/project"
-bash scripts/phase3-project-scan.sh "/path/to/project"
-bash scripts/phase4-detect-lark-plugin.sh
-bash scripts/phase5-preview-recent-commits.sh "/path/to/project"
-bash scripts/phase5-prepare-incremental.sh "/path/to/project" 5
-bash scripts/phase6-detect-fix-input.sh "/path/to/report.md"
-bash scripts/phase7-detect-superpowers.sh
-bash scripts/phase8-prepare-fix-workspace.sh "/path/to/project" worktree "fix/review-findings"
-bash scripts/phase9-collect-fix-metadata.sh "/path/to/project"
-bash scripts/phase10-detect-code-intelligence.sh "/path/to/project"
-bash scripts/phase11-plan-large-batches.sh "/path/to/project" standard main jdtls-lsp "全量代码" ai-planned
-bash scripts/phase11-plan-file-batches.sh "/path/to/project" standard main
-bash scripts/phase13-show-large-batch-status.sh "/path/to/project"
-bash scripts/phase14-detect-model-context.sh opus
+bash scripts/core/detect-project.sh "/path/to/project"
+bash scripts/core/detect-branches.sh "/path/to/project"
+bash scripts/languages/java/project-scan.sh "/path/to/project"
+bash scripts/core/detect-lark-plugin.sh
+bash scripts/core/preview-recent-commits.sh "/path/to/project"
+bash scripts/core/prepare-incremental.sh "/path/to/project" 5
+bash scripts/core/detect-fix-input.sh "/path/to/report.md"
+bash scripts/core/detect-superpowers.sh
+bash scripts/core/prepare-fix-workspace.sh "/path/to/project" worktree "fix/review-findings"
+bash scripts/core/collect-fix-metadata.sh "/path/to/project"
+bash scripts/languages/java/detect-code-intelligence.sh "/path/to/project"
+bash scripts/languages/java/plan-large-batches.sh "/path/to/project" standard main jdtls-lsp "全量代码" ai-planned
+bash scripts/languages/java/plan-file-batches.sh "/path/to/project" standard main
+bash scripts/core/show-batch-status.sh "/path/to/project"
+bash scripts/core/detect-model-context.sh opus
 ```
 
 ### Modifying Review Logic
 
 1. **Script logic**: Edit `scripts/*.sh` files directly
 2. **Review flow**: Edit `skills/cc-code-reviewer/SKILL.md`
-3. **Review dimensions**: Edit `references/review-framework.md`
+3. **Review dimensions**: Edit `references/languages/java/review-framework.md`
 4. **Agent prompt**: Edit `agents/cc-code-reviewer.md`
 
-**Critical**: Keep mode × dimension matrix consistent between `review-framework.md` and `cc-code-reviewer.md`.
+**Critical**: Keep mode × dimension matrix consistent between `references/languages/java/review-framework.md` and `cc-code-reviewer.md`.
 
 **Critical**: When changing scan flow or batch behavior, keep `README.md`, `AGENTS.md`, `CLAUDE.md`, `references/examples.md`, `skills/cc-code-reviewer/SKILL.md`, `agents/cc-code-reviewer.md`, and `tests/test_contract_docs.sh` synchronized.
 
 ### Modifying Fix Logic
 
 1. **Fix flow**: Edit `skills/cc-code-fixer/SKILL.md`
-2. **Input/workspace scripts**: Edit phase6-9 Bash scripts together when the fix contract changes
+2. **Input/workspace scripts**: Edit `core/detect-fix-input.sh` + `core/prepare-fix-workspace.sh` + `core/collect-fix-metadata.sh` together when the fix contract changes
 3. **Fix report or Feishu contracts**: Edit `references/fix-report-format.md` and `references/fix-feishu-integration.md`
 
 **Critical**: Keep fix statuses, report filename conventions, and Feishu field names consistent across skill, references, and tests.
@@ -231,17 +251,18 @@ Verify installation by triggering the skill with a Java review request such as `
 
 ### Batch Planning Contract
 
-- Maven multi-module stock batching always uses `phase11-plan-large-batches.sh`, including selected-module reviews and single selected-module reviews.
-- `phase11-plan-large-batches.sh` receives `PROJECT_DIR`, `REVIEW_MODE`, branch, `SEMANTIC_LEVEL`, `REVIEW_SCOPE`, `STOCK_REVIEW_STRATEGY`, and `CONTEXT_SCALE` (7th arg, default 1).
-- `CONTEXT_SCALE` is detected by `phase14-detect-model-context.sh` from `~/.claude/settings.json`: models with a `[1M]` suffix marker (e.g. `glm-5.2[1M]`) or on the built-in 1M whitelist yield scale=5; others yield scale=1 (200k window, legacy behavior). Batch cost/LOC limits scale proportionally so 1M-window models produce fewer, larger batches.
+- Maven multi-module stock batching always uses `languages/java/plan-large-batches.sh`, including selected-module reviews and single selected-module reviews.
+- `languages/java/plan-large-batches.sh` receives `PROJECT_DIR`, `REVIEW_MODE`, branch, `SEMANTIC_LEVEL`, `REVIEW_SCOPE`, `STOCK_REVIEW_STRATEGY`, and `CONTEXT_SCALE` (7th arg, default 1).
+- `CONTEXT_SCALE` is detected by `core/detect-model-context.sh` from `~/.claude/settings.json`: models with a `[1M]` suffix marker (e.g. `glm-5.2[1M]`) or on the built-in 1M whitelist yield scale=5; others yield scale=1 (200k window, legacy behavior). Batch cost/LOC limits scale proportionally so 1M-window models produce fewer, larger batches.
 - `STOCK_REVIEW_STRATEGY` is `module-sequential` for one batch per selected module or `ai-planned` for semantic-cost planning.
-- Maven multi-module stock batching must never fall back to `phase11-plan-file-batches.sh`; that planner is only for Maven single-module, Gradle, or unknown Java projects.
+- Maven multi-module stock batching must never fall back to `languages/java/plan-file-batches.sh`; that planner is only for Maven single-module, Gradle, or unknown Java projects.
 - Pre-scan, batch-planning, and batch-agent formal scan Java file/line counts must include only `src/main/java` production sources; `src/test/java` test sources must not contribute to review scale, file batch manifests, or formal batch findings.
 - Selected module paths must be relative paths inside `PROJECT_DIR`; absolute paths, `..` path traversal, and resolved paths outside the project root must be rejected before planning.
+- Frontend selected-directory reviews must filter the immutable source manifest through `languages/frontend/filter-source-manifest.sh`; `src/components` or `components` matches every React package-local `*/src/components/` in monorepos, while full paths such as `apps/web/src/components` match only that package.
 - `RUN_DIR` names are fixed as `{YYYYMMDD-HHMMSS}-{branch_slug}-{REVIEW_MODE}`. Scope, strategy, task type, selected modules, and totals must be read from `plan.json`, not inferred from the directory name.
 - Merged batch reports are complete only when all planned batches are included in the merge. Completed but non-target batches remain leftovers, keep the report `[阶段性]`, and must not inflate the merged finding count.
-- `phase12-merge-large-batches.sh` must deterministically deduplicate identical finding blocks across included batch results before writing `summary.json.finding_count`.
-- `summary.json` from `phase12-merge-large-batches.sh` must include `report_title`; the merged Markdown report's first non-empty line must be `# {report_title}` before any Feishu cloud-doc upload.
+- `core/merge-batch-results.sh` must deterministically deduplicate identical finding blocks across included batch results before writing `summary.json.finding_count`.
+- `summary.json` from `core/merge-batch-results.sh` must include `report_title`; the merged Markdown report's first non-empty line must be `# {report_title}` before any Feishu cloud-doc upload.
 - Batch status must be shown as normal assistant-visible Markdown, not only as collapsed shell output. The table header is `| 批次 | 状态 | 行数 | 文件数 | 模块 |`.
 - Batch execution options and concurrency options are dynamic. Do not show impossible options such as 5 batches when only 3 are runnable, and never offer concurrency greater than `RUN_BATCH_COUNT`.
 

@@ -58,19 +58,19 @@ cc-code-fixer 只接受项目地址。待修复问题确认清单和输出目标
 仅支持 macOS / Linux（Bash）：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase1-detect-project.sh" "<项目路径或 Git URL>"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-project.sh" "<项目路径或 Git URL>"
 # 输出：PROJECT_DIR=<路径> PROJECT_SOURCE=local|git-cache
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase2-detect-branches.sh" "$PROJECT_DIR"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-branches.sh" "$PROJECT_DIR"
 # 输出：IS_GIT_REPO=true/false CURRENT_BRANCH=<分支> BRANCH: ... BRANCH_REMOTE: ...
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase3-project-scan.sh" "$PROJECT_DIR"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/project-scan.sh" "$PROJECT_DIR"
 # 输出：PROJECT_TYPE=... MODULE:... TECH_STACK:...
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase4-detect-lark-plugin.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
 # 输出：LARK_PLUGIN_INSTALLED=true|false，失败时附带 LARK_PLUGIN_REASON
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase7-detect-superpowers.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-superpowers.sh"
 # 输出：SUPERPOWERS_AVAILABLE=true|false SUPERPOWER_SKILL:<skill>=available|missing
 ```
 
@@ -123,11 +123,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase7-detect-superpowers.sh"
 - 识别为本地 Markdown 路径时，执行：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOURCE>"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-fix-input.sh" "<FIX_INPUT_SOURCE>"
 ```
 
-- 识别为飞书云文档 URL 时，不得调用 `phase6-detect-fix-input.sh`；必须直接使用 `lark-cli docs` 和 `lark-doc` skill 读取。
-- 识别为飞书多维表格 URL 或 `base:{BASE_TOKEN}:{TABLE_ID}` 时，不得调用 `phase6-detect-fix-input.sh`；必须直接使用 `lark-cli base` 和 `lark-base` skill 读取。输入为 `/wiki/{WIKI_TOKEN}?table={TABLE_ID}&view={VIEW_ID}` 时，提取 `table` 作为 `--table-id`、可选提取 `view` 作为 `--view-id`，再用 `lark-cli wiki spaces get_node` 将 wiki token 解析成真实 `base-token` 后读取记录；输入为 `base:{BASE_TOKEN}:{TABLE_ID}` 时，由 skill 直接解析 token，不经 Bash 脚本。
+- 识别为飞书云文档 URL 时，不得调用 `core/detect-fix-input.sh`；必须直接使用 `lark-cli docs` 和 `lark-doc` skill 读取。
+- 识别为飞书多维表格 URL 或 `base:{BASE_TOKEN}:{TABLE_ID}` 时，不得调用 `core/detect-fix-input.sh`；必须直接使用 `lark-cli base` 和 `lark-base` skill 读取。输入为 `/wiki/{WIKI_TOKEN}?table={TABLE_ID}&view={VIEW_ID}` 时，提取 `table` 作为 `--table-id`、可选提取 `view` 作为 `--view-id`，再用 `lark-cli wiki spaces get_node` 将 wiki token 解析成真实 `base-token` 后读取记录；输入为 `base:{BASE_TOKEN}:{TABLE_ID}` 时，由 skill 直接解析 token，不经 Bash 脚本。
 - 输入无法识别时，只能要求用户重新提供一个可识别的位置或取消；不得进入修复执行。
 
 然后读取或解析修复输入，归一化为问题清单。归一化问题字段至少包括：`issue_id`、`severity`、`dimension`、`location`、`confidence`、`evidence`、`impact`、`suggestion`、`source_type`、`source_ref`、`fix_status`。如果飞书读取失败且没有已归一化问题上下文，必须停止修复，只生成本地失败说明，不得继续进入修复执行。
@@ -145,8 +145,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOUR
 - 本地 Markdown 必须直接读取文件内容，再按 Markdown 报告规则解析；相对路径以当前工作目录为基准。
 - 飞书云文档必须使用 `lark-cli docs` 和 `lark-doc` skill 读取。常见输入包括飞书或 Lark 的 `/docx/`、`/docs/` 文档 URL。
 - 飞书多维表格必须使用 `lark-cli base` 和 `lark-base` skill 读取。常见输入包括 `/base/` URL、带 `table=` 参数的 `/wiki/` URL 或 `base:{BASE_TOKEN}:{TABLE_ID}`。`/wiki/` URL 的真实 base token 必须通过 `lark-cli wiki spaces get_node --params '{"token":"WIKI_TOKEN"}' --as user` 返回的 `.data.node.obj_token` 获取。
-- `phase6-detect-fix-input.sh` 只用于本地 Markdown 路径存在性校验和绝对路径归一化。
-- 飞书云文档和飞书多维表格不得调用 `phase6-detect-fix-input.sh`，也不得让 Bash 脚本识别、提取或归一化云端问题清单输入。
+- `core/detect-fix-input.sh` 只用于本地 Markdown 路径存在性校验和绝对路径归一化。
+- 飞书云文档和飞书多维表格不得调用 `core/detect-fix-input.sh`，也不得让 Bash 脚本识别、提取或归一化云端问题清单输入。
 - 不得使用 Python 脚本读取飞书云文档或飞书多维表格。
 
 读取完成后必须输出「修复输入解析完成」摘要，说明清单类型、来源、解析状态、问题总数、可纳入确认数、严重级别分布、因状态跳过数量和跳过状态分布。
@@ -281,7 +281,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase6-detect-fix-input.sh" "<FIX_INPUT_SOUR
 随后调用工作区准备脚本：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase8-prepare-fix-workspace.sh" "$PROJECT_DIR" "{current|branch|worktree}" "{FIX_BRANCH}"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/prepare-fix-workspace.sh" "$PROJECT_DIR" "{current|branch|worktree}" "{FIX_BRANCH}"
 ```
 
 `当前分支修复` 使用 `current`，分支名参数可为空。脚本失败时必须停止在代码变更之前，输出失败原因，不得继续修复。
@@ -329,7 +329,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase8-prepare-fix-workspace.sh" "$PROJECT_D
 5. 修复完成后，在实际修复工作区执行：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase9-collect-fix-metadata.sh" "{FIX_WORKSPACE_PATH}"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/collect-fix-metadata.sh" "{FIX_WORKSPACE_PATH}"
 ```
 
 6. 必须用该脚本输出的 `FIX_COMPLETED_AT` 作为修复时间，`FIX_BRANCH` 作为修复分支，`FIX_ACTOR` 作为修复人；不得再询问用户，也不得使用静态占位值。
@@ -350,10 +350,10 @@ brainstorming 负责形成：
 - 工作区隔离建议
 - 产出 spec 和 plan
 
-如果 brainstorming 建议使用 worktree 或新分支策略，调用 phase8 工作区准备脚本：
+如果 brainstorming 建议使用 worktree 或新分支策略，调用工作区准备脚本：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/phase8-prepare-fix-workspace.sh" "$PROJECT_DIR" "{WORKSPACE_STRATEGY}" "{FIX_BRANCH}"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/prepare-fix-workspace.sh" "$PROJECT_DIR" "{WORKSPACE_STRATEGY}" "{FIX_BRANCH}"
 ```
 
 brainstorming 产出 plan 后，调用 `subagent-driven-development` skill 执行修复计划。修复执行必须遵守以下约束：
@@ -361,10 +361,28 @@ brainstorming 产出 plan 后，调用 `subagent-driven-development` skill 执�
 - **范围优先**：只修复用户确认的问题，不得修复范围外问题
 - **测试驱动**：遵守 `test-driven-development`
 - **验证后声明**：遵守 `verification-before-completion`
-- **修复元数据**：修复完成后在实际修复工作区执行 `phase9-collect-fix-metadata.sh`；使用 `FIX_COMPLETED_AT`、`FIX_BRANCH`、`FIX_ACTOR` 填写修复时间、修复分支、修复人，不得再次询问用户
+- **修复元数据**：修复完成后在实际修复工作区执行 `core/collect-fix-metadata.sh`；使用 `FIX_COMPLETED_AT`、`FIX_BRANCH`、`FIX_ACTOR` 填写修复时间、修复分支、修复人，不得再次询问用户
 - **修复报告**：按 `references/fix-report-format.md` 生成 `fix-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`
 - **输出目标**：按 `OUTPUT_TARGET` 写回原始问题清单来源，或创建独立修复报告；选择独立报告时不得修改原始问题清单来源
 - **默认中文**：报告、状态说明和最终汇总使用中文
+
+---
+
+## 脚本调用顺序
+
+脚本文件名不再带 phase 编号（功能名描述职责，执行顺序在此编排）。通用脚本在 `scripts/core/`，Java 专属在 `scripts/languages/java/`。1.4.0 起不再保留旧 phase 脚本入口。
+
+### 修复流程
+
+1. `core/detect-project.sh` → 识别项目路径
+2. `core/detect-branches.sh` → 列出分支
+3. `languages/java/project-scan.sh` → 预扫描（修复只支持 Java）
+4. `core/detect-lark-plugin.sh` → lark-cli 检测
+5. `core/detect-superpowers.sh` → Superpowers 探测
+6. `core/detect-fix-input.sh` → 修复输入校验
+7. AskUserQuestion 收集确认问题清单与输出目标
+8. `core/prepare-fix-workspace.sh` → 修复工作区准备
+9. 执行修复 → `core/collect-fix-metadata.sh` → 收集修复元数据
 
 ---
 
