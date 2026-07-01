@@ -81,7 +81,7 @@ TOTAL_JAVA_LOC="$(sum_field "$FILES_TSV" 3)"
 TOTAL_JAVA_FILE_COUNT="$(awk 'END{print NR+0}' "$FILES_TSV")"
 
 # 用正则就近插入 java_* 别名字段（保持 core 原多行缩进格式，不重排字段、不改空格），
-# 兼容旧 phase12 调用方与 java_* 字段断言。source_* 字段保留不动。
+# 兼容 java_* 字段断言。source_* 字段保留不动。
 perl -i -pe '
   if (/"total_source_loc":\s*(\d+)/) {
     my $v = $1;

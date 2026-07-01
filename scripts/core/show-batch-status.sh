@@ -1,5 +1,5 @@
 #!/bin/bash
-# 语言中立的批次状态展示（从 phase13-show-large-batch-status.sh 提取）
+# 语言中立的批次状态展示（show-batch-status.sh）
 #
 # 字段读取按 plan.json.language_id 切换 + 读时 fallback 兼容两套字段名：
 #   - Java（含旧 plan.json 缺 language_id 的）：读 total_java_loc / planned_java_loc

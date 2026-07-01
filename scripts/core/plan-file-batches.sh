@@ -7,7 +7,7 @@ BRANCH_NAME="${3:-no-branch}"
 LANGUAGE_ID="${4:?请输入语言 ID}"
 SOURCE_MANIFEST="${5:?请输入 source manifest 路径}"
 
-# 模型上下文窗口缩放系数：1 = 200k，5 = 1M（由 phase14-detect-model-context.sh 探测）
+# 模型上下文窗口缩放系数：1 = 200k，5 = 1M（由 core/detect-model-context.sh 探测）
 CONTEXT_SCALE="${CC_REVIEW_CONTEXT_SCALE:-1}"
 [ "$CONTEXT_SCALE" -lt 1 ] 2>/dev/null && CONTEXT_SCALE=1
 [ "$CONTEXT_SCALE" -gt 10 ] && CONTEXT_SCALE=10

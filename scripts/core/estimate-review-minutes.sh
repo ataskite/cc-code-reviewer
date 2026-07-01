@@ -1,7 +1,7 @@
 #!/bin/bash
 # 代码审查预估耗时（语言中立，单 agent 与批次模式的单一真相源）
 #
-# 复用 phase13-show-large-batch-status.sh 既有且已被测试覆盖的时间模型：
+# 既有且已被测试覆盖的时间模型：
 #   review_cost  = REVIEW_LINE_COUNT + REVIEW_FILE_COUNT × 25   （缺失 planned_review_cost 时的 fallback）
 #   mode_minutes = fast 4 / standard 8 / deep 15 / security 10
 #   estimated_minutes = ceil(review_cost × mode_minutes / (52000 × CONTEXT_SCALE))，下限 1
@@ -12,17 +12,17 @@
 #        ESTIMATED_MINUTES=<int>
 #        ESTIMATED_RANGE=<min>-<max> 分钟        （区间 = [ceil(分钟×0.8), ceil(分钟×1.3)]，下限 1）
 #   2) 作为函数库被 source：提供 review_cost_of / target_review_minutes / ceil_div / estimate_review_minutes
-#      phase13-show-large-batch-status.sh source 本文件复用这些函数，批次/单 agent 口径保持一致。
+#      core/show-batch-status.sh source 本文件复用这些函数，批次/单 agent 口径保持一致。
 #
 # 说明：
 #   - 此公式与批次模式的 batch_estimate_minutes() 同源，单 agent 把「整个审查范围」视作一个批次。
-#   - 输入 REVIEW_LINE_COUNT / REVIEW_FILE_COUNT 语言无关：Java 来自 phase3，前端来自 scan-project.sh PROFILE。
-#   - CONTEXT_SCALE 由 phase14-detect-model-context.sh 探测（1M 窗口 → 5，200k → 1），大窗口下分钟数按比例下降。
+#   - 输入 REVIEW_LINE_COUNT / REVIEW_FILE_COUNT 语言无关：Java 来自 languages/java/project-scan.sh，前端来自 scan-project.sh PROFILE。
+#   - CONTEXT_SCALE 由 core/detect-model-context.sh 探测（1M 窗口 → 5，200k → 1），大窗口下分钟数按比例下降。
 set -euo pipefail
 
-# ── 公共函数（被 phase13 source 复用，禁止改变签名/语义） ──
+# ── 公共函数（被 show-batch-status.sh source 复用，禁止改变签名/语义） ──
 
-# ceil(a/b)，分母 <=0 视作 1，与 phase13 历史 ceil_div 完全一致
+# ceil(a/b)，分母 <=0 视作 1
 ceil_div() {
   local numerator="${1:-0}"
   local denominator="${2:-1}"
@@ -32,7 +32,7 @@ ceil_div() {
   echo $(((numerator + denominator - 1) / denominator))
 }
 
-# 各模式的目标批次耗时（分钟）。与 phase13 target_batch_minutes 完全一致，是唯一的耗时系数来源。
+# 各模式的目标批次耗时（分钟）。唯一的耗时系数来源。
 target_review_minutes() {
   case "${1:-standard}" in
     fast) echo 4 ;;
@@ -45,7 +45,7 @@ target_review_minutes() {
 # 基准目标批次成本（200k 窗口）。CONTEXT_SCALE=5 时批次容量放大 5 倍，单批耗时随之按比例下降。
 TARGET_REVIEW_COST_BASE=52000
 
-# review_cost = loc + files × 25（与 phase13 batch_estimate_minutes 的 fallback 一致）
+# review_cost = loc + files × 25
 review_cost_of() {
   local loc="${1:-0}"
   local files="${2:-0}"
@@ -54,7 +54,7 @@ review_cost_of() {
 }
 
 # estimate_review_minutes <review_cost> <review_mode> [CONTEXT_SCALE]
-# 等价于 phase13 batch_estimate_minutes（cost 已知分支），下限 1 分钟。
+# 等价于批次模式 batch_estimate_minutes（cost 已知分支），下限 1 分钟。
 estimate_review_minutes() {
   local review_cost="${1:-0}"
   local review_mode="${2:-standard}"

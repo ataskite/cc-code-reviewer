@@ -2,8 +2,7 @@
 set -euo pipefail
 
 # 语言中立的批次结果合并：状态门禁、确定性去重、覆盖率、阶段性/完整报告判断。
-# 以 phase12-merge-large-batches.sh 为蓝本，字段名改为语言中立（source_* 而非 java_*），
-# 覆盖率展示名按 plan.json.language_id 切换。
+# 字段名采用语言中立（source_* 而非 java_*），覆盖率展示名按 plan.json.language_id 切换。
 
 RUN_DIR="${1:?请输入运行目录 RUN_DIR}"
 
@@ -303,7 +302,7 @@ cat > "$RUN_DIR/summary.json.tmp" <<JSON
 JSON
 mv "$RUN_DIR/summary.json.tmp" "$RUN_DIR/summary.json"
 
-# Java 兼容：补写 java_* 别名字段，保持旧 phase12 调用方契约（java_loc_coverage_percent 等）。
+# Java 兼容：补写 java_* 别名字段，保持调用方契约（java_loc_coverage_percent 等）。
 # source_* 字段保留不动（前端契约 + merge 内部用）。
 # 用正则就近插入，保持原 heredoc 的多行缩进格式（不重排字段、不改空格），避免破坏现有 grep 断言。
 if [ "$LANGUAGE_ID" != "frontend" ]; then
