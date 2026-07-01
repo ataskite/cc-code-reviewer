@@ -132,7 +132,7 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 
 ## 架构
 
-![cc-code-reviewer 架构总览](docs/assets/architecture-overview.png)
+![cc-code-reviewer 架构总览](docs/assets/architecture-overview-v1.4.0.png)
 
 插件采用 skill-only 入口和专属子 agent：
 
