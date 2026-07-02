@@ -35,6 +35,44 @@ JSON
   echo 'export default function P(){return <div/>}' > "$d/src/app/page.tsx"
 }
 
+mk_vue2() {
+  local d="$TMP_DIR/$1"; mkdir -p "$d/src"
+  cat > "$d/package.json" <<'JSON'
+{"name":"legacy-vue","dependencies":{"vue":"^2.6.14","vue-router":"^3.6.5","vuex":"^3.6.2"},
+ "devDependencies":{"vue-template-compiler":"^2.6.14","webpack":"^4.46.0"}}
+JSON
+  cat > "$d/src/App.vue" <<'VUE'
+<template><div>{{ title }}</div></template>
+<script>
+export default { data() { return { title: 'legacy' } } }
+</script>
+VUE
+}
+
+mk_vue3() {
+  local d="$TMP_DIR/$1"; mkdir -p "$d/src"
+  cat > "$d/package.json" <<'JSON'
+{"name":"modern-vue","dependencies":{"vue":"^3.4.0","vue-router":"^4.2.0","pinia":"^2.1.0"},
+ "devDependencies":{"@vitejs/plugin-vue":"^5.0.0","vite":"^5.0.0"}}
+JSON
+  cat > "$d/src/App.vue" <<'VUE'
+<script setup>
+import { ref } from 'vue'
+const title = ref('modern')
+</script>
+<template><div>{{ title }}</div></template>
+VUE
+}
+
+mk_node_service() {
+  local d="$TMP_DIR/$1"; mkdir -p "$d/src"
+  cat > "$d/package.json" <<'JSON'
+{"name":"api","type":"module","main":"src/server.js","engines":{"node":">=18"},
+ "dependencies":{"express":"^4.18.0"}}
+JSON
+  echo "import express from 'express'; export const app = express();" > "$d/src/server.js"
+}
+
 # React + Vite → frontend-react
 mk_react_vite react_vite
 grep -q "PROJECT_TYPE=frontend-react" < <(bash "$ROOT_DIR/scripts/languages/frontend/detect-project.sh" "$TMP_DIR/react_vite")
@@ -42,6 +80,18 @@ grep -q "PROJECT_TYPE=frontend-react" < <(bash "$ROOT_DIR/scripts/languages/fron
 # React + plain JS → frontend-react（首期承诺支持 React/JS，不要求必须 .tsx/.jsx）
 mk_react_js react_js
 grep -q "PROJECT_TYPE=frontend-react" < <(bash "$ROOT_DIR/scripts/languages/frontend/detect-project.sh" "$TMP_DIR/react_js")
+
+# Vue 2 legacy → frontend-vue2（公司内 legacy 主力）
+mk_vue2 vue2
+grep -q "PROJECT_TYPE=frontend-vue2" < <(bash "$ROOT_DIR/scripts/languages/frontend/detect-project.sh" "$TMP_DIR/vue2")
+
+# Vue 3 → frontend-vue3
+mk_vue3 vue3
+grep -q "PROJECT_TYPE=frontend-vue3" < <(bash "$ROOT_DIR/scripts/languages/frontend/detect-project.sh" "$TMP_DIR/vue3")
+
+# Node 服务 → node
+mk_node_service node_api
+grep -q "PROJECT_TYPE=node" < <(bash "$ROOT_DIR/scripts/languages/frontend/detect-project.sh" "$TMP_DIR/node_api")
 
 # Next.js → 不支持
 mk_nextjs nx

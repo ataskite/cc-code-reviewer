@@ -20,6 +20,22 @@ JSON
   echo 'export function App(){return <div/>}' > "$d/src/App.tsx"
 }
 
+mk_vue2() {
+  local d="$TMP_DIR/$1"; mkdir -p "$d/src"
+  cat > "$d/package.json" <<'JSON'
+{"name":"legacy","dependencies":{"vue":"^2.6.14"},"devDependencies":{"vue-template-compiler":"^2.6.14"}}
+JSON
+  echo '<template><div/></template><script>export default {}</script>' > "$d/src/App.vue"
+}
+
+mk_node() {
+  local d="$TMP_DIR/$1"; mkdir -p "$d/src"
+  cat > "$d/package.json" <<'JSON'
+{"name":"api","type":"module","main":"src/server.js","dependencies":{"express":"^4.18.0"}}
+JSON
+  echo "import express from 'express'; export const app = express();" > "$d/src/server.js"
+}
+
 # 纯 Java
 mk_java java_only
 JOUT="$(bash "$ROOT_DIR/scripts/core/detect-language.sh" "$TMP_DIR/java_only")"
@@ -31,6 +47,16 @@ mk_react react_only
 FOUT="$(bash "$ROOT_DIR/scripts/core/detect-language.sh" "$TMP_DIR/react_only")"
 grep -q "CANDIDATE_LANGUAGE:frontend" <<< "$FOUT"
 ! grep -q "CANDIDATE_LANGUAGE:java" <<< "$FOUT"
+
+# Vue 2 legacy 也应路由到 frontend
+mk_vue2 vue2_only
+VOUT="$(bash "$ROOT_DIR/scripts/core/detect-language.sh" "$TMP_DIR/vue2_only")"
+grep -q "CANDIDATE_LANGUAGE:frontend" <<< "$VOUT"
+
+# Node 服务应作为支持目标进入 frontend-family adapter
+mk_node node_only
+NOUT="$(bash "$ROOT_DIR/scripts/core/detect-language.sh" "$TMP_DIR/node_only")"
+grep -q "CANDIDATE_LANGUAGE:frontend" <<< "$NOUT"
 
 # 混合：两者都报
 mk_java mixed; mk_react mixed

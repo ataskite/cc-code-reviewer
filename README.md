@@ -1,8 +1,8 @@
 # cc-code-reviewer
 
-> Claude Code plugin · Java 与 React/TypeScript/JavaScript 代码审查 + 报告驱动修复
+> Claude Code plugin · Java 与 React/Vue/Node/TypeScript/JavaScript 代码审查 + 报告驱动修复
 
-`cc-code-reviewer` 是一个面向工程团队的代码审查插件。1.4.0 起，统一入口同时支持 **Java** 和 **React/TS/JS 前端**审查：先预扫描项目与语言，再通过结构化交互确认范围，最后生成可追踪的审查报告。Fix 阶段只消费人工确认后的问题清单，避免扫描和修复混在一起。
+`cc-code-reviewer` 是一个面向工程团队的代码审查插件。统一入口同时支持 **Java** 和 **React/Vue2/Vue3/Node/TS/JS 前端族群**审查：先预扫描项目与语言，再通过结构化交互确认范围，最后生成可追踪的审查报告。Fix 阶段只消费人工确认后的问题清单，避免扫描和修复混在一起。
 
 ```mermaid
 flowchart LR
@@ -19,10 +19,10 @@ flowchart LR
 | 语言 | 当前支持 | 说明 |
 |------|----------|------|
 | Java | Maven / Gradle / 常见企业 Java 项目 | 支持增量、全量、指定 Maven 模块、大仓库分批 |
-| Frontend | React + TypeScript / JavaScript | 支持 Vite / Webpack / workspace/monorepo 的 package-local `src` |
-| Mixed repo | Java + React 同仓 | 运行时选择一种语言；另一语言只作为背景，不产出正式问题 |
+| Frontend family | React、Vue 2.x、Vue 3.x、Node.js + TypeScript / JavaScript | 支持 Vite / Webpack / workspace/monorepo 的 package-local `src`；Vue2/Vue3 与 React 信号共存时按 Vue 优先仲裁，Vue2 legacy 按专项规则加强审查 |
+| Mixed repo | Java + React/Vue/Node 同仓 | 运行时选择一种语言；另一语言只作为背景，不产出正式问题 |
 
-首期前端范围聚焦 React。Next.js、Nuxt、通用 TS/JS、Node/BFF 暂不套用 React 规则，预扫描会标记为不支持并停止。
+Next.js、Nuxt 和无 React/Vue/Node 信号的通用 TS/JS 仍会标记为不支持并停止，不会误套专项规则。
 
 ## 安装
 
@@ -93,12 +93,14 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 - Maven 多模块大仓库：支持 `module-sequential` 和 `ai-planned` 分批，批次可恢复，合并报告区分阶段性/完整
 - Java 覆盖率口径固定为 `src/main/java` 生产源码，测试源码只作为上下文
 
-### Frontend 审查
+### Frontend Family 审查
 
-- 11 个前端维度：正确性、类型安全、组件边界、React 规范、状态与数据请求、安全、性能、副作用与资源清理、可访问性、测试质量、API/错误处理
+- 11 个前端维度：正确性、类型安全、组件边界、框架规范、状态与数据请求、安全、性能、副作用与资源清理、可访问性、测试质量、API/错误处理
 - React TS/JS 支持：可识别 `.tsx/.jsx`，也支持有 React import / `createElement` 证据的 `.ts/.js`
-- 正式源码范围：只统计 React package 的 `src` 下生产 `.ts/.tsx/.js/.jsx`，排除测试、构建产物、配置脚本、`.d.ts`
-- Monorepo 范围选择：`src/components` 或 `components` 会匹配所有 React package-local `*/src/components/`；`apps/web/src/components` 只匹配指定 package
+- Vue 支持：识别 Vue 2.x / Vue 3.x 和 `.vue` SFC，信号覆盖 `vue@2/3`、`vue-template-compiler`、`@vue/cli-service`、`@vitejs/plugin-vue`、`pinia`、`vue-router@3/4`、`vue-loader` 版本、`vite-plugin-vue2` 等；无版本锁定时按 `createApp(` / `new Vue(` 等内容信号判版本；React/Vue 信号共存时按 Vue 优先；Vue2 legacy 重点检查 Options API、响应式限制、mixin 全局污染、filter 迁移债、Vuex 3、Vue Router 3、事件总线和生命周期清理
+- Node 支持：识别 `package.json` 的 `type`、`main`/`exports`、`engines.node`、Express/Koa/Fastify 等服务端信号
+- 正式源码范围：只统计受支持 package 的 `src` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`，排除测试、构建产物、配置脚本、`.d.ts`
+- Monorepo 范围选择：`src/components` 或 `components` 会匹配所有前端族群 package-local `*/src/components/`；`apps/web/src/components` 只匹配指定 package
 - TypeScript LSP 可用时用于语义增强；不可用时降级到 import graph + 配置 + 文本检索
 
 ## 审查模式
@@ -117,7 +119,7 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 | 入口 | Java | Frontend |
 |------|------|----------|
 | 增量审查 | 最近 N 次提交的变更及必要关联上下文 | 最近 N 次提交的前端变更及必要关联上下文 |
-| 全量审查 | 全部 `src/main/java` 生产源码 | 全部 React package-local `src` 生产源码 |
+| 全量审查 | 全部 `src/main/java` 生产源码 | 全部受支持 package-local `src` 生产源码 |
 | 指定模块 | Maven 模块相对路径 | `src` 顶层目录或 package-local `src` 子目录 |
 
 范围选择会在分批、覆盖率、报告和子 agent 参数中保持一致。前端指定目录通过不可变 source manifest 收敛，不会误扫测试文件或构建产物。
@@ -138,7 +140,7 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 
 - `skills/cc-code-reviewer`：Scan 编排、预扫描、交互确认、批次调度、飞书输出
 - `agents/cc-code-reviewer`：Java 审查执行，只保存本地报告，不上传飞书
-- `agents/cc-code-reviewer-frontend`：React/TS/JS 前端审查执行
+- `agents/cc-code-reviewer-frontend`：React/Vue2/Vue3/Node/TS/JS 前端族群审查执行
 - `skills/cc-code-fixer`：读取确认后的问题清单，执行修复、验证、报告和写回
 - `skills/cc-code-ignore`：维护项目级 ignore 规则
 - `scripts/core`：语言无关内核，负责项目获取、Git、模型窗口、分批、合并和状态展示
@@ -151,6 +153,8 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 | [Java 审查框架](references/languages/java/review-framework.md) | Java 15 维度、技术栈规则、模式矩阵 |
 | [Frontend 审查框架](references/languages/frontend/review-framework.md) | 前端 11 维度、模式矩阵、P0 门槛 |
 | [React 专项规则](references/languages/frontend/react-rules.md) | React / Router / 构建配置专项审查规则 |
+| [Vue 专项规则](references/languages/frontend/vue-rules.md) | Vue2 legacy / Vue3 / Router / Vuex / Pinia 专项审查规则 |
+| [Node 专项规则](references/languages/frontend/node-rules.md) | Node runtime / HTTP API / BFF / 模块系统专项审查规则 |
 | [源码范围契约](references/languages/frontend/source-scope.md) | 前端正式源码、上下文和排除项 |
 | [语言适配器契约](references/language-adapter-contract.md) | Java / Frontend 与共享内核之间的 PROFILE_SCHEMA |
 | [报告格式](references/report-format.md) | Scan 报告结构化输出规范 |

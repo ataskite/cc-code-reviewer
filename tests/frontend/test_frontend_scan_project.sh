@@ -56,3 +56,48 @@ WOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/scan-project.sh" "$W")"
 grep -qE "^SOURCE_FILE_COUNT=2$" <<< "$WOUT"
 grep -q "^SOURCE_ROOT:formal|apps/web/src$" <<< "$WOUT"
 grep -q "^COMPONENT:components|apps/web/src/components|" <<< "$WOUT"
+
+V="$TMP_DIR/vue2"; mkdir -p "$V/src/components"
+cat > "$V/package.json" <<'JSON'
+{"name":"legacy","dependencies":{"vue":"^2.6.14","vue-router":"^3.6.5","vuex":"^3.6.2"},
+ "devDependencies":{"vue-template-compiler":"^2.6.14","webpack":"^4.46.0",
+ "@vue/composition-api":"^1.7.2","vue-class-component":"^7.2.0",
+ "vue-property-decorator":"^9.1.2","element-ui":"^2.15.14","ant-design-vue":"^1.7.8"}}
+JSON
+printf '<template><div>{{ title }}</div></template>\n<script>export default { data(){ return { title: \"x\" } } }</script>\n' > "$V/src/components/Legacy.vue"
+printf 'export const api = () => Promise.resolve([])\n' > "$V/src/api.js"
+VOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/scan-project.sh" "$V")"
+grep -q "PROJECT_TYPE=frontend-vue2" <<< "$VOUT"
+grep -qE "^SOURCE_FILE_COUNT=2$" <<< "$VOUT"
+grep -q "TECH_STACK:Vue 2" <<< "$VOUT"
+grep -q "TECH_STACK:Vue Router" <<< "$VOUT"
+grep -q "TECH_STACK:Vuex" <<< "$VOUT"
+grep -q "TECH_STACK:Vue2 Composition API" <<< "$VOUT"
+grep -q "TECH_STACK:Vue Class Component" <<< "$VOUT"
+grep -q "TECH_STACK:Element UI" <<< "$VOUT"
+grep -q "TECH_STACK:Ant Design Vue" <<< "$VOUT"
+grep -Fq "SOURCE_SCOPE:formal|src/**/*.vue" <<< "$VOUT"
+
+N="$TMP_DIR/node-api"; mkdir -p "$N/src/routes"
+cat > "$N/package.json" <<'JSON'
+{"name":"api","type":"module","main":"src/server.js","exports":"./src/server.js",
+ "engines":{"node":">=18"},"dependencies":{"express":"^4.18.0"}}
+JSON
+printf 'import express from "express"; export const app = express();\n' > "$N/src/server.js"
+printf 'export async function users(){ return [] }\n' > "$N/src/routes/users.js"
+NOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/scan-project.sh" "$N")"
+grep -q "PROJECT_TYPE=node" <<< "$NOUT"
+grep -qE "^SOURCE_FILE_COUNT=2$" <<< "$NOUT"
+grep -q "TECH_STACK:Node.js" <<< "$NOUT"
+grep -q "TECH_STACK:Express" <<< "$NOUT"
+grep -q "RUNTIME_SIGNAL:package.type|module" <<< "$NOUT"
+grep -q "RUNTIME_SIGNAL:engines.node|>=18" <<< "$NOUT"
+
+CV="$TMP_DIR/vue-content-only"; mkdir -p "$CV/src"
+cat > "$CV/package.json" <<'JSON'
+{"name":"content-only"}
+JSON
+printf 'import { createApp } from "vue"; createApp({}).mount("#app");\n' > "$CV/src/main.ts"
+CVOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/scan-project.sh" "$CV")"
+grep -q "PROJECT_TYPE=frontend-vue3" <<< "$CVOUT"
+grep -qE "^SOURCE_FILE_COUNT=1$" <<< "$CVOUT"

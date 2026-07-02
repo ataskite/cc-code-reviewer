@@ -147,6 +147,10 @@ fi
 require_literal "$REPORT_FORMAT_FILE" '### P0-N | [维度名称] {问题一句话标题}' "report format must use third-level headings for issue entries"
 require_literal "$REPORT_FORMAT_FILE" '### P1-N | [维度名称] {问题一句话标题}' "report format must use third-level headings for P1 issue entries"
 require_literal "$REPORT_FORMAT_FILE" '### 待确认-N | [维度名称] {问题一句话标题}' "report format must use third-level headings for pending issue entries"
+require_literal "$REPORT_FORMAT_FILE" 'P0 为 0 时仍必须保留本节' "report format must require an explicit empty P0 section"
+require_literal "$REPORT_FORMAT_FILE" '本次未发现满足 P0 五项硬门槛的问题' "report format must state when no P0 findings were found"
+require_literal "$AGENT_FILE" 'P0 为 0 时也必须输出 P0 章节' "review agent must not omit an empty P0 section"
+require_literal "$FRONTEND_AGENT_FILE" 'P0 为 0 时也必须输出 P0 章节' "frontend agent must not omit an empty P0 section"
 if grep -qE '^## P[0-3]-N \|' "$REPORT_FORMAT_FILE" || grep -qE '^## 待确认-N \|' "$REPORT_FORMAT_FILE"; then
   echo "issue entries must not use the same heading level as severity sections" >&2
   exit 1
@@ -185,6 +189,17 @@ require_literal "$EXAMPLES_FILE" "高置信已证实：生产支付链路发生�
 require_literal "$ROOT_DIR/references/languages/java/review-framework.md" "P0 五项硬门槛" "review framework must share the strict P0 contract"
 require_literal "$ROOT_DIR/references/report-format.md" "P0 证据门槛" "report format must require P0 gate evidence"
 require_literal "$ROOT_DIR/references/report-format.md" '**置信度**：高 | **所属维度**：维度名称' "P0 report template must require high confidence"
+for performance_contract_file in \
+  "$ROOT_DIR/references/languages/java/review-framework.md" \
+  "$ROOT_DIR/references/languages/frontend/review-framework.md" \
+  "$AGENT_FILE" \
+  "$FRONTEND_AGENT_FILE"; do
+  require_literal "$performance_contract_file" "性能问题分级边界" "performance findings must have explicit severity boundaries"
+  require_literal "$performance_contract_file" "关键路径性能风险且已证实会显著影响稳定性：P1" "confirmed critical-path performance risks must map to P1"
+  require_literal "$performance_contract_file" "普通性能问题或局部性能风险：P2" "ordinary performance risks must map to P2"
+  require_literal "$performance_contract_file" "泛优化建议且缺少明确风险链路：P3" "general performance suggestions must map to P3"
+  require_literal "$performance_contract_file" "怀疑很严重但缺少生产路径、调用频率、运行配置、表结构、索引或执行计划证据：待确认" "unproven severe performance risks must map to pending confirmation"
+done
 
 grep -q "collect-fix-metadata" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
 if [ ! -f "$ARCHITECTURE_PNG" ]; then
@@ -744,7 +759,9 @@ for f in \
   "references/languages/java/review-framework.md" \
   "references/languages/frontend/source-scope.md" \
   "references/languages/frontend/review-framework.md" \
-  "references/languages/frontend/react-rules.md"; do
+  "references/languages/frontend/react-rules.md" \
+  "references/languages/frontend/vue-rules.md" \
+  "references/languages/frontend/node-rules.md"; do
   [ -f "$ROOT_DIR/$f" ] || { echo "MISSING: $f" >&2; exit 1; }
 done
 
@@ -793,15 +810,45 @@ test "$FRONTEND_DISPATCH_COUNT" -ge 2
 # SKILL.md 路径准备必须按 LANGUAGE_ID 分支，前端注入三个专属路径（不能写死 Java 路径）
 grep -q 'LANGUAGE_ID.*frontend' "$SKILL_FILE"
 grep -q 'REACT_RULES_PATH' "$SKILL_FILE"
+grep -q 'VUE_RULES_PATH' "$SKILL_FILE"
+grep -q 'NODE_RULES_PATH' "$SKILL_FILE"
 grep -q 'SOURCE_SCOPE_PATH' "$SKILL_FILE"
 grep -q 'references/languages/frontend/review-framework.md' "$SKILL_FILE"
 grep -q 'references/languages/frontend/react-rules.md' "$SKILL_FILE"
+grep -q 'references/languages/frontend/vue-rules.md' "$SKILL_FILE"
+grep -q 'references/languages/frontend/node-rules.md' "$SKILL_FILE"
 grep -q 'references/languages/frontend/source-scope.md' "$SKILL_FILE"
 
 # 前端 agent 必须期望前端专属路径（不能只依赖 Java 的 REVIEW_FRAMEWORK_PATH）
 grep -q "前端审查框架路径" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 grep -q "React 规则路径" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+grep -q "Vue 规则路径" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+grep -q "Node 规则路径" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 grep -q "源码范围路径" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+
+# Vue 检测信号契约：detect-project.sh 必须识别 Vue 专属依赖与内容信号（防止 Vue 项目被拒或误判 React）
+FE_DETECT="$ROOT_DIR/scripts/languages/frontend/detect-project.sh"
+grep -q '@vue/cli-service' "$FE_DETECT" || { echo "FAIL: detect-project 必须识别 @vue/cli-service（Vue2 CLI 权威信号）" >&2; exit 1; }
+grep -q 'vite-plugin-vue2' "$FE_DETECT" || { echo "FAIL: detect-project 必须识别 vite-plugin-vue2" >&2; exit 1; }
+grep -qE 'createApp|defineComponent|defineAsyncComponent' "$FE_DETECT" || { echo "FAIL: detect-project 必须含 Vue3 内容信号回退" >&2; exit 1; }
+grep -qE 'new Vue|Vue\.extend|Vue\.component' "$FE_DETECT" || { echo "FAIL: detect-project 必须含 Vue2 内容信号回退" >&2; exit 1; }
+# collect-source-files.sh 必须复用 detect-project.sh 的 Vue 信号（避免源码根闸门漂移导致 Vue3 hoisted 清单为空）
+FE_COLLECT="$ROOT_DIR/scripts/languages/frontend/collect-source-files.sh"
+grep -q 'FE_DETECT_SOURCED=1' "$FE_COLLECT" || { echo "FAIL: collect-source-files 必须 source detect-project.sh 复用 Vue 信号" >&2; exit 1; }
+# Vue 规则细则必须覆盖高价值缺口（provide/inject 响应性、script setup 顶层 await、history base、动态路由时序）
+FE_VUE_RULES="$ROOT_DIR/references/languages/frontend/vue-rules.md"
+grep -q 'provide/inject' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 provide/inject 响应性" >&2; exit 1; }
+grep -q '顶层 await' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 script setup 顶层 await" >&2; exit 1; }
+grep -q 'base 路径' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 Router 4 history base 路径" >&2; exit 1; }
+grep -q '动态路由权限时序' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖动态路由权限时序" >&2; exit 1; }
+grep -q 'mixin 全局污染' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 Vue2 mixin 全局污染" >&2; exit 1; }
+grep -q 'keep-alive' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 keep-alive activated/deactivated" >&2; exit 1; }
+grep -q 'vue-class-component' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 Vue2 class component/decorator" >&2; exit 1; }
+grep -q '\.sync' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 Vue2 .sync 双向绑定风险" >&2; exit 1; }
+grep -q '\$children/\$parent' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 $children/$parent 旧式跨层访问" >&2; exit 1; }
+grep -q '\$refs/\$nextTick' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 $refs/$nextTick DOM 时序" >&2; exit 1; }
+grep -q 'Element UI' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 Element UI 表单表格场景" >&2; exit 1; }
+grep -q '权限按钮' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 B 端权限按钮/路由 meta 场景" >&2; exit 1; }
 
 # 前端 agent 不得残留旧 15 维度编号（D01-D15）或维度 12-15 引用
 if grep -qE 'D(0[1-9]|1[0-5])[^0-9]|维度 ?1[2345]|1-15|15 维度' "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"; then
@@ -812,6 +859,8 @@ fi
 # 前端矩阵与 React 规则必须被前端 Agent 引用
 grep -q "review-framework" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 grep -q "react-rules" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+grep -q "vue-rules" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+grep -q "node-rules" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 
 # === 脚本目录重构断言 ===
 # SKILL.md 必须含「脚本调用顺序」编排段（执行顺序归文档，不编码进文件名）

@@ -78,11 +78,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-language.sh" "$PROJECT_DIR"
   - options:
     - label: "Java"
       description: "审查 Java 生产源码（src/main/java），使用 Java 审查矩阵"
-    - label: "前端（React/TS/JS）"
-      description: "审查前端生产源码（src 下 .ts/.tsx/.js/.jsx），使用前端审查矩阵"
+    - label: "前端族群（React/Vue/Node）"
+      description: "审查 React、Vue2/Vue3 或 Node 的生产源码（src 下 .ts/.tsx/.js/.jsx/.vue/.mjs/.cjs），使用前端审查矩阵"
   - multiSelect: false
   - 用户选择后设 `LANGUAGE_ID`，另一语言仅作仓库背景，不得产出正式问题。
-- **none**：输出"❌ 未识别到支持的审查目标（Java 或 React/TS/JS）"并终止。
+- **none**：输出"❌ 未识别到支持的审查目标（Java、React、Vue 或 Node）"并终止。
 
 ### 第四步：按语言执行项目预扫描
 
@@ -105,7 +105,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/detect-project.sh" "$PROJECT_DIR"
-# 不支持（nextjs/nuxt/generic-tsjs）时停止，不套用 React 规则
+# 输出 PROJECT_TYPE=frontend-react|frontend-vue2|frontend-vue3|node；不支持（nextjs/nuxt/generic-tsjs）时停止，不套用专项规则
 
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/scan-project.sh" "$PROJECT_DIR"
 # 输出 PROFILE_SCHEMA v1：SOURCE_FILE_COUNT/SOURCE_LINE_COUNT/FORMAL_CONFIG_FILE_COUNT/COMPONENT/TECH_STACK/SOURCE_SCOPE
@@ -174,7 +174,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 - 模块数量：{K} 个
 - 模块列表：{模块1名称}({n1}类), {模块2名称}({n2}类), ...
 {LANGUAGE_ID=frontend 时}
-- 前端源码文件（src 下 .ts/.tsx/.js/.jsx）：{SOURCE_FILE_COUNT} 个
+- 前端源码文件（src 下 .ts/.tsx/.js/.jsx/.vue/.mjs/.cjs）：{SOURCE_FILE_COUNT} 个
 - 代码行数：{SOURCE_LINE_COUNT} 行
 - 配置文件：{FORMAL_CONFIG_FILE_COUNT} 个
 - src 目录概览：{解析预扫描 `COMPONENT:` 行，格式为 `目录名(文件数)` 逗号分隔，如 `components(42), pages(18), hooks(8)`；无 `COMPONENT:` 行时显示"无可选子目录"}
@@ -262,7 +262,7 @@ BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
 **参数来源**：
 - `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 的来源按语言分支：
   - `LANGUAGE_ID=java`：从 languages/java/project-scan.sh 输出中解析（`Java文件总数` 和 `代码总行数`），口径仅包含 `src/main/java` 生产源码
-  - `LANGUAGE_ID=frontend`：从前端 `scan-project.sh` 输出的 PROFILE_SCHEMA 行解析（`SOURCE_FILE_COUNT` 和 `SOURCE_LINE_COUNT`），口径仅包含 `src/` 下生产 `.ts/.tsx/.js/.jsx`
+  - `LANGUAGE_ID=frontend`：从前端 `scan-project.sh` 输出的 PROFILE_SCHEMA 行解析（`SOURCE_FILE_COUNT` 和 `SOURCE_LINE_COUNT`），口径仅包含 `src/` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`
 - `500`：每个文件的工具调用 + agent 评估开销（token）
 - `3`：每行代码平均 token 数
 - `100000 × CONTEXT_SCALE`：单批留给文件内容 + 开销的上限。基准 100000（200k 总上下文 - 25k 系统 prompt - 50k agent 输出 ≈ 125k，取 100k 留余量），大窗口模型按 CONTEXT_SCALE 同比放大
@@ -356,9 +356,13 @@ REPORT_FORMAT_PATH="${CLAUDE_PLUGIN_ROOT}/references/report-format.md"
 if [ "$LANGUAGE_ID" = "frontend" ]; then
   REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/review-framework.md"
   REACT_RULES_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/react-rules.md"
+  VUE_RULES_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/vue-rules.md"
+  NODE_RULES_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/node-rules.md"
   SOURCE_SCOPE_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/source-scope.md"
   test -r "$REVIEW_FRAMEWORK_PATH"
   test -r "$REACT_RULES_PATH"
+  test -r "$VUE_RULES_PATH"
+  test -r "$NODE_RULES_PATH"
   test -r "$SOURCE_SCOPE_PATH"
 else
   REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/java/review-framework.md"
@@ -438,6 +442,8 @@ test -r "$REPORT_FORMAT_PATH"
 | 审查代码行数 | {BATCH_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
 | React 规则路径 | {REACT_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
+| Vue 规则路径 | {VUE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
+| Node 规则路径 | {NODE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | 源码范围路径 | {SOURCE_SCOPE_PATH}（仅 LANGUAGE_ID=frontend） |
 | 报告格式路径 | {REPORT_FORMAT_PATH} |
 | 项目 ignore 文件路径 | {IGNORE_RULES_PATH 或 未配置} |
@@ -461,7 +467,7 @@ test -r "$REPORT_FORMAT_PATH"
 `SEMANTIC_LEVEL=maven-static` 时才允许回退 Maven 静态依赖与文本检索。
 
 **LANGUAGE_ID=frontend 时**：
-正式扫描文件必须限定为 `scan_roots` 内的 `src/` 下生产源码（`.ts/.tsx/.js/.jsx`）；测试文件（`*.test.*`/`*.spec.*`/`__tests__`/`e2e`/`cypress`）、产物（`dist`/`build`）、`.d.ts` 只能作为只读上下文，不计入已审查前端文件，也不得作为正式问题位置。
+正式扫描文件必须限定为 `scan_roots` 内的 `src/` 下生产源码（`.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`）；测试文件（`*.test.*`/`*.spec.*`/`__tests__`/`e2e`/`cypress`）、产物（`dist`/`build`）、`.d.ts` 只能作为只读上下文，不计入已审查前端文件，也不得作为正式问题位置。
 `SEMANTIC_LEVEL=typescript-lsp` 时必须用 TS LSP 查询 definition/references/implementations/diagnostics 理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `scan_roots` 内的生产源码。
 `SEMANTIC_LEVEL=none` 时才允许回退 import graph + 配置 + 文本检索静态分析。
 
@@ -623,11 +629,11 @@ test -r "$REPORT_FORMAT_PATH"
 **触发条件**：
 - 增量审查时 → 必须执行
 - 指定模块 + 多模块 → 必须执行（模块选择流程见下）
-- 指定模块 + 前端（`LANGUAGE_ID=frontend`，`PROJECT_TYPE=frontend-react`）→ 按前端目录选择流程处理（见下）；若预扫描无 `COMPONENT:` 行（`src/` 下无子目录），跳过并自动设 `REVIEW_SCOPE=全量代码`，提示用户"前端项目未识别到可选择的 src 子目录，将进行全量审查"
+- 指定模块 + 前端（`LANGUAGE_ID=frontend`，`PROJECT_TYPE=frontend-react|frontend-vue2|frontend-vue3|node`）→ 按前端目录选择流程处理（见下）；若预扫描无 `COMPONENT:` 行（`src/` 下无子目录），跳过并自动设 `REVIEW_SCOPE=全量代码`，提示用户"前端项目未识别到可选择的 src 子目录，将进行全量审查"
 - 指定模块 + 单模块 → 跳过，自动设 REVIEW_SCOPE=全量代码
 - 全量审查 → 跳过，已在步骤 3 设 REVIEW_SCOPE=全量代码
 
-> 前端项目（`PROJECT_TYPE=frontend-react`）既非 `*-single` 也非 `maven-multi`，不进入 Java 的模块树流程；前端的"模块"语义是 `src/` 下的顶层目录（即预扫描 `COMPONENT:` 行）。
+> 前端项目（`PROJECT_TYPE=frontend-react|frontend-vue2|frontend-vue3|node`）既非 `*-single` 也非 `maven-multi`，不进入 Java 的模块树流程；前端的"模块"语义是 `src/` 下的顶层目录（即预扫描 `COMPONENT:` 行）。
 
 **增量审查时，必须先扫描并展示最近提交，再调用 AskUserQuestion 工具**：
 
@@ -1005,10 +1011,10 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/plan-file-batches.sh" \
 
 ### 前端分批（LANGUAGE_ID=frontend）
 
-前端项目（含 React monorepo 单语言运行）必须使用 `scripts/core/plan-file-batches.sh`（语言中立），不得使用 Java 的 `languages/java/plan-file-batches.sh` 或 `languages/java/plan-large-batches.sh`：
+前端项目（含 React/Vue/Node monorepo 单语言运行）必须使用 `scripts/core/plan-file-batches.sh`（语言中立），不得使用 Java 的 `languages/java/plan-file-batches.sh` 或 `languages/java/plan-large-batches.sh`：
 
 ```bash
-# 先生成不可变 source manifest（生产 .ts/.tsx/.js/.jsx，排除测试/产物/配置脚本）
+# 先生成不可变 source manifest（生产 .ts/.tsx/.js/.jsx/.vue/.mjs/.cjs，排除测试/产物/配置脚本）
 MANIFEST="$(mktemp)"
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/collect-source-files.sh" "$PROJECT_DIR" > "$MANIFEST"
 
@@ -1016,7 +1022,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/collect-source-files.sh" 
 # 用前端专属过滤脚本收敛 manifest：只保留落在所选 src 子目录内的文件。
 # 这是前端「指定模块」真正缩小扫描范围的唯一关卡——分批脚本只读 manifest，
 # manifest 收敛后，分批/扫描/文件计数自动收敛，无需改分批脚本或子 agent。
-# 过滤脚本支持单包和 monorepo：`src/components` 或 `components` 会匹配所有 React package-local
+# 过滤脚本支持单包和 monorepo：`src/components` 或 `components` 会匹配所有前端族群 package-local
 # `*/src/components/`；`apps/web/src/components` 这类完整相对路径只匹配对应 package。
 if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_SCOPE" != "全量代码" ]; then
   FILTERED="$(mktemp)"
@@ -1078,6 +1084,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | 审查代码行数 | {REVIEW_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
 | React 规则路径 | {REACT_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
+| Vue 规则路径 | {VUE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
+| Node 规则路径 | {NODE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | 源码范围路径 | {SOURCE_SCOPE_PATH}（仅 LANGUAGE_ID=frontend） |
 | 报告格式路径 | {REPORT_FORMAT_PATH} |
 | 项目 ignore 文件路径 | {IGNORE_RULES_PATH 或 未配置} |
@@ -1127,6 +1135,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `REVIEW_LINE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `16637` |
 | `REVIEW_FRAMEWORK_PATH` | 按 `LANGUAGE_ID` 分支：`java` → `references/languages/java/review-framework.md`；`frontend` → `references/languages/frontend/review-framework.md`。启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/java/review-framework.md` |
 | `REACT_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/react-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/react-rules.md` |
+| `VUE_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/vue-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/vue-rules.md` |
+| `NODE_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/node-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/node-rules.md` |
 | `SOURCE_SCOPE_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/source-scope.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/source-scope.md` |
 | `REPORT_FORMAT_PATH` | `${CLAUDE_PLUGIN_ROOT}/references/report-format.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/report-format.md` |
 | `GIT_LOG_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git log --oneline -N` |

@@ -6,6 +6,8 @@ PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd -P)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 PTYPE="$(bash "$SCRIPT_DIR/detect-project.sh" "$PROJECT_DIR" | sed -n 's/^PROJECT_TYPE=//p' | head -1)"
+# 复用 detect-project.sh 的 Vue 信号纯函数，避免 TECH_STACK 信号与 detect 判定漂移
+FE_DETECT_SOURCED=1 . "$SCRIPT_DIR/detect-project.sh"
 rel_path() { printf '%s\n' "${1#$PROJECT_DIR/}"; }
 
 SOURCE_ROOTS=()
@@ -37,7 +39,7 @@ while IFS= read -r f; do
   LINE_COUNT=$((LINE_COUNT + $(wc -l < "$f" | tr -d ' ')))
 done <<< "$MANIFEST"
 
-# 正式配置文件计数（React package 边界内 package.json/tsconfig/vite.config/webpack.config）
+# 正式配置文件计数（支持 package 边界内 package.json/tsconfig/vite/vue/webpack/babel 等配置）
 CONFIG_COUNT=0
 for root in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
   pkg_root="${root%/src}"
@@ -45,7 +47,8 @@ for root in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
     [ -n "$cfg" ] && CONFIG_COUNT=$((CONFIG_COUNT+1))
   done < <(find "$pkg_root" -maxdepth 1 \
     -type f \( -name 'package.json' -o -name 'tsconfig.json' -o -name 'tsconfig.*.json' \
-      -o -name 'vite.config.*' -o -name 'webpack.config.*' \) -print 2>/dev/null)
+      -o -name 'vite.config.*' -o -name 'webpack.config.*' -o -name 'vue.config.*' \
+      -o -name 'babel.config.*' \) -print 2>/dev/null)
 done
 
 # 组件维度（每个 source root 下顶层目录作为粗粒度 COMPONENT）
@@ -85,6 +88,46 @@ has_dep_anywhere() {
   return 1
 }
 
+has_vue2_anywhere() {
+  local pkg
+  for pkg in "${PKGS[@]+"${PKGS[@]}"}"; do
+    has_vue2_dep_signals "$pkg" && return 0
+  done
+  return 1
+}
+
+has_vue3_anywhere() {
+  local pkg
+  for pkg in "${PKGS[@]+"${PKGS[@]}"}"; do
+    has_vue3_dep_signals "$pkg" && return 0
+  done
+  return 1
+}
+
+emit_package_value() {
+  local field="$1" label="$2" pkg value
+  for pkg in "${PKGS[@]+"${PKGS[@]}"}"; do
+    value="$(perl -0777 -ne 'BEGIN { $field = shift @ARGV } if (/"\Q$field\E"\s*:\s*"([^"]+)"/s) { print $1; exit }' "$field" "$pkg" 2>/dev/null || true)"
+    if [ -n "$value" ]; then
+      printf 'RUNTIME_SIGNAL:%s|%s\n' "$label" "$value"
+      return 0
+    fi
+  done
+  return 1
+}
+
+emit_engines_node() {
+  local pkg value
+  for pkg in "${PKGS[@]+"${PKGS[@]}"}"; do
+    value="$(perl -0777 -ne 'if (/"engines"\s*:\s*\{[^}]*"node"\s*:\s*"([^"]+)"/s) { print $1; exit }' "$pkg" 2>/dev/null || true)"
+    if [ -n "$value" ]; then
+      printf 'RUNTIME_SIGNAL:engines.node|%s\n' "$value"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # 输出 PROFILE_SCHEMA v1
 echo "PROFILE_SCHEMA_VERSION=1"
 echo "LANGUAGE_ID=frontend"
@@ -92,7 +135,8 @@ echo "PROJECT_TYPE=$PTYPE"
 echo "SOURCE_FILE_COUNT=$FILE_COUNT"
 echo "SOURCE_LINE_COUNT=$LINE_COUNT"
 echo "FORMAL_CONFIG_FILE_COUNT=$CONFIG_COUNT"
-# CODE_INTELLIGENCE 占位：detect-code-intelligence.sh 在 Task 4 接入后由主 skill 覆盖
+# CODE_INTELLIGENCE 占位：当前仅探测 typescript-lsp（tsserver 无法解析 .vue SFC 模板块）。
+# Vue 语义增强（Volar / @vue/language-server）接线为二期，未完成前主 skill 按静态降级处理。
 echo "CODE_INTELLIGENCE_PROVIDER=none"
 echo "CODE_INTELLIGENCE_AVAILABLE=false"
 echo "CODE_INTELLIGENCE_REASON=typescript-lsp-detection-pending"
@@ -109,18 +153,66 @@ fi
 if has_dep_anywhere "react-router-dom"; then
   echo "TECH_STACK:React Router|dependency:react-router-dom|rules:react-router"
 fi
+if has_vue2_anywhere; then
+  echo "TECH_STACK:Vue 2|dependency:vue@2/vue-template-compiler|rules:vue2"
+fi
+if has_vue3_anywhere; then
+  echo "TECH_STACK:Vue 3|dependency:vue@3/@vitejs/plugin-vue|rules:vue3"
+fi
+if has_dep_anywhere "vue-router"; then
+  echo "TECH_STACK:Vue Router|dependency:vue-router|rules:vue-router"
+fi
+if has_dep_anywhere "vuex"; then
+  echo "TECH_STACK:Vuex|dependency:vuex|rules:vue2-state"
+fi
+if has_dep_anywhere "pinia"; then
+  echo "TECH_STACK:Pinia|dependency:pinia|rules:vue3-state"
+fi
+if has_dep_anywhere "@vue/composition-api"; then
+  echo "TECH_STACK:Vue2 Composition API|dependency:@vue/composition-api|rules:vue2-composition-api"
+fi
+if has_dep_anywhere "vue-class-component" || has_dep_anywhere "vue-property-decorator"; then
+  echo "TECH_STACK:Vue Class Component|dependency:vue-class-component/vue-property-decorator|rules:vue2-class-component"
+fi
+if has_dep_anywhere "element-ui"; then
+  echo "TECH_STACK:Element UI|dependency:element-ui|rules:vue2-enterprise-ui"
+fi
+if has_dep_anywhere "ant-design-vue"; then
+  echo "TECH_STACK:Ant Design Vue|dependency:ant-design-vue|rules:vue-enterprise-ui"
+fi
+if [ "$PTYPE" = "node" ]; then
+  echo "TECH_STACK:Node.js|dependency:package.json|rules:node-runtime"
+fi
+if has_dep_anywhere "express"; then
+  echo "TECH_STACK:Express|dependency:express|rules:node-http"
+fi
+if has_dep_anywhere "koa"; then
+  echo "TECH_STACK:Koa|dependency:koa|rules:node-http"
+fi
+if has_dep_anywhere "fastify"; then
+  echo "TECH_STACK:Fastify|dependency:fastify|rules:node-http"
+fi
 if has_dep_anywhere "vite"; then
   echo "TECH_STACK:Vite|dependency:file:vite.config|rules:build-config"
 elif has_dep_anywhere "webpack"; then
   echo "TECH_STACK:Webpack|dependency:file:webpack.config|rules:build-config"
 fi
 
+emit_package_value "type" "package.type" || true
+emit_package_value "main" "package.main" || true
+emit_package_value "exports" "package.exports" || true
+emit_engines_node || true
+
 # 源码范围声明
 echo "SOURCE_SCOPE:formal|src/**/*.ts"
 echo "SOURCE_SCOPE:formal|src/**/*.tsx"
 echo "SOURCE_SCOPE:formal|src/**/*.js"
 echo "SOURCE_SCOPE:formal|src/**/*.jsx"
+echo "SOURCE_SCOPE:formal|src/**/*.vue"
+echo "SOURCE_SCOPE:formal|src/**/*.mjs"
+echo "SOURCE_SCOPE:formal|src/**/*.cjs"
 echo "SOURCE_SCOPE:context|**/*.test.tsx"
+echo "SOURCE_SCOPE:context|**/*.test.vue"
 echo "SOURCE_SCOPE:context|**/*.d.ts"
 echo "SOURCE_SCOPE:excluded|node_modules/**"
 echo "SOURCE_SCOPE:excluded|dist/**"

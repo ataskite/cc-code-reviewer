@@ -1,12 +1,12 @@
 # 前端正式审查范围
 
-本文件定义前端（React/TS/JS）适配器的正式问题范围、只读上下文与默认排除，落地 spec 第 7 节。覆盖率口径与 Java 保持一致：报告只展示一个源码文件覆盖率。
+本文件定义前端族群（React / Vue 2 / Vue 3 / Node.js / TS / JS）适配器的正式问题范围、只读上下文与默认排除，落地 spec 第 7 节。覆盖率口径与 Java 保持一致：报告只展示一个源码文件覆盖率。
 
 ## 正式问题范围（formal）
 
-- `src` 及适配器确认的应用源码目录内的 `.ts`、`.tsx`、`.js`、`.jsx`
-- React 组件、Hooks、状态管理、路由和数据请求代码
-- 正式配置文件（`package.json`、`tsconfig.json`、`vite.config.*`、`webpack.config.*`、路由配置）：**可产生问题**，但单独计入 `FORMAL_CONFIG_FILE_COUNT`，**不进入源码文件覆盖率分母**
+- `src` 及适配器确认的应用源码目录内的 `.ts`、`.tsx`、`.js`、`.jsx`、`.vue`、`.mjs`、`.cjs`
+- React 组件/Hooks、Vue SFC/状态管理/路由、Node server/routes/middleware/service/data-access 和数据请求代码
+- 正式配置文件（`package.json`、`tsconfig.json`、`vite.config.*`、`webpack.config.*`、`vue.config.*`、`babel.config.*`、路由配置）：**可产生问题**，但单独计入 `FORMAL_CONFIG_FILE_COUNT`，**不进入源码文件覆盖率分母**
 
 ## 只读上下文（context）
 
@@ -23,4 +23,4 @@
 
 ## 覆盖率口径
 
-报告只展示一个「前端源码文件覆盖率」，分母为生产 `.ts/.tsx/.js/.jsx` 文件数（来自不可变 source manifest）。上述正式配置文件可产生问题，但单独计数，不进入该覆盖率分母——这与 Java 当前只统计生产 Java 文件覆盖率的口径一致。
+报告只展示一个「前端源码文件覆盖率」，分母为生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs` 文件数（来自不可变 source manifest）。上述正式配置文件可产生问题，但单独计数，不进入该覆盖率分母——这与 Java 当前只统计生产 Java 文件覆盖率的口径一致。

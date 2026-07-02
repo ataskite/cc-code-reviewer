@@ -70,3 +70,66 @@ echo 'export function Admin(){return <div/>}' > "$W/packages/admin/src/Admin.jsx
 WOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/collect-source-files.sh" "$W")"
 grep -F "$W/apps/web/src/App.tsx" <<< "$WOUT"
 grep -F "$W/packages/admin/src/Admin.jsx" <<< "$WOUT"
+
+# Vue 2/3 package-local src roots must include .vue SFCs and normal script files.
+V="$TMP_DIR/vue-workspace"; mkdir -p "$V/apps/legacy/src/components" "$V/apps/modern/src"
+V="$(cd "$V" && pwd -P)"
+cat > "$V/package.json" <<'JSON'
+{"name":"root","workspaces":["apps/*"]}
+JSON
+cat > "$V/apps/legacy/package.json" <<'JSON'
+{"dependencies":{"vue":"^2.6.14"},"devDependencies":{"vue-template-compiler":"^2.6.14"}}
+JSON
+cat > "$V/apps/modern/package.json" <<'JSON'
+{"dependencies":{"vue":"^3.4.0"},"devDependencies":{"@vitejs/plugin-vue":"^5.0.0"}}
+JSON
+echo '<template><div/></template><script>export default {}</script>' > "$V/apps/legacy/src/components/Legacy.vue"
+echo "export default { install() {} }" > "$V/apps/legacy/src/plugin.js"
+echo '<script setup>const a = 1</script><template><div/></template>' > "$V/apps/modern/src/App.vue"
+VOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/collect-source-files.sh" "$V")"
+grep -F "$V/apps/legacy/src/components/Legacy.vue" <<< "$VOUT"
+grep -F "$V/apps/legacy/src/plugin.js" <<< "$VOUT"
+grep -F "$V/apps/modern/src/App.vue" <<< "$VOUT"
+
+# Workspace hoist: root owns Vue deps, child package has src but no Vue deps.
+# The manifest must collect package-local Vue SFCs, but must not pull unrelated shared TS packages into formal scope.
+HV="$TMP_DIR/vue-hoisted-root"; mkdir -p "$HV/apps/legacy/src" "$HV/packages/shared/src"
+HV="$(cd "$HV" && pwd -P)"
+cat > "$HV/package.json" <<'JSON'
+{"name":"root","workspaces":["apps/*","packages/*"],"dependencies":{"vue":"^2.6.14","vue-template-compiler":"^2.6.14"}}
+JSON
+cat > "$HV/apps/legacy/package.json" <<'JSON'
+{"name":"legacy-app"}
+JSON
+cat > "$HV/packages/shared/package.json" <<'JSON'
+{"name":"shared"}
+JSON
+echo '<template><div>{{ title }}</div></template><script>export default { data(){ return { title: "x" } } }</script>' > "$HV/apps/legacy/src/App.vue"
+echo 'export function defineComponent(input) { return input; }' > "$HV/packages/shared/src/util.ts"
+HVOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/collect-source-files.sh" "$HV")"
+grep -F "$HV/apps/legacy/src/App.vue" <<< "$HVOUT"
+! grep -F "$HV/packages/shared/src/util.ts" <<< "$HVOUT"
+
+# Vue content fallback: a package with Vue import but missing dependency metadata still enters the manifest.
+CV="$TMP_DIR/vue-content-only"; mkdir -p "$CV/src"
+CV="$(cd "$CV" && pwd -P)"
+cat > "$CV/package.json" <<'JSON'
+{"name":"content-only"}
+JSON
+echo 'import { createApp } from "vue"; createApp({}).mount("#app");' > "$CV/src/main.ts"
+CVOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/collect-source-files.sh" "$CV")"
+grep -F "$CV/src/main.ts" <<< "$CVOUT"
+
+# Node service roots should collect production JS/TS under src without requiring React/Vue deps.
+N="$TMP_DIR/node-api"; mkdir -p "$N/src/routes" "$N/test"
+N="$(cd "$N" && pwd -P)"
+cat > "$N/package.json" <<'JSON'
+{"type":"commonjs","main":"src/server.js","engines":{"node":">=18"},"dependencies":{"express":"^4.18.0"}}
+JSON
+echo "module.exports = require('express')();" > "$N/src/server.js"
+echo "exports.users = async () => [];" > "$N/src/routes/users.js"
+echo "test('x', () => {})" > "$N/src/server.test.js"
+NOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/collect-source-files.sh" "$N")"
+grep -F "$N/src/server.js" <<< "$NOUT"
+grep -F "$N/src/routes/users.js" <<< "$NOUT"
+! grep -F "server.test.js" <<< "$NOUT"
