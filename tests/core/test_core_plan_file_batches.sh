@@ -31,4 +31,30 @@ grep -q '"planned_source_loc"' "$RUN_DIR/batches/batch-001.json"
 grep -q '"planned_source_file_count"' "$RUN_DIR/batches/batch-001.json"
 grep -q '"batch_file_list"' "$RUN_DIR/batches/batch-001.json"
 
+SCALE_D="$TMP_DIR/large-app"; mkdir -p "$SCALE_D/src"
+for i in $(seq -w 1 88); do
+  seq 1 10000 | sed 's/.*/export const x = 1;/' > "$SCALE_D/src/file${i}.ts"
+done
+SCALE_D="$(cd "$SCALE_D" && pwd -P)"
+SCALE_MANIFEST="$(mktemp)"
+find "$SCALE_D/src" -name '*.ts' -print | sort > "$SCALE_MANIFEST"
+
+SCALE_OUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260623-020000 \
+             CC_REVIEW_CONTEXT_SCALE=5 \
+             bash "$ROOT_DIR/scripts/core/plan-file-batches.sh" "$SCALE_D" "standard" "main" "frontend" "$SCALE_MANIFEST")"
+SCALE_RUN_DIR="$(printf '%s\n' "$SCALE_OUT" | sed -n 's/^RUN_DIR=//p')"
+SCALE_BATCH_COUNT="$(printf '%s\n' "$SCALE_OUT" | sed -n 's/^BATCH_COUNT=//p')"
+test "$SCALE_BATCH_COUNT" -eq 6
+perl -MJSON::PP -e '
+  open my $fh, "<", $ARGV[0] or die $!;
+  local $/;
+  my $d = decode_json(<$fh>);
+  my $b = $d->{budget} || {};
+  die "bad batch_token_budget\n" unless ($b->{batch_token_budget} // 0) == 500000;
+  die "missing context_scale\n" unless ($b->{context_scale} // 0) == 5;
+  die "missing context_window_tokens\n" unless ($b->{context_window_tokens} // 0) == 1000000;
+' "$SCALE_RUN_DIR/plan.json"
+STATUS_OUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$SCALE_D")"
+grep -q "上下文窗口: 1000000 tokens" <<< "$STATUS_OUT"
+
 echo "PASS: core plan-file-batches"

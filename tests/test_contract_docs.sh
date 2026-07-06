@@ -480,6 +480,11 @@ require_literal "$SKILL_FILE" 'failed`，或 `completed` 但结果文件缺失' 
 require_literal "$SKILL_FILE" "summary.json.report_title" "skill must validate merged cloud-doc title"
 require_literal "$SKILL_FILE" "SELECTED_MODULE_OUTSIDE_PROJECT" "skill must document selected-module boundary rejection"
 require_literal "$SKILL_FILE" "已纳入合并的批次数" "skill must document staged/full merge based on included batches"
+require_literal "$SKILL_FILE" "模型选择和 CONTEXT_SCALE 侦测必须早于所有分批计算" "model context must be selected before any batch plan is generated"
+if grep -q "进入步骤 5C 选择审查模型" "$SKILL_FILE"; then
+  echo "SKILL must not tell agents to choose the review model after batch/concurrency planning." >&2
+  exit 1
+fi
 require_literal "$AGENTS_FILE" "report_title" "AGENTS must document merged report title contract"
 require_literal "$CLAUDE_FILE" "report_title" "CLAUDE must document merged report title contract"
 require_literal "$AGENTS_FILE" "Selected module paths must be relative paths inside" "AGENTS must document selected-module boundary"

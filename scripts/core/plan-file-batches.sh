@@ -109,7 +109,7 @@ cat > "$RUN_DIR/plan.json.tmp" <<JSON
   "total_source_loc": $TOTAL_LOC,
   "total_source_file_count": $TOTAL_FILES,
   "batch_count": $BATCH_COUNT,
-  "budget": { "batch_token_budget": $BATCH_TOKEN_BUDGET, "line_token_estimate": $LINE_TOKEN_ESTIMATE, "file_token_overhead": $FILE_TOKEN_OVERHEAD },
+  "budget": { "batch_token_budget": $BATCH_TOKEN_BUDGET, "target_batch_cost": $BATCH_TOKEN_BUDGET, "line_token_estimate": $LINE_TOKEN_ESTIMATE, "file_token_overhead": $FILE_TOKEN_OVERHEAD, "context_scale": $CONTEXT_SCALE, "context_window_tokens": $((200000 * CONTEXT_SCALE)) },
   "created_at": "$CREATED"
 }
 JSON

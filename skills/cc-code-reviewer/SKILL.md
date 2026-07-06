@@ -833,6 +833,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 **前置计算**：触发此步骤前，必须先完成分批计算（见「分批计算」章节），得到 BATCH_COUNT。
 - 若 `PROJECT_TYPE=maven-multi` 且 `STOCK_REVIEW_STRATEGY=module-sequential|ai-planned`，必须先完成 Maven 大仓库模式的步骤 5 批次表展示和本轮执行批次选择；不得改走文件级 planner。
 - 若不满足 Maven 大仓库模式但 `BATCH_MODE=true`（包括 Maven 单模块、Gradle 或其他 Java 项目），必须先调用 `languages/java/plan-file-batches.sh` 生成文件级批次，并把脚本输出的 `简要分批计划` 原样展示到控制台；不得只输出总批次数后直接询问并发数。
+- 若 `LANGUAGE_ID=frontend` 且 `BATCH_MODE=true`，必须先调用 `scripts/core/plan-file-batches.sh` 生成前端文件级批次，并确认 `plan.json budget.context_scale` 与已选模型的 `CONTEXT_SCALE` 一致。
 
 在调用 AskUserQuestion 之前，先输出并发策略摘要：
 ```
@@ -849,7 +850,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 - 如果用户通过 Other/free-form 选择具体批次，`RUN_BATCH_COUNT` 为标准化后有效批次号数量
 
 **动态并发规则**：
-- `RUN_BATCH_COUNT=1` → 不调用 AskUserQuestion；自动设置 `CONCURRENCY=1`，进入步骤 5C 选择审查模型。
+- `RUN_BATCH_COUNT=1` → 不调用 AskUserQuestion；自动设置 `CONCURRENCY=1`，直接进入步骤 6 确认执行计划。
 - `RUN_BATCH_COUNT=2` → AskUserQuestion options 只包含 `串行执行（默认）` 和 `2 路并发`；不得出现 `3 路并发`。
 - `RUN_BATCH_COUNT>=3` → AskUserQuestion options 包含 `串行执行（默认）`、`2 路并发`、`3 路并发`。
 - 任意路径下都不得提供大于 `RUN_BATCH_COUNT` 的并发选项；例如只执行 1 批时不能展示 2 / 3 路，只执行 2 批时不能展示 3 路。
@@ -869,7 +870,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 **耗时预估公式**：
 ```
 单批成本 = batch JSON 中的 planned_review_cost；缺失时回退 planned_java_loc + planned_java_file_count × 25
-目标批次成本 = plan.json budget.target_batch_cost（随 CONTEXT_SCALE 缩放，基准 52000）
+目标批次成本 = plan.json budget.target_batch_cost 或 budget.batch_token_budget（随 CONTEXT_SCALE 缩放；Maven semantic planner 基准 52000，文件级 planner 基准 100000）
 目标批次耗时 = fast 4 分钟 / standard 8 分钟 / deep 15 分钟 / security 10 分钟
 单批耗时 = ceil(单批成本 × 目标批次耗时 / 目标批次成本)，最低 1 分钟
 total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 lane 后的最大 lane 耗时
@@ -955,6 +956,8 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 ## 分批计算
 
 当 `BATCH_MODE=true` 时，主 skill 必须优先使用确定性脚本生成批次计划，不得临时拼接 Bash 数组或在 shell 中即兴实现 token 打包。
+
+**硬性顺序**：模型选择和 CONTEXT_SCALE 侦测必须早于所有分批计算。任何 `plan.json` 都必须由当前已选模型的 `CONTEXT_SCALE` 生成；如果已存在或刚生成的计划里 `budget.context_scale` 与当前 `CONTEXT_SCALE` 不一致，或文件级计划的 `budget.batch_token_budget` 不是 `100000 × CONTEXT_SCALE`（未显式设置 `CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET` 时），必须重新运行对应 planner 生成新计划后再展示批次、选择并发或启动 batch agent。不得先按默认 200k 生成批次，再在步骤 5C 或并发之后选择 GLM-5.2 等大窗口模型。
 
 ### Maven 多模块分批
 

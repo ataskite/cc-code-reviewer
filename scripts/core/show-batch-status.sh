@@ -322,7 +322,8 @@ TOTAL_LOC="$(json_get "$PLAN_PATH" total_source_loc)"
 TOTAL_FILE_COUNT="$(json_get "$PLAN_PATH" total_source_file_count)"
 [ -n "$TOTAL_FILE_COUNT" ] || TOTAL_FILE_COUNT="$(json_get "$PLAN_PATH" total_java_file_count)"
 
-# 读取缩放后的批次成本（随模型上下文窗口动态调整），缺失时回退基准值 52000
+# 读取缩放后的批次成本（随模型上下文窗口动态调整），缺失时回退基准值 52000。
+# Maven semantic planner 写 target_batch_cost；文件级 planner 写 batch_token_budget。
 # budget 是嵌套对象，用 perl 从 plan.json 显式读取
 TARGET_BATCH_COST="$(perl -MJSON::PP -e '
   my ($file) = @ARGV;
@@ -330,7 +331,7 @@ TARGET_BATCH_COST="$(perl -MJSON::PP -e '
   local $/;
   my $d = eval { decode_json(<$fh>) } or exit 0;
   my $b = $d->{budget} || {};
-  print $b->{target_batch_cost} // "";
+  print $b->{target_batch_cost} // $b->{batch_token_budget} // "";
 ' "$PLAN_PATH" 2>/dev/null || true)"
 if [ -n "$TARGET_BATCH_COST" ] && [ "$TARGET_BATCH_COST" -gt 0 ] 2>/dev/null; then
   TARGET_REVIEW_COST="$TARGET_BATCH_COST"
