@@ -153,7 +153,7 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 | 文档 | 说明 |
 |------|------|
 | [Java 审查框架](references/languages/java/review-framework.md) | Java 15 维度、技术栈规则、模式矩阵 |
-| [Frontend 审查框架](references/languages/frontend/review-framework.md) | 前端 11 维度、模式矩阵、P0 门槛 |
+| [Frontend 审查框架](references/languages/frontend/review-framework.md) | 前端 12 维度（维度 12 设计系统一致性仅 deep）、模式矩阵、P0 门槛 |
 | [React 专项规则](references/languages/frontend/react-rules.md) | React / Router / 构建配置专项审查规则 |
 | [Vue 专项规则](references/languages/frontend/vue-rules.md) | Vue2 legacy / Vue3 / Router / Vuex / Pinia 专项审查规则 |
 | [Node 专项规则](references/languages/frontend/node-rules.md) | Node runtime / HTTP API / BFF / 模块系统专项审查规则 |

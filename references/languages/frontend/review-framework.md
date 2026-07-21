@@ -1,6 +1,8 @@
 # 前端代码审查框架
 
-本手册定义前端族群（React、Vue 2、Vue 3、Node.js、TypeScript/JavaScript，B 端中后台聚焦）代码审查的 11 个维度。维度与 Java 的 15 维度结构完全独立，不编号、不映射。各模式的启用范围以"审查模式 × 维度覆盖矩阵"为准。
+本手册定义前端族群（React、Vue 2、Vue 3、Node.js、TypeScript/JavaScript，B 端中后台聚焦）代码审查的 12 个维度。维度与 Java 的 15 维度结构完全独立，不编号、不映射。各模式的启用范围以"审查模式 × 维度覆盖矩阵"为准。
+
+> 维度 12「设计系统一致性」为 deep 专项，其余 11 维度为标准审查面。维度 1-11 的覆盖范围在所有模式下保持稳定；维度 12 只在 deep 模式启用，避免对日常迭代引入额外噪音。
 
 > 审查框架各语言独立。Java 框架见 `references/languages/java/review-framework.md`；本文件不引用任何 Java 公共维度编号。
 
@@ -21,14 +23,15 @@
 | 9 错误监控与可观测性 | — | ✅ | ✅ | ✅ 仅敏感信息泄露 |
 | 10 测试质量 | — | ✅ 仅核心测试缺失 | ✅ | — |
 | 11 接口与类型契约 | — | ✅ 仅 RESTful+错误处理 | ✅ | ✅ 仅鉴权/错误信息 |
+| 12 设计系统一致性 | — | — | ✅ | — |
 
 ---
 
 ## 模式说明
 
 - **fast**（快速扫雷）：仅扫描会直接炸产线或造成明显安全/稳定性风险的问题，聚焦正确性、类型安全（any 逃逸+断言滥用）、React Hooks / Vue 响应式与生命周期 / Node 配置安全、副作用与资源清理、P0 级安全问题（XSS/危险 HTML/凭据/开放重定向）。适合 PR 合并前快速卡口。覆盖维度：1、2（部分）、4（部分）、6（P0）、8。
-- **standard**（标准审查）：日常迭代推荐模式，覆盖全部 11 维度，但 10 只查核心测试缺失、11 只查 RESTful+错误处理+分页。适合迭代上线前的常规质量门禁。覆盖维度：1-11（10/11 部分启用）。
-- **deep**（深度审查）：全量 11 维度，含测试质量和技术债深挖。适合大版本上线前或重要模块的系统性审查，耗时较长。覆盖维度：1-11 全开。
+- **standard**（标准审查）：日常迭代推荐模式，覆盖维度 1-11，但 10 只查核心测试缺失、11 只查 RESTful+错误处理+分页。适合迭代上线前的常规质量门禁。（10/11 部分启用；维度 12 设计系统一致性不启用。）
+- **deep**（深度审查）：全量 12 维度，含测试质量、技术债深挖和设计系统一致性。适合大版本上线前或重要模块的系统性审查，耗时较长。覆盖维度：1-12 全开。
 - **security**（安全专项）：聚焦安全核心（维度 6 全深度）及与安全强相关的交叉维度（配置安全、注入/越权、敏感信息泄露、接口鉴权/错误信息）。类型安全在 security 关闭——类型问题是质量问题不是安全问题，不污染安全报告。覆盖维度：1、4（部分）、5（部分）、6、9（部分）、11（部分）。
 
 ---
@@ -43,11 +46,15 @@
 
 ### 2. 类型安全
 - **any 污染**：any 逃逸到组件 props/函数返回值/状态，污染调用链
-- **断言滥用**：as any、as unknown as、非空断言 ! 滥用
+- **断言滥用**：as any、as unknown as、非空断言 ! 滥用；`satisfies` 能解决的不应用 `as`
 - **类型逃逸**：@ts-ignore / @ts-expect-error 无注释、三方库无类型直接 any 化
 - **泛型边界**：泛型约束缺失、any 透传导致类型保护形同虚设
 - **三方库类型**：缺失 .d.ts、import 无类型模块未声明
 - **可空/联合类型**：未窄化、null/undefined 未区分处理
+- **联合类型穷尽性**：switch over union/enum 未用 `never` default 做穷尽检查，漏分支无编译保护
+- **branded/opaque 类型**：业务 ID（如 UserId/OrderId/TenantId）混用未用 branded 类型隔离，ID 串用导致真 bug
+- **索引访问安全**：未启用 `noUncheckedIndexedAccess` 时，`arr[i]`/`obj[key]` 的 undefined 风险被静默吞掉
+- **契约对齐**：公共 API/导出函数缺类型导出；前后端类型手动维护而非 OpenAPI/GraphQL codegen，易漂移
 
 ### 3. 代码质量
 - **单一职责**：组件/函数是否职责单一
@@ -74,10 +81,13 @@
 ### 6. 安全
 - **XSS**：dangerouslySetInnerHTML、Vue `v-html`、用户输入直接渲染
 - **前端凭据**：token 写 localStorage、公共代码硬编码
+- **客户端打包泄露**：`NEXT_PUBLIC_*` / `VITE_*` / `REACT_APP_*` 前缀 env 会被打进浏览器包——BFF token、第三方 API key、服务端 secret 误用这些命名空间即等于公开；source map 上线到 CDN 也会泄露原始代码
 - **开放重定向**：用户可控 URL 跳转
 - **权限前置误判**：按钮隐藏、菜单过滤、路由 meta 只属于前端展示控制，不得当作后端授权证据
 - **BFF/Node 鉴权透传**：接口鉴权、token 透传、401/403 处理、租户隔离
 - **不安全 URL 拼接**：SSRF 向量（前端→BFF/Node）、开放重定向
+- **内容安全策略**：CSP 是否部署（`script-src 'self'` + nonce/hash，禁用 `unsafe-inline`/`unsafe-eval`）；跨域脚本是否有 SRI `integrity`；Trusted Types 策略
+- **供应链（OWASP 2025 A03）**：lockfile 是否提交并用 `npm ci` 校验；`postinstall` 脚本来源；高危依赖的 provenance/Sigstore 签名；typosquatting 依赖
 - **依赖风险**：lockfile 版本漏洞结论规则见下
 
 ### 7. 性能（中后台聚焦）
@@ -85,9 +95,11 @@
 - **接口串行/瀑布**：可并行的请求串行、未用 Promise.all
 - **重复请求**：相同数据重复请求、未做请求缓存
 - **不必要重渲染**：缺失 memo/useMemo、context 值未缓存、Vue 深层 watcher 或响应式大对象造成重复渲染
+- **React Compiler 感知**：启用 React Compiler（自动 memoize）后，手写 `useMemo`/`useCallback` 多数冗余，应作为冗余代码标记；未启用时反过来看手写 memoize 是否对廉价计算过度优化（开销大于收益）
+- **Vue 响应式成本**：大对象用 `reactive()`/`ref()` 全深响应，应改 `shallowRef`/`shallowReactive`；`computed` 含副作用；`watch`/`watchEffect` 未返回 cleanup；`KeepAlive` 缺 `max` 导致缓存膨胀
 - **Node 稳定性**：同步阻塞 CPU 操作、无界并发、连接池耗尽、缺少超时/背压
 - **节流防抖缺失**：高频事件（scroll/resize/input 搜索）未做 throttle/debounce
-- **Bundle**：懒加载缺失、整包引入
+- **Bundle**：懒加载缺失、整包引入、首包体积超预算无门禁
 
 ### 8. 副作用与资源清理
 - **Event listener**：addEventListener 未配对 removeEventListener；Vue mounted/onMounted 注册后未在 beforeDestroy/onUnmounted 清理
@@ -97,10 +109,12 @@
 - **请求取消**：AbortController 未使用导致 unmount 后 setState / watcher 旧响应覆盖新响应
 - **Node 资源释放**：数据库连接、stream、队列消费者、HTTP client 未超时或未关闭
 
-### 9. 错误监控与可观测性
-- **错误边界**：React Error Boundary、Vue `errorCaptured`/全局 error handler、Node 统一错误处理中间件
-- **关键错误上报**：用户可恢复错误的捕获与上报
-- **敏感信息**：错误日志中是否泄露 token/PII
+### 9. 错误处理、韧性与可观测性
+- **错误边界**：React Error Boundary、Vue `errorCaptured`/全局 error handler、Node 统一错误处理中间件；风险子树/路由级是否包裹
+- **异步错误**：effect/handler 中的异步错误是否 try/catch；未处理 promise rejection 是否有全局兜底并接观测性
+- **三态完整性**：异步 UI 的 loading/error/empty 三态是否齐全（中后台表格最常缺 empty 和 error 态，只画了 loading）
+- **网络失败 UX**：失败是否提供重试、乐观更新回滚、SWR/Query 的 stale-data fallback；表单提交是否区分 field-level 和 form-level 错误
+- **观测性**：关键错误是否上报到 Sentry 等平台且 source map 已上传；全局错误是否泄露 token/PII
 
 ### 10. 测试质量
 - **standard** 仅检查：核心逻辑是否有对应测试、关键路径（鉴权/异步/错误边界）测试是否缺失
@@ -109,6 +123,15 @@
 ### 11. 接口与类型契约
 - **standard** 仅检查：RESTful 规范、错误处理、分页规范（中后台高频）、Node 路由入参契约
 - **deep** 存量审查：RESTful、版本管理、错误处理、幂等、分页、接口文档、类型契约一致性（前后端类型对齐、响应类型与实际不符）
+
+### 12. 设计系统一致性（仅 deep）
+> 本维度只在 deep 模式启用。standard/fast/security 不启用，避免对日常迭代引入与业务正确性无关的噪音。聚焦中后台共享设计系统（Element / Ant Design / 自研 token 体系）的遵循度，属于技术债与一致性审查，问题统一归 P2/P3。
+
+- **token 使用**：颜色、间距、圆角、字号是否走设计 token；硬编码 `#fff`/`12px`/`1px solid #ccc` 散落（应改 CSS variable / theme token）
+- **组件库复用**：是否从共享组件库取组件，而非就地重复实现一个简版 Modal/Drawer/Select；本地 props 是否与库的 API 漂移
+- **主题与暗色模式**：暗色模式是否走 token 体系（而非临时 `dark:` 一堆类）；主题切换是否真覆盖到所有自定义样式
+- **间距与栅格**：间距是否落在设计系统栅格（通常 4px/8px 刻度），错位/魔数间距
+- **图标来源统一**：是否混用多套图标库，而非用约定的单一图标集
 
 ---
 
@@ -135,5 +158,5 @@
 
 ---
 
-*本手册版本：前端 2.2（React + Vue2/Vue3 + Node，11 维度独立集）*
-*最后更新：2026-07-02*
+*本手册版本：前端 2.3（React + Vue2/Vue3 + Node，12 维度独立集；维度 12 仅 deep 启用）*
+*最后更新：2026-07-21*

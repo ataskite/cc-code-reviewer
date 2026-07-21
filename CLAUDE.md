@@ -119,7 +119,7 @@ references/
   │   ├── java/
   │   │   └── review-framework.md     # Java 15 dimensions definition + mode matrix
   │   └── frontend/
-  │       └── review-framework.md     # Frontend 11 dimensions (independent set)
+  │       └── review-framework.md     # Frontend 12 dimensions (independent set; dim 12 design-system deep-only)
   ├── report-format.md                # Report output format specification
   ├── feishu-integration.md           # Feishu upload operation reference
   ├── ignore-workflow.md              # Project-level ignore rule format and workflow

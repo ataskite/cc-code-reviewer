@@ -796,12 +796,15 @@ if grep -qE 'D(0[1-9]|1[0-5])_[A-Z_]+' "$FE_FRAMEWORK"; then
 fi
 # 正向断言：必须包含类型安全维度（中后台 P0 级）
 grep -q "类型安全" "$FE_FRAMEWORK" || { echo "FAIL: 前端框架必须包含类型安全维度" >&2; exit 1; }
-# 正向断言：必须声明 11 维度（硬断言，防止再次注水膨胀）
+# 正向断言：必须声明 12 维度（维度 12 设计系统一致性仅 deep；硬断言，防止随意膨胀）
 FE_DIM_COUNT=$(grep -cE '^### [0-9]+\. ' "$FE_FRAMEWORK")
-if [ "$FE_DIM_COUNT" -ne 11 ]; then
-  echo "FAIL: 前端框架必须声明 11 维度，当前 $FE_DIM_COUNT" >&2
+if [ "$FE_DIM_COUNT" -ne 12 ]; then
+  echo "FAIL: 前端框架必须声明 12 维度，当前 $FE_DIM_COUNT" >&2
   exit 1
 fi
+# 维度 12「设计系统一致性」只能在 deep 列启用，其余三列必须为 —（防止误开放到 standard/fast/security）
+grep -q '^| 12 设计系统一致性 | — | — | ✅ | — |' "$FE_FRAMEWORK" \
+  || { echo "FAIL: 维度 12 设计系统一致性必须仅在 deep 启用（fast/standard/security 为 —）" >&2; exit 1; }
 
 # SKILL.md 必须含语言路由分支
 grep -q "语言探测与路由" "$SKILL_FILE"
@@ -856,9 +859,9 @@ grep -q '\$refs/\$nextTick' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆
 grep -q 'Element UI' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 Element UI 表单表格场景" >&2; exit 1; }
 grep -q '权限按钮' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 B 端权限按钮/路由 meta 场景" >&2; exit 1; }
 
-# 前端 agent 不得残留旧 15 维度编号（D01-D15）或维度 12-15 引用
-if grep -qE 'D(0[1-9]|1[0-5])[^0-9]|维度 ?1[2345]|1-15|15 维度' "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"; then
-  echo "FAIL: 前端 agent 残留旧 15 维度编号或维度 12-15 引用" >&2
+# 前端 agent 不得残留旧 15 维度编号（D01-D15）或越界维度 13-15 引用（维度 12 设计系统一致性已合法）
+if grep -qE 'D(0[1-9]|1[0-5])[^0-9]|维度 ?1[345]|1-1[345]|1[345] 维度' "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"; then
+  echo "FAIL: 前端 agent 残留旧 15 维度编号或越界维度 13-15 引用" >&2
   exit 1
 fi
 
