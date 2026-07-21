@@ -7,7 +7,7 @@ TMP="$(mktemp -d)"
 mkdir -p "$TMP/src/main/java/com/example"
 echo "public class A {}" > "$TMP/src/main/java/com/example/A.java"
 
-OUT="$(CC_REVIEW_CONTEXT_SCALE=1 bash "$ROOT_DIR/scripts/languages/java/plan-file-batches.sh" "$TMP" standard main 2>&1)"
+OUT="$(bash "$ROOT_DIR/scripts/languages/java/plan-file-batches.sh" "$TMP" standard main 2>&1)"
 RUN_DIR="$(printf '%s\n' "$OUT" | sed -n 's/^RUN_DIR=//p')"
 [ -n "$RUN_DIR" ] || { echo "FAIL: 未输出 RUN_DIR" >&2; echo "$OUT" >&2; exit 1; }
 PLAN_PATH="$RUN_DIR/plan.json"

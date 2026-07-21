@@ -169,9 +169,9 @@ XML
 
 create_aggregator_module "$YUDAO_DIR" "yudao-module-mes" "mes-api" "mes-server"
 create_nested_module "$YUDAO_DIR" "yudao-module-mes/mes-api" "mes-api" "com/example/mes/api" 4200
-create_nested_module "$YUDAO_DIR" "yudao-module-mes/mes-server" "mes-server" "com/example/mes/server/production" 26000
-create_nested_module "$YUDAO_DIR" "yudao-module-mes/mes-server" "mes-server" "com/example/mes/server/quality" 24000
-create_nested_module "$YUDAO_DIR" "yudao-module-mes/mes-server" "mes-server" "com/example/mes/server/material" 23000
+create_nested_module "$YUDAO_DIR" "yudao-module-mes/mes-server" "mes-server" "com/example/mes/server/production" 85000
+create_nested_module "$YUDAO_DIR" "yudao-module-mes/mes-server" "mes-server" "com/example/mes/server/quality" 85000
+create_nested_module "$YUDAO_DIR" "yudao-module-mes/mes-server" "mes-server" "com/example/mes/server/material" 85000
 
 create_aggregator_module "$YUDAO_DIR" "yudao-module-mall" "product" "trade" "promotion"
 create_nested_module "$YUDAO_DIR" "yudao-module-mall/product" "product" "com/example/mall/product" 7000
@@ -190,15 +190,16 @@ OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260601-010203 bash "$ROOT_DIR/scripts
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 
 jq -e '.strategy == "semantic-cost-batching"' "$RUN_DIR/plan.json" >/dev/null
-jq -e '.budget.target_batch_cost == 52000' "$RUN_DIR/plan.json" >/dev/null
-jq -e '.budget.hard_max_batch_loc == 50000' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.budget.target_batch_cost == 260000' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.budget.hard_max_batch_loc == 250000' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.budget.context_scale == 5 and .budget.context_window_tokens == 1000000' "$RUN_DIR/plan.json" >/dev/null
 
-if jq -e 'select(.planned_java_loc > 50000 or .planned_review_cost > 65000)' "$RUN_DIR"/batches/batch-*.json >/dev/null; then
+if jq -e 'select(.planned_java_loc > 250000 or .planned_review_cost > 325000)' "$RUN_DIR"/batches/batch-*.json >/dev/null; then
   echo "planner emitted an oversized batch" >&2
   exit 1
 fi
 if ! jq -r '.units[].name? // empty' "$RUN_DIR"/batches/batch-*.json | grep -Fxq "yudao-module-inspection"; then
-  echo "smart batching should keep a module below 50k Java LOC as one scan unit" >&2
+  echo "smart batching should keep a module below 250k Java LOC as one scan unit" >&2
   exit 1
 fi
 

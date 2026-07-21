@@ -7,29 +7,23 @@ BRANCH_NAME="${3:-no-branch}"
 SEMANTIC_LEVEL="${4:-maven-static}"
 REVIEW_SCOPE_INPUT="${5:-全量代码}"
 PLANNING_STRATEGY="${6:-semantic-cost-batching}"
-# 模型上下文窗口缩放系数：1 = 200k（现状默认），5 = 1M 窗口
-# 由 core/detect-model-context.sh 探测得出；缺失时回退 1，保持旧行为
-CONTEXT_SCALE="${7:-1}"
-# 允许通过环境变量覆盖（与位置参数二选一，环境变量优先级更低）
-CONTEXT_SCALE="${CC_REVIEW_CONTEXT_SCALE:-$CONTEXT_SCALE}"
+# 所有受支持模型统一按 1M 上下文规划，不再接受动态缩放参数或环境变量。
+CONTEXT_WINDOW_TOKENS=1000000
+CONTEXT_SCALE=5
 
-# 防止 scale 过小或过大：单批过小失去意义，过大降低审查质量
-[ "$CONTEXT_SCALE" -lt 1 ] 2>/dev/null && CONTEXT_SCALE=1
-[ "$CONTEXT_SCALE" -gt 10 ] && CONTEXT_SCALE=10
-
-# 批次成本/行数上限按 scale 同比缩放（基准为 200k 窗口）
-TARGET_BATCH_COST=$((52000 * CONTEXT_SCALE))
-SOFT_MIN_BATCH_COST=$((32000 * CONTEXT_SCALE))
-SOFT_MAX_BATCH_COST=$((60000 * CONTEXT_SCALE))
-HARD_MAX_BATCH_COST=$((65000 * CONTEXT_SCALE))
+# 批次成本/行数上限固定为原基准的五倍。
+TARGET_BATCH_COST=260000
+SOFT_MIN_BATCH_COST=160000
+SOFT_MAX_BATCH_COST=300000
+HARD_MAX_BATCH_COST=325000
 TINY_BATCH_LOC=5000
-TINY_BATCH_COST=$((8000 * CONTEXT_SCALE))
+TINY_BATCH_COST=40000
 CONTEXT_COST_RATIO_PERCENT=25
 
-HARD_MAX_BATCH_LOC=$((50000 * CONTEXT_SCALE))
-TARGET_BATCH_LOC=$((50000 * CONTEXT_SCALE))
-SOFT_MIN_BATCH_LOC=$((30000 * CONTEXT_SCALE))
-SOFT_MAX_BATCH_LOC=$((50000 * CONTEXT_SCALE))
+HARD_MAX_BATCH_LOC=250000
+TARGET_BATCH_LOC=250000
+SOFT_MIN_BATCH_LOC=150000
+SOFT_MAX_BATCH_LOC=250000
 
 SELECTED_MODULES=()
 SELECTED_MODULES_RAW=()
@@ -929,7 +923,7 @@ cat > "$RUN_DIR/plan.json.tmp" <<JSON
     "soft_max_batch_loc": $SOFT_MAX_BATCH_LOC,
     "hard_max_batch_loc": $HARD_MAX_BATCH_LOC,
     "context_scale": $CONTEXT_SCALE,
-    "context_window_tokens": $((200000 * CONTEXT_SCALE))
+    "context_window_tokens": $CONTEXT_WINDOW_TOKENS
   },
   "created_at": "$CREATED_AT"
 }

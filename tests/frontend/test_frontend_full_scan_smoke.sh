@@ -31,7 +31,7 @@ test "$FCNT" -ge 3
 MANIFEST="$(mktemp)"
 bash "$ROOT_DIR/scripts/languages/frontend/collect-source-files.sh" "$D" > "$MANIFEST"
 test "$(grep -c . "$MANIFEST")" -ge 3
-POUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260623-020000 CC_REVIEW_CONTEXT_SCALE=1 \
+POUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260623-020000 \
         bash "$ROOT_DIR/scripts/core/plan-file-batches.sh" "$D" "standard" "main" "frontend" "$MANIFEST")"
 RUN_DIR="$(printf '%s\n' "$POUT" | sed -n 's/^RUN_DIR=//p')"
 test -f "$RUN_DIR/plan.json"

@@ -139,7 +139,6 @@ scripts/
   │   ├── detect-superpowers.sh          # Optional Superpowers capability detection
   │   ├── prepare-fix-workspace.sh       # Fix branch/worktree preparation
   │   ├── collect-fix-metadata.sh        # Fix completion time, branch, and git user
-  │   ├── detect-model-context.sh        # Model context window detection (CONTEXT_SCALE)
   │   ├── detect-language.sh             # Language detection dispatcher
   │   ├── estimate-review-minutes.sh     # Deterministic review time estimation
   │   ├── validate-scope.sh              # Scope path boundary validation (reserved)
@@ -207,7 +206,6 @@ bash scripts/languages/java/detect-code-intelligence.sh "/path/to/project"
 bash scripts/languages/java/plan-large-batches.sh "/path/to/project" standard main jdtls-lsp "全量代码" ai-planned
 bash scripts/languages/java/plan-file-batches.sh "/path/to/project" standard main
 bash scripts/core/show-batch-status.sh "/path/to/project"
-bash scripts/core/detect-model-context.sh opus
 ```
 
 ### Modifying Review Logic
@@ -252,8 +250,8 @@ Verify installation by triggering the skill with a Java review request such as `
 ### Batch Planning Contract
 
 - Maven multi-module stock batching always uses `languages/java/plan-large-batches.sh`, including selected-module reviews and single selected-module reviews.
-- `languages/java/plan-large-batches.sh` receives `PROJECT_DIR`, `REVIEW_MODE`, branch, `SEMANTIC_LEVEL`, `REVIEW_SCOPE`, `STOCK_REVIEW_STRATEGY`, and `CONTEXT_SCALE` (7th arg, default 1).
-- `CONTEXT_SCALE` is detected by `core/detect-model-context.sh` from `~/.claude/settings.json`: models with a `[1M]` suffix marker (e.g. `glm-5.2[1M]`) or on the built-in 1M whitelist yield scale=5; others yield scale=1 (200k window, legacy behavior). Batch cost/LOC limits scale proportionally so 1M-window models produce fewer, larger batches.
+- `languages/java/plan-large-batches.sh` receives `PROJECT_DIR`, `REVIEW_MODE`, branch, `SEMANTIC_LEVEL`, `REVIEW_SCOPE`, and `STOCK_REVIEW_STRATEGY`. Its batch budget is fixed for 1M context (`CONTEXT_WINDOW_TOKENS=1000000`, `CONTEXT_SCALE=5`).
+- All supported models use fixed 1M-context batching. The shared file planner defaults to a 500000-token input budget and uses deterministic First-Fit Decreasing packing; `CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET` remains available for explicit file-batch tuning.
 - `STOCK_REVIEW_STRATEGY` is `module-sequential` for one batch per selected module or `ai-planned` for semantic-cost planning.
 - Maven multi-module stock batching must never fall back to `languages/java/plan-file-batches.sh`; that planner is only for Maven single-module, Gradle, or unknown Java projects.
 - Pre-scan, batch-planning, and batch-agent formal scan Java file/line counts must include only `src/main/java` production sources; `src/test/java` test sources must not contribute to review scale, file batch manifests, or formal batch findings.

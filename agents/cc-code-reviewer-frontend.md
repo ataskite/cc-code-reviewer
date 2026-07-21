@@ -55,7 +55,7 @@ maxTurns: 50
 | 项目 ignore 是否启用 | {IGNORE_RULES_ENABLED} |
 | 项目 ignore 问题数量 | {IGNORE_RULE_COUNT} |
 | 语义增强 | {SEMANTIC_LEVEL} |
-| 上下文窗口 | {CONTEXT_WINDOW_TOKENS}（缩放系数 {CONTEXT_SCALE}x） |
+| 上下文窗口 | 1000000 tokens（固定 1M 分批） |
 | 运行目录 | {RUN_DIR}（仅分批模式） |
 | 批次计划文件 | {BATCH_PLAN_PATH}（仅分批模式） |
 | 批次状态文件 | {BATCH_STATUS_PATH}（仅分批模式） |

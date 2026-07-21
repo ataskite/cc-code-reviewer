@@ -124,6 +124,8 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 
 范围选择会在分批、覆盖率、报告和子 agent 参数中保持一致。前端指定目录通过不可变 source manifest 收敛，不会误扫测试文件或构建产物。
 
+所有受支持模型统一按 1M 上下文分批。文件级 planner 默认使用 500k token 输入预算，并通过 First-Fit Decreasing 回填已有批次；可用 `CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET` 显式调整文件批次预算。
+
 ## 输出
 
 - 本地 Markdown 审查报告：`code-review-report-{PROJECT}-{YYYYMMDD-HHmmss}.md`
@@ -143,7 +145,7 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 - `agents/cc-code-reviewer-frontend`：React/Vue2/Vue3/Node/TS/JS 前端族群审查执行
 - `skills/cc-code-fixer`：读取确认后的问题清单，执行修复、验证、报告和写回
 - `skills/cc-code-ignore`：维护项目级 ignore 规则
-- `scripts/core`：语言无关内核，负责项目获取、Git、模型窗口、分批、合并和状态展示
+- `scripts/core`：语言无关内核，负责项目获取、Git、固定 1M 分批、合并和状态展示
 - `scripts/languages/java` / `scripts/languages/frontend`：语言适配器，负责预扫描、源码边界和语言专属能力探测
 
 ## 详细文档

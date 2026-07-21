@@ -7,12 +7,10 @@ BRANCH_NAME="${3:-no-branch}"
 LANGUAGE_ID="${4:?请输入语言 ID}"
 SOURCE_MANIFEST="${5:?请输入 source manifest 路径}"
 
-# 模型上下文窗口缩放系数：1 = 200k，5 = 1M（由 core/detect-model-context.sh 探测）
-CONTEXT_SCALE="${CC_REVIEW_CONTEXT_SCALE:-1}"
-[ "$CONTEXT_SCALE" -lt 1 ] 2>/dev/null && CONTEXT_SCALE=1
-[ "$CONTEXT_SCALE" -gt 10 ] && CONTEXT_SCALE=10
-
-BATCH_TOKEN_BUDGET="${CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET:-$((100000 * CONTEXT_SCALE))}"
+# 所有受支持模型统一按 1M 上下文规划。500k 用于源码输入，余量留给系统提示、工具调用和报告输出。
+CONTEXT_WINDOW_TOKENS=1000000
+CONTEXT_SCALE=5
+BATCH_TOKEN_BUDGET="${CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET:-500000}"
 LINE_TOKEN_ESTIMATE=3
 FILE_TOKEN_OVERHEAD=500
 
@@ -38,9 +36,9 @@ RUN_ID="${CC_CODE_REVIEWER_RUN_TIMESTAMP:-$(date +%Y%m%d-%H%M%S)}-$(branch_slug 
 RUNS_ROOT="${CC_CODE_REVIEWER_RUNS_ROOT:-$PROJECT_DIR/.cc-code-reviewer/runs}"
 RUN_DIR="$RUNS_ROOT/$RUN_ID"
 FILES_TSV="$RUN_DIR/source-files.tsv"; SORTED="$RUN_DIR/source-files.sorted.tsv"
-DRAFT="$RUN_DIR/current-batch.tsv"; PLAN_ROWS="$RUN_DIR/batch-plan.tsv"
+PLAN_ROWS="$RUN_DIR/batch-plan.tsv"; BIN_ROWS="$RUN_DIR/batch-bins.tsv"
 mkdir -p "$RUN_DIR/batches" "$RUN_DIR/results"
-: > "$FILES_TSV"; : > "$PLAN_ROWS"; : > "$DRAFT"
+: > "$FILES_TSV"; : > "$PLAN_ROWS"; : > "$BIN_ROWS"
 
 while IFS= read -r file; do
   [ -n "$file" ] || continue
@@ -58,15 +56,46 @@ sort -t "$(printf '\t')" -k1,1n -k2,2rn "$FILES_TSV" > "$SORTED"
 TOTAL_LOC="$(sum_field "$FILES_TSV" 3)"
 TOTAL_FILES="$(awk 'END{print NR+0}' "$FILES_TSV")"
 
-BATCH_COUNT=0; CUR_COST=0
-flush_batch() {
-  [ -s "$DRAFT" ] || return 0
-  BATCH_COUNT=$((BATCH_COUNT+1))
-  local id; id="$(printf 'batch-%03d' "$BATCH_COUNT")"
-  local bf="$RUN_DIR/batches/$id.files"; local bj="$RUN_DIR/batches/$id.json"
-  local loc files cost
-  loc="$(sum_field "$DRAFT" 3)"; files="$(awk 'END{print NR+0}' "$DRAFT")"; cost="$(sum_field "$DRAFT" 2)"
-  awk -F '\t' '{print $4}' "$DRAFT" > "$bf"
+BATCH_COUNT=0
+
+# First-Fit Decreasing：输入已按风险优先级、成本降序排列；小文件会回填到首个可容纳的已有批次。
+while IFS="$(printf '\t')" read -r pri cost loc file; do
+  [ -n "$file" ] || continue
+  assigned_id=""
+  assigned_draft=""
+  assigned_cost=0
+  while IFS="$(printf '\t')" read -r bin_id bin_cost bin_draft; do
+    [ -n "$bin_id" ] || continue
+    if [ $((bin_cost + cost)) -le "$BATCH_TOKEN_BUDGET" ]; then
+      assigned_id="$bin_id"
+      assigned_draft="$bin_draft"
+      assigned_cost=$((bin_cost + cost))
+      break
+    fi
+  done < "$BIN_ROWS"
+
+  if [ -z "$assigned_id" ]; then
+    BATCH_COUNT=$((BATCH_COUNT + 1))
+    assigned_id="$(printf 'batch-%03d' "$BATCH_COUNT")"
+    assigned_draft="$RUN_DIR/$assigned_id.tsv"
+    assigned_cost="$cost"
+    : > "$assigned_draft"
+    printf '%s\t%s\t%s\n' "$assigned_id" "$assigned_cost" "$assigned_draft" >> "$BIN_ROWS"
+  else
+    awk -F '\t' -v OFS='\t' -v target="$assigned_id" -v new_cost="$assigned_cost" '
+      $1 == target { $2 = new_cost }
+      { print }
+    ' "$BIN_ROWS" > "$BIN_ROWS.tmp"
+    mv "$BIN_ROWS.tmp" "$BIN_ROWS"
+  fi
+  printf '%s\t%s\t%s\t%s\n' "$pri" "$cost" "$loc" "$file" >> "$assigned_draft"
+done < "$SORTED"
+
+while IFS="$(printf '\t')" read -r id _ draft; do
+  [ -n "$id" ] || continue
+  bf="$RUN_DIR/batches/$id.files"; bj="$RUN_DIR/batches/$id.json"
+  loc="$(sum_field "$draft" 3)"; files="$(awk 'END{print NR+0}' "$draft")"; cost="$(sum_field "$draft" 2)"
+  awk -F '\t' '{print $4}' "$draft" > "$bf"
   cat > "$bj.tmp" <<JSON
 {
   "schema_version": 1,
@@ -82,18 +111,7 @@ flush_batch() {
 JSON
   mv "$bj.tmp" "$bj"
   printf '%s\t%s\t%s\t%s\n' "$id" "$loc" "$files" "$cost" >> "$PLAN_ROWS"
-  : > "$DRAFT"
-}
-
-while IFS="$(printf '\t')" read -r pri cost loc file; do
-  [ -n "$file" ] || continue
-  if [ "$CUR_COST" -gt 0 ] && [ $((CUR_COST + cost)) -gt "$BATCH_TOKEN_BUDGET" ]; then
-    flush_batch "$DRAFT"; CUR_COST=0
-  fi
-  printf '%s\t%s\t%s\t%s\n' "$pri" "$cost" "$loc" "$file" >> "$DRAFT"
-  CUR_COST=$((CUR_COST + cost))
-done < "$SORTED"
-flush_batch "$DRAFT"
+done < "$BIN_ROWS"
 
 CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cat > "$RUN_DIR/plan.json.tmp" <<JSON
@@ -109,13 +127,13 @@ cat > "$RUN_DIR/plan.json.tmp" <<JSON
   "total_source_loc": $TOTAL_LOC,
   "total_source_file_count": $TOTAL_FILES,
   "batch_count": $BATCH_COUNT,
-  "budget": { "batch_token_budget": $BATCH_TOKEN_BUDGET, "target_batch_cost": $BATCH_TOKEN_BUDGET, "line_token_estimate": $LINE_TOKEN_ESTIMATE, "file_token_overhead": $FILE_TOKEN_OVERHEAD, "context_scale": $CONTEXT_SCALE, "context_window_tokens": $((200000 * CONTEXT_SCALE)) },
+  "budget": { "batch_token_budget": $BATCH_TOKEN_BUDGET, "target_batch_cost": $BATCH_TOKEN_BUDGET, "line_token_estimate": $LINE_TOKEN_ESTIMATE, "file_token_overhead": $FILE_TOKEN_OVERHEAD, "context_scale": $CONTEXT_SCALE, "context_window_tokens": $CONTEXT_WINDOW_TOKENS },
   "created_at": "$CREATED"
 }
 JSON
 mv "$RUN_DIR/plan.json.tmp" "$RUN_DIR/plan.json"
 
-rm -f "$DRAFT" "$FILES_TSV" "$SORTED"
+rm -f "$FILES_TSV" "$SORTED" "$BIN_ROWS" "$RUN_DIR"/batch-*.tsv
 
 echo "RUN_ID=$RUN_ID"
 echo "RUN_DIR=$RUN_DIR"

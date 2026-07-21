@@ -14,7 +14,6 @@ MANIFEST="$(mktemp)"
 find "$D/src" -name '*.ts' -print | sort > "$MANIFEST"
 
 OUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260623-010000 \
-       CC_REVIEW_CONTEXT_SCALE=1 \
        bash "$ROOT_DIR/scripts/core/plan-file-batches.sh" "$D" "standard" "main" "frontend" "$MANIFEST")"
 
 RUN_DIR="$(printf '%s\n' "$OUT" | sed -n 's/^RUN_DIR=//p')"
@@ -26,6 +25,9 @@ grep -q "BATCH_FILE_LIST_DIR=" <<< "$OUT"
 grep -q '"language_id": "frontend"' "$RUN_DIR/plan.json"
 grep -q '"strategy": "file-token-batching"' "$RUN_DIR/plan.json"
 grep -q '"schema_version": 1' "$RUN_DIR/plan.json"
+grep -q '"batch_token_budget": 500000' "$RUN_DIR/plan.json"
+grep -q '"context_scale": 5' "$RUN_DIR/plan.json"
+grep -q '"context_window_tokens": 1000000' "$RUN_DIR/plan.json"
 test -f "$RUN_DIR/batches/batch-001.json"
 grep -q '"planned_source_loc"' "$RUN_DIR/batches/batch-001.json"
 grep -q '"planned_source_file_count"' "$RUN_DIR/batches/batch-001.json"
@@ -40,7 +42,7 @@ SCALE_MANIFEST="$(mktemp)"
 find "$SCALE_D/src" -name '*.ts' -print | sort > "$SCALE_MANIFEST"
 
 SCALE_OUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260623-020000 \
-             CC_REVIEW_CONTEXT_SCALE=5 \
+             CC_REVIEW_CONTEXT_SCALE=1 \
              bash "$ROOT_DIR/scripts/core/plan-file-batches.sh" "$SCALE_D" "standard" "main" "frontend" "$SCALE_MANIFEST")"
 SCALE_RUN_DIR="$(printf '%s\n' "$SCALE_OUT" | sed -n 's/^RUN_DIR=//p')"
 SCALE_BATCH_COUNT="$(printf '%s\n' "$SCALE_OUT" | sed -n 's/^BATCH_COUNT=//p')"
@@ -56,5 +58,25 @@ perl -MJSON::PP -e '
 ' "$SCALE_RUN_DIR/plan.json"
 STATUS_OUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$SCALE_D")"
 grep -q "上下文窗口: 1000000 tokens" <<< "$STATUS_OUT"
+
+# 大小不均文件应使用 First-Fit Decreasing 回填已有批次：旧 Next-Fit 会产生 3 批，新算法应为 2 批。
+FFD_D="$TMP_DIR/ffd-app"; mkdir -p "$FFD_D/src"
+for spec in "large-a:1833" "large-b:1833" "small-a:1167" "small-b:1167"; do
+  name="${spec%%:*}"; lines="${spec##*:}"
+  seq 1 "$lines" | sed 's/.*/export const value = 1;/' > "$FFD_D/src/$name.ts"
+done
+FFD_D="$(cd "$FFD_D" && pwd -P)"
+FFD_MANIFEST="$(mktemp)"
+find "$FFD_D/src" -name '*.ts' -print | sort > "$FFD_MANIFEST"
+FFD_OUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260623-030000 \
+           CC_REVIEW_CONTEXT_SCALE=1 \
+           CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET=10000 \
+           bash "$ROOT_DIR/scripts/core/plan-file-batches.sh" "$FFD_D" "standard" "main" "frontend" "$FFD_MANIFEST")"
+FFD_RUN_DIR="$(printf '%s\n' "$FFD_OUT" | sed -n 's/^RUN_DIR=//p')"
+test "$(printf '%s\n' "$FFD_OUT" | sed -n 's/^BATCH_COUNT=//p')" -eq 2
+test "$(cat "$FFD_RUN_DIR"/batches/*.files | sort | uniq | wc -l | tr -d ' ')" -eq 4
+test "$(cat "$FFD_RUN_DIR"/batches/*.files | wc -l | tr -d ' ')" -eq 4
+grep -q '"batch_token_budget": 10000' "$FFD_RUN_DIR/plan.json"
+grep -q '"context_scale": 5' "$FFD_RUN_DIR/plan.json"
 
 echo "PASS: core plan-file-batches"

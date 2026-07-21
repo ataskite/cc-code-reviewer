@@ -33,7 +33,7 @@ create_java_file() {
   } > "$SRC_DIR/$file"
 }
 
-for index in 1 2 3 4 5 6 7 8 9; do
+for index in $(seq 1 20); do
   create_java_file "OrderService${index}.java" 9000
 done
 
@@ -52,10 +52,12 @@ BATCH_COUNT="$(printf '%s\n' "$OUTPUT" | sed -n 's/^BATCH_COUNT=//p')"
 test "$RUN_ID" = "20260602-010203-main-standard"
 test "$(basename "$RUN_DIR")" = "$RUN_ID"
 test -d "$RUN_DIR"
-test "$BATCH_COUNT" -ge 3
+test "$BATCH_COUNT" -ge 2
 test -f "$RUN_DIR/batches/batch-001.files"
 test -f "$RUN_DIR/batches/batch-001.json"
-grep -q "TOTAL_JAVA_FILE_COUNT=9" <<< "$OUTPUT"
+grep -q "TOTAL_JAVA_FILE_COUNT=20" <<< "$OUTPUT"
+grep -q '"batch_token_budget": 500000' "$RUN_DIR/plan.json"
+grep -q '"context_window_tokens": 1000000' "$RUN_DIR/plan.json"
 
 printf '%s\n' "$OUTPUT" | grep -q "简要分批计划"
 printf '%s\n' "$OUTPUT" | grep -q "批次 行数 文件 重点范围"

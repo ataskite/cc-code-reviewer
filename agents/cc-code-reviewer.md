@@ -56,7 +56,7 @@ maxTurns: 50
 | 批次计划文件 | {BATCH_PLAN_PATH} |
 | 批次状态文件 | {BATCH_STATUS_PATH} |
 | 批次结果文件 | {BATCH_RESULT_PATH} |
-| 上下文窗口 | {CONTEXT_WINDOW_TOKENS}（缩放系数 {CONTEXT_SCALE}x） |
+| 上下文窗口 | 1000000 tokens（固定 1M 分批） |
 ```
 
 **你必须**：
@@ -74,7 +74,7 @@ maxTurns: 50
   - 增量审查时：`最近N次提交`（同时会提供增量提交记录）
 - **审查模式**（`REVIEW_MODE`）：`fast` / `standard` / `deep` / `security`
 - **审查模型**（`REVIEW_MODEL`）：`sonnet` / `opus` / `haiku`。主 agent 通过 Task 工具的 `model` 字段把该模型应用到本子代理；此处仅用于在审查报告配置快照中记录使用的模型。
-- **上下文窗口**（`CONTEXT_WINDOW_TOKENS` / `CONTEXT_SCALE`）：由 `core/detect-model-context.sh` 探测得出的实际模型上下文窗口大小及缩放系数。`CONTEXT_SCALE=1` 表示 200k 窗口（默认），`CONTEXT_SCALE=5` 表示 1M 窗口（如底层配置了 `glm-5.2[1M]`）。仅用于信息展示，不影响子 agent 的审查行为——批次大小已由 `languages/java/plan-large-batches.sh`（或 `plan-file-batches.sh`）按 scale 规划完成。
+- **上下文窗口**：所有受支持模型统一按 `CONTEXT_WINDOW_TOKENS=1000000`、`CONTEXT_SCALE=5` 规划批次。这两个值仅作为固定计划元数据展示；批次大小已由 `languages/java/plan-large-batches.sh`（或 `plan-file-batches.sh`）规划完成。
 - **报告保存方式不注入本子 agent**：`FEISHU_UPLOAD_OPTION` 由主 skill 持有，仅用于子 agent 返回本地报告文件后的飞书云文档/多维表格上传；本子 agent 不读取、不记录该参数，也不执行任何飞书上传操作。
 - **审查文件数量**（`REVIEW_FILE_COUNT`）：本次审查涉及的 Java 文件数量
 - **审查代码行数**（`REVIEW_LINE_COUNT`）：本次审查涉及的代码总行数

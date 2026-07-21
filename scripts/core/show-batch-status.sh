@@ -166,7 +166,7 @@ status_label() {
 
 # ceil_div 已由 estimate-review-minutes.sh 提供（source 引入），此处不再重复定义
 
-TARGET_REVIEW_COST_BASE=52000
+TARGET_REVIEW_COST_BASE=260000
 TARGET_REVIEW_COST="$TARGET_REVIEW_COST_BASE"
 
 target_batch_minutes() {
@@ -189,7 +189,7 @@ batch_estimate_minutes() {
   planned_cost="$(review_cost_of "$planned_loc" "$planned_files")"
   target_minutes="$(target_review_minutes "$review_mode")"
   local minutes
-  # 注意：批次模式使用从 plan.json budget 读取的动态 TARGET_REVIEW_COST（随 CONTEXT_SCALE 缩放），
+  # 注意：批次模式使用从 plan.json budget 读取的 TARGET_REVIEW_COST，
   # 因此不复用 estimate_review_minutes（它用固定基准），而是就地保留历史算式，保证输出逐字节不变。
   minutes="$(ceil_div $((planned_cost * target_minutes)) "$TARGET_REVIEW_COST")"
   if [ "$minutes" -lt 1 ]; then
@@ -322,7 +322,7 @@ TOTAL_LOC="$(json_get "$PLAN_PATH" total_source_loc)"
 TOTAL_FILE_COUNT="$(json_get "$PLAN_PATH" total_source_file_count)"
 [ -n "$TOTAL_FILE_COUNT" ] || TOTAL_FILE_COUNT="$(json_get "$PLAN_PATH" total_java_file_count)"
 
-# 读取缩放后的批次成本（随模型上下文窗口动态调整），缺失时回退基准值 52000。
+# 读取计划中的批次成本，缺失时回退固定 1M 目标值 260000。
 # Maven semantic planner 写 target_batch_cost；文件级 planner 写 batch_token_budget。
 # budget 是嵌套对象，用 perl 从 plan.json 显式读取
 TARGET_BATCH_COST="$(perl -MJSON::PP -e '
@@ -344,14 +344,12 @@ CONTEXT_SCALE="$(perl -MJSON::PP -e '
   my $b = $d->{budget} || {};
   print $b->{context_scale} // "";
 ' "$PLAN_PATH" 2>/dev/null || true)"
-CONTEXT_SCALE="${CONTEXT_SCALE:-1}"
+CONTEXT_SCALE="${CONTEXT_SCALE:-5}"
 
 echo "大仓库审查任务"
 echo "项目: ${PROJECT_NAME:-$(basename "$PROJECT_DIR")}"
 echo "模式: ${REVIEW_MODE:-unknown}  范围: ${REVIEW_SCOPE:-全量代码}  语义: ${SEMANTIC_LEVEL:-maven-static}"
-if [ "$CONTEXT_SCALE" -gt 1 ] 2>/dev/null; then
-  echo "上下文窗口: $((200000 * CONTEXT_SCALE)) tokens（缩放系数 ${CONTEXT_SCALE}x，大窗口模型已启用更大批次）"
-fi
+echo "上下文窗口: 1000000 tokens（固定 1M 分批）"
 echo "批次数: ${BATCH_COUNT:-0}  ${LOC_LABEL}: $(format_number "$TOTAL_LOC")  ${FILE_LABEL}: $(format_number "$TOTAL_FILE_COUNT")"
 echo
 echo "| 批次 | 状态 | 行数 | 文件数 | 模块 |"
