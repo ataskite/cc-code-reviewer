@@ -192,8 +192,10 @@ require_literal "$ROOT_DIR/references/report-format.md" '**置信度**：高 |
 for performance_contract_file in \
   "$ROOT_DIR/references/languages/java/review-framework.md" \
   "$ROOT_DIR/references/languages/frontend/review-framework.md" \
+  "$ROOT_DIR/references/languages/python/review-framework.md" \
   "$AGENT_FILE" \
-  "$FRONTEND_AGENT_FILE"; do
+  "$FRONTEND_AGENT_FILE" \
+  "$ROOT_DIR/agents/cc-code-reviewer-python.md"; do
   require_literal "$performance_contract_file" "性能问题分级边界" "performance findings must have explicit severity boundaries"
   require_literal "$performance_contract_file" "关键路径性能风险且已证实会显著影响稳定性：P1" "confirmed critical-path performance risks must map to P1"
   require_literal "$performance_contract_file" "普通性能问题或局部性能风险：P2" "ordinary performance risks must map to P2"
@@ -760,14 +762,24 @@ for f in \
   "scripts/languages/frontend/scan-project.sh" \
   "scripts/languages/frontend/collect-source-files.sh" \
   "scripts/languages/frontend/detect-code-intelligence.sh" \
+  "scripts/languages/python/detect-project.sh" \
+  "scripts/languages/python/scan-project.sh" \
+  "scripts/languages/python/collect-source-files.sh" \
+  "scripts/languages/python/filter-source-manifest.sh" \
+  "scripts/languages/python/detect-code-intelligence.sh" \
   "agents/cc-code-reviewer-frontend.md" \
+  "agents/cc-code-reviewer-python.md" \
   "references/language-adapter-contract.md" \
   "references/languages/java/review-framework.md" \
   "references/languages/frontend/source-scope.md" \
   "references/languages/frontend/review-framework.md" \
   "references/languages/frontend/react-rules.md" \
   "references/languages/frontend/vue-rules.md" \
-  "references/languages/frontend/node-rules.md"; do
+  "references/languages/frontend/node-rules.md" \
+  "references/languages/python/source-scope.md" \
+  "references/languages/python/review-framework.md" \
+  "references/languages/python/django-rules.md" \
+  "references/languages/python/fastapi-rules.md"; do
   [ -f "$ROOT_DIR/$f" ] || { echo "MISSING: $f" >&2; exit 1; }
 done
 
@@ -870,6 +882,69 @@ grep -q "review-framework" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 grep -q "react-rules" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 grep -q "vue-rules" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 grep -q "node-rules" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+
+# === Python 审查契约断言 ===
+PY_FRAMEWORK="$ROOT_DIR/references/languages/python/review-framework.md"
+PY_AGENT_FILE="$ROOT_DIR/agents/cc-code-reviewer-python.md"
+# Python 框架不得引用 Java 公共维度 ID
+if grep -qE 'D(0[1-9]|1[0-5])_[A-Z_]+' "$PY_FRAMEWORK"; then
+  echo "FAIL: Python 框架不得引用 Java 公共维度 ID" >&2
+  exit 1
+fi
+# Python 框架必须包含类型安全维度
+grep -q "类型安全" "$PY_FRAMEWORK" || { echo "FAIL: Python 框架必须包含类型安全维度" >&2; exit 1; }
+# Python 框架必须声明 12 维度
+PY_DIM_COUNT=$(grep -cE '^### [0-9]+\. ' "$PY_FRAMEWORK")
+if [ "$PY_DIM_COUNT" -ne 12 ]; then
+  echo "FAIL: Python 框架必须声明 12 维度，当前 $PY_DIM_COUNT" >&2
+  exit 1
+fi
+# Python 框架必须含 P0 五项硬门槛
+grep -q "P0 五项硬门槛" "$PY_FRAMEWORK" || { echo "FAIL: Python 框架必须含 P0 五项硬门槛" >&2; exit 1; }
+# Python 框架必须含依赖风险结论规则
+grep -q "依赖风险结论规则" "$PY_FRAMEWORK" || { echo "FAIL: Python 框架必须含依赖风险结论规则" >&2; exit 1; }
+# SKILL.md 必须含 Python 路由
+grep -q "CANDIDATE_LANGUAGE:python" "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须含 CANDIDATE_LANGUAGE:python" >&2; exit 1; }
+grep -q "cc-code-reviewer-python" "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须引用 cc-code-reviewer-python" >&2; exit 1; }
+grep -q "cc-code-reviewer:cc-code-reviewer-python" "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须含 python subagent dispatch" >&2; exit 1; }
+# dispatch 点至少出现 2 次
+PYTHON_DISPATCH_COUNT="$(grep -c 'cc-code-reviewer:cc-code-reviewer-python' "$SKILL_FILE")"
+test "$PYTHON_DISPATCH_COUNT" -ge 2 || { echo "FAIL: python dispatch 必须 >=2 次，当前 $PYTHON_DISPATCH_COUNT" >&2; exit 1; }
+# SKILL.md 路径准备必须按 LANGUAGE_ID 分支，Python 注入专属路径
+grep -q 'LANGUAGE_ID.*python' "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须含 LANGUAGE_ID python 分支" >&2; exit 1; }
+grep -q 'DJANGO_RULES_PATH' "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须含 DJANGO_RULES_PATH" >&2; exit 1; }
+grep -q 'FASTAPI_RULES_PATH' "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须含 FASTAPI_RULES_PATH" >&2; exit 1; }
+grep -q 'references/languages/python/review-framework.md' "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须引用 python review-framework" >&2; exit 1; }
+# Python agent 必须期望 Python 框架路径和 Django/FastAPI 规则路径
+grep -q "review-framework" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须引用 review-framework" >&2; exit 1; }
+grep -q "django-rules" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须引用 django-rules" >&2; exit 1; }
+grep -q "fastapi-rules" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须引用 fastapi-rules" >&2; exit 1; }
+grep -q "source-scope" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须引用 source-scope" >&2; exit 1; }
+# Python agent 不得残留旧 15 维度编号或越界维度 13-15 引用
+if grep -qE 'D(0[1-9]|1[0-5])[^0-9]|维度 ?1[345]|1-1[345]|1[345] 维度' "$PY_AGENT_FILE"; then
+  echo "FAIL: Python agent 残留旧 15 维度编号或越界维度 13-15 引用" >&2
+  exit 1
+fi
+# Python 框架和 agent 必须含性能分级边界（已在上方循环断言，此处补 P0 门槛）
+grep -q "P0 五项硬门槛" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须含 P0 五项硬门槛" >&2; exit 1; }
+# django-rules 必须覆盖关键检查点
+grep -q "on_delete" "$ROOT_DIR/references/languages/python/django-rules.md" || { echo "FAIL: django-rules 必须覆盖 on_delete" >&2; exit 1; }
+grep -q "mark_safe" "$ROOT_DIR/references/languages/python/django-rules.md" || { echo "FAIL: django-rules 必须覆盖 mark_safe XSS" >&2; exit 1; }
+grep -q "select_related" "$ROOT_DIR/references/languages/python/django-rules.md" || { echo "FAIL: django-rules 必须覆盖 select_related N+1" >&2; exit 1; }
+grep -q "DEBUG" "$ROOT_DIR/references/languages/python/django-rules.md" || { echo "FAIL: django-rules 必须覆盖 DEBUG 配置" >&2; exit 1; }
+# fastapi-rules 必须覆盖关键检查点
+grep -q "Depends" "$ROOT_DIR/references/languages/python/fastapi-rules.md" || { echo "FAIL: fastapi-rules 必须覆盖 Depends" >&2; exit 1; }
+grep -q "Pydantic" "$ROOT_DIR/references/languages/python/fastapi-rules.md" || { echo "FAIL: fastapi-rules 必须覆盖 Pydantic" >&2; exit 1; }
+grep -q "async def" "$ROOT_DIR/references/languages/python/fastapi-rules.md" || { echo "FAIL: fastapi-rules 必须覆盖 async def 阻塞" >&2; exit 1; }
+grep -q "OpenAPI" "$ROOT_DIR/references/languages/python/fastapi-rules.md" || { echo "FAIL: fastapi-rules 必须覆盖 OpenAPI" >&2; exit 1; }
+# detect-language 必须能输出 python 候选
+grep -q "has_python" "$ROOT_DIR/scripts/core/detect-language.sh" || { echo "FAIL: detect-language 必须含 has_python" >&2; exit 1; }
+grep -q "emit python" "$ROOT_DIR/scripts/core/detect-language.sh" || { echo "FAIL: detect-language 必须含 emit python" >&2; exit 1; }
+# core merge/status 必须含 python 标签分支
+grep -q 'python)   COVERAGE_LABEL="Python 文件覆盖率"' "$ROOT_DIR/scripts/core/merge-batch-results.sh" || { echo "FAIL: merge-batch-results 必须含 python 覆盖率标签" >&2; exit 1; }
+grep -q 'python)   LOC_LABEL="Python 行数"' "$ROOT_DIR/scripts/core/show-batch-status.sh" || { echo "FAIL: show-batch-status 必须含 python 标签" >&2; exit 1; }
+# Python 框架版本页脚
+grep -q 'Python 1.0' "$PY_FRAMEWORK" || { echo "FAIL: Python 框架必须标注版本 Python 1.0" >&2; exit 1; }
 
 # === 脚本目录重构断言 ===
 # SKILL.md 必须含「脚本调用顺序」编排段（执行顺序归文档，不编码进文件名）

@@ -66,23 +66,26 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-branches.sh" "$PROJECT_DIR"
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-language.sh" "$PROJECT_DIR"
-# 输出：CANDIDATE_LANGUAGE:java|evidence=... 和/或 CANDIDATE_LANGUAGE:frontend|evidence=... 或 CANDIDATE_LANGUAGE:none
+# 输出：CANDIDATE_LANGUAGE:java|evidence=... 和/或 CANDIDATE_LANGUAGE:frontend|evidence=... 和/或 CANDIDATE_LANGUAGE:python|evidence=... 或 CANDIDATE_LANGUAGE:none
 ```
 
 **路由规则**：
-- **纯 Java**（仅 `CANDIDATE_LANGUAGE:java`）：走现有 Java 预扫描（detect-project → detect-branches → project-scan → detect-code-intelligence → detect-lark-plugin），流程不变。
+- **纯 Java**（仅 `CANDIDATE_LANGUAGE:java`）：走现有 Java 预扫描（detect-project -> detect-branches -> project-scan -> detect-code-intelligence -> detect-lark-plugin），流程不变。
 - **纯前端**（仅 `CANDIDATE_LANGUAGE:frontend`）：走「前端预扫描」分支。
-- **混合仓库**（两者皆有）：**必须调用 AskUserQuestion** 让用户选择一种语言：
-  - question: "检测到多语言仓库（Java + 前端），本次审查目标语言？"
+- **纯 Python**（仅 `CANDIDATE_LANGUAGE:python`）：走「Python 预扫描」分支。
+- **混合仓库**（两者或以上皆有）：**必须调用 AskUserQuestion** 让用户选择一种语言：
+  - question: "检测到多语言仓库（{命中的语言列表}），本次审查目标语言？"
   - header: "审查语言"
-  - options:
+  - options（按命中顺序，仅命中的语言出现在选项中）:
     - label: "Java"
       description: "审查 Java 生产源码（src/main/java），使用 Java 审查矩阵"
     - label: "前端族群（React/Vue/Node）"
       description: "审查 React、Vue2/Vue3 或 Node 的生产源码（src 下 .ts/.tsx/.js/.jsx/.vue/.mjs/.cjs），使用前端审查矩阵"
+    - label: "Python（Django/FastAPI/Flask）"
+      description: "审查 Python 生产源码（src 或顶层包下 .py），使用 Python 审查矩阵"
   - multiSelect: false
-  - 用户选择后设 `LANGUAGE_ID`，另一语言仅作仓库背景，不得产出正式问题。
-- **none**：输出"❌ 未识别到支持的审查目标（Java、React、Vue 或 Node）"并终止。
+  - 用户选择后设 `LANGUAGE_ID`，其他语言仅作仓库背景，不得产出正式问题。
+- **none**：输出"❌ 未识别到支持的审查目标（Java、React、Vue、Node 或 Python）"并终止。
 
 ### 第四步：按语言执行项目预扫描
 
@@ -119,6 +122,25 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
 ```
 
 > 前端分支下，后续交互步骤（模式/报告/入口/范围/确认）、增量预处理（`core/prepare-incremental.sh`）、固定 1M 分批、合并、报告保存、飞书输出**全部复用现有流程**；差异仅在：预扫描数据来自前端 PROFILE，`SEMANTIC_LEVEL` 从 `CODE_INTELLIGENCE_PROVIDER` 派生（`typescript-lsp`/`none`，非 Java 的 `jdtls-lsp`/`maven-static`），分批用 `scripts/core/plan-file-batches.sh` + source manifest，合并用 `scripts/core/merge-batch-results.sh`，子 agent 用 `cc-code-reviewer-frontend`。
+
+**Python 预扫描分支**（`LANGUAGE_ID=python` 时执行）：
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/python/detect-project.sh" "$PROJECT_DIR"
+# 输出 PROJECT_TYPE=python-django|python-fastapi|python-flask|python-generic|python-unsupported
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/python/scan-project.sh" "$PROJECT_DIR"
+# 输出 PROFILE_SCHEMA v1：SOURCE_FILE_COUNT/SOURCE_LINE_COUNT/FORMAL_CONFIG_FILE_COUNT/COMPONENT/TECH_STACK/SOURCE_SCOPE
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/python/detect-code-intelligence.sh" "$PROJECT_DIR"
+# 输出 CODE_INTELLIGENCE_PROVIDER=pyright|pylsp|jedi|none（覆盖 scan-project 的占位）
+# 主 skill 据此派生 SEMANTIC_LEVEL：pyright/pylsp/jedi -> 同名；none -> SEMANTIC_LEVEL=none
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
+# 复用 lark-cli 检测
+```
+
+> Python 分支下，后续交互步骤（模式/报告/入口/范围/确认）、增量预处理、固定 1M 分批、合并、报告保存、飞书输出**全部复用现有流程**；差异仅在：预扫描数据来自 Python PROFILE_SCHEMA，`SEMANTIC_LEVEL` 从 `CODE_INTELLIGENCE_PROVIDER` 派生（`pyright`/`pylsp`/`jedi`/`none`），分批用 `scripts/core/plan-file-batches.sh` + source manifest，合并用 `scripts/core/merge-batch-results.sh`，子 agent 用 `cc-code-reviewer-python`。
 
 ### 第三步之后：读取项目级 ignore 规则
 
@@ -178,10 +200,15 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 - 代码行数：{SOURCE_LINE_COUNT} 行
 - 配置文件：{FORMAL_CONFIG_FILE_COUNT} 个
 - src 目录概览：{解析预扫描 `COMPONENT:` 行，格式为 `目录名(文件数)` 逗号分隔，如 `components(42), pages(18), hooks(8)`；无 `COMPONENT:` 行时显示"无可选子目录"}
+{LANGUAGE_ID=python 时}
+- Python 源码文件（src 或顶层包下 .py）：{SOURCE_FILE_COUNT} 个
+- 代码行数：{SOURCE_LINE_COUNT} 行
+- 配置文件：{FORMAL_CONFIG_FILE_COUNT} 个
+- 包目录概览：{解析预扫描 `COMPONENT:` 行，格式为 `目录名(文件数)` 逗号分隔，如 `myapp(42), api(18)`；无 `COMPONENT:` 行时显示"无可选子目录"}
 
 🧩 技术栈扫描：
 - 识别数量：{解析 `TECH_STACK:` 行数量；未识别专项技术栈时显示 0}
-- 启用专项规则：{识别到专项技术栈时显示 "是"，否则显示 "否，仅启用通用{LANGUAGE_ID=java 时显示 Java，frontend 时显示前端}审查规则"}
+- 启用专项规则：{识别到专项技术栈时显示 "是"，否则显示 "否，仅启用通用{LANGUAGE_ID=java 时显示 Java，frontend 时显示前端，python 时显示 Python}审查规则"}
 
 {识别到 TECH_STACK 且 dependency != none 时展示以下表格，最多展示 12 个}
 | 技术栈 | 识别证据 | 建议维度 | 专项规则 |
@@ -192,17 +219,17 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 - 另有 {N} 个技术栈未在摘要表中展示，完整结果已注入子 agent。
 
 {未识别专项技术栈时展示}
-- 未识别专项技术栈，仅启用通用{LANGUAGE_ID=java 时显示 Java，frontend 时显示前端}审查规则。
+- 未识别专项技术栈，仅启用通用{LANGUAGE_ID=java 时显示 Java，frontend 时显示前端，python 时显示 Python}审查规则。
 
 🔌 lark-cli：{LARK_PLUGIN_INSTALLED=true 时显示 "✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书保存" / false 时显示 "⚠️ 飞书保存不可用：{LARK_PLUGIN_REASON}，报告将仅保存到本地文件"}
 
-🧠 代码智能：{LANGUAGE_ID=java 时，CODE_INTELLIGENCE_AVAILABLE=true 显示 "✅ jdtls-lsp 可用，可用于跨目录调用链理解" / false 显示 "⚠️ 未启用 jdtls-lsp，将使用 Maven 静态依赖分批；建议安装 jdtls 并启用 jdtls-lsp 提升跨模块理解质量"}{LANGUAGE_ID=frontend 时，CODE_INTELLIGENCE_PROVIDER=typescript-lsp 显示 "✅ typescript-lsp 可用，可用于跨目录调用链理解" / none 显示 "⚠️ 未启用 typescript-lsp，将使用 import graph + 配置 + 文本检索静态分析；建议启用 typescript-lsp 提升跨文件理解质量"}
+🧠 代码智能：{LANGUAGE_ID=java 时，CODE_INTELLIGENCE_AVAILABLE=true 显示 "✅ jdtls-lsp 可用，可用于跨目录调用链理解" / false 显示 "⚠️ 未启用 jdtls-lsp，将使用 Maven 静态依赖分批；建议安装 jdtls 并启用 jdtls-lsp 提升跨模块理解质量"}{LANGUAGE_ID=frontend 时，CODE_INTELLIGENCE_PROVIDER=typescript-lsp 显示 "✅ typescript-lsp 可用，可用于跨目录调用链理解" / none 显示 "⚠️ 未启用 typescript-lsp，将使用 import graph + 配置 + 文本检索静态分析；建议启用 typescript-lsp 提升跨文件理解质量"}{LANGUAGE_ID=python 时，CODE_INTELLIGENCE_PROVIDER=pyright|pylsp|jedi 显示 "✅ {PROVIDER} 可用，可用于跨文件调用链理解" / none 显示 "⚠️ 未启用 Python LSP，将使用配置 + 文本检索静态分析；建议安装 pyright 或 python-lsp-server 提升跨文件理解质量"}
 
 🧩 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "✅ 已启用：.cc-code-reviewer/ignore/issues.yml（已忽略 {IGNORE_RULE_COUNT} 个问题）" / false 且文件不存在时显示 "未配置" / false 且不可读时显示 "⚠️ 文件存在但不可读：{原因}"}
 ```
 
 **技术栈扫描展示规则**：
-- 数据来源：{LANGUAGE_ID=java 时为 languages/java/project-scan.sh 输出；LANGUAGE_ID=frontend 时为前端 scan-project.sh 输出}中的 `TECH_STACK:{技术栈}|dependency:{命中依赖或 file:路径}|dimensions:{建议维度}|rules:{专项规则}` 行
+- 数据来源：{LANGUAGE_ID=java 时为 languages/java/project-scan.sh 输出；LANGUAGE_ID=frontend 时为前端 scan-project.sh 输出；LANGUAGE_ID=python 时为 Python scan-project.sh 输出}中的 `TECH_STACK:{技术栈}|dependency:{命中依赖或 file:路径}|dimensions:{建议维度}|rules:{专项规则}` 行
 - 必须逐行解析所有 `TECH_STACK:` 行，`PROJECT_SCAN_RESULT` 注入子 agent 时仍保留完整原文
 - `dependency:none` 表示未识别专项技术栈，不展示表格，只展示通用审查规则提示
 - `dependency:file:` 表示通过配置文件识别，摘要中的识别证据展示为 `文件:{路径}`
@@ -260,6 +287,7 @@ BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
 - `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 的来源按语言分支：
   - `LANGUAGE_ID=java`：从 languages/java/project-scan.sh 输出中解析（`Java文件总数` 和 `代码总行数`），口径仅包含 `src/main/java` 生产源码
   - `LANGUAGE_ID=frontend`：从前端 `scan-project.sh` 输出的 PROFILE_SCHEMA 行解析（`SOURCE_FILE_COUNT` 和 `SOURCE_LINE_COUNT`），口径仅包含 `src/` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`
+  - `LANGUAGE_ID=python`：从 Python `scan-project.sh` 输出的 PROFILE_SCHEMA 行解析（`SOURCE_FILE_COUNT` 和 `SOURCE_LINE_COUNT`），口径仅包含 `src/` 或顶层包下生产 `.py`
 - `500`：每个文件的工具调用 + agent 评估开销（token）
 - `3`：每行代码平均 token 数
 - `500000`：1M 上下文中留给文件内容的固定上限，其余空间留给系统提示、工具调用、跨文件分析和报告输出
@@ -361,6 +389,15 @@ if [ "$LANGUAGE_ID" = "frontend" ]; then
   test -r "$VUE_RULES_PATH"
   test -r "$NODE_RULES_PATH"
   test -r "$SOURCE_SCOPE_PATH"
+elif [ "$LANGUAGE_ID" = "python" ]; then
+  REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/python/review-framework.md"
+  DJANGO_RULES_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/python/django-rules.md"
+  FASTAPI_RULES_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/python/fastapi-rules.md"
+  SOURCE_SCOPE_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/python/source-scope.md"
+  test -r "$REVIEW_FRAMEWORK_PATH"
+  test -r "$DJANGO_RULES_PATH"
+  test -r "$FASTAPI_RULES_PATH"
+  test -r "$SOURCE_SCOPE_PATH"
 else
   REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/java/review-framework.md"
   test -r "$REVIEW_FRAMEWORK_PATH"
@@ -381,6 +418,7 @@ test -r "$REPORT_FORMAT_PATH"
 使用 Task 工具启动子代理，子代理类型按 `LANGUAGE_ID` 选择：
 - `LANGUAGE_ID=java` → subagent_type: `"cc-code-reviewer:cc-code-reviewer"`，description: `"执行 Java 代码审查"`
 - `LANGUAGE_ID=frontend` → subagent_type: `"cc-code-reviewer:cc-code-reviewer-frontend"`，description: `"执行前端代码审查"`
+- `LANGUAGE_ID=python` → subagent_type: `“cc-code-reviewer:cc-code-reviewer-python”`，description: `“执行 Python 代码审查”`
 - prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据
 - model: {REVIEW_MODEL}
 
@@ -415,7 +453,7 @@ test -r "$REPORT_FORMAT_PATH"
 **每个 batch agent 的调用参数**：
 
 - description: "Batch {BATCH_INDEX}/{BATCH_COUNT} 代码审查"
-- subagent_type: 按 `LANGUAGE_ID` 选择（`java` → `cc-code-reviewer:cc-code-reviewer`；`frontend` → `cc-code-reviewer:cc-code-reviewer-frontend`）
+- subagent_type: 按 `LANGUAGE_ID` 选择（`java` → `cc-code-reviewer:cc-code-reviewer`；`frontend` → `cc-code-reviewer:cc-code-reviewer-frontend`；`python` → `cc-code-reviewer:cc-code-reviewer-python`）
 - model: {REVIEW_MODEL}
 - prompt: 见下方「Batch Agent Prompt 注入格式」
 
@@ -441,7 +479,9 @@ test -r "$REPORT_FORMAT_PATH"
 | React 规则路径 | {REACT_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Vue 规则路径 | {VUE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Node 规则路径 | {NODE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
-| 源码范围路径 | {SOURCE_SCOPE_PATH}（仅 LANGUAGE_ID=frontend） |
+| Django 规则路径 | {DJANGO_RULES_PATH}（仅 LANGUAGE_ID=python） |
+| FastAPI 规则路径 | {FASTAPI_RULES_PATH}（仅 LANGUAGE_ID=python） |
+| 源码范围路径 | {SOURCE_SCOPE_PATH}（仅 LANGUAGE_ID=frontend 或 python） |
 | 报告格式路径 | {REPORT_FORMAT_PATH} |
 | 项目 ignore 文件路径 | {IGNORE_RULES_PATH 或 未配置} |
 | 项目 ignore 是否启用 | {IGNORE_RULES_ENABLED} |
@@ -467,6 +507,11 @@ test -r "$REPORT_FORMAT_PATH"
 正式扫描文件必须限定为 `scan_roots` 内的 `src/` 下生产源码（`.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`）；测试文件（`*.test.*`/`*.spec.*`/`__tests__`/`e2e`/`cypress`）、产物（`dist`/`build`）、`.d.ts` 只能作为只读上下文，不计入已审查前端文件，也不得作为正式问题位置。
 `SEMANTIC_LEVEL=typescript-lsp` 时必须用 TS LSP 查询 definition/references/implementations/diagnostics 理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `scan_roots` 内的生产源码。
 `SEMANTIC_LEVEL=none` 时才允许回退 import graph + 配置 + 文本检索静态分析。
+
+**LANGUAGE_ID=python 时**：
+正式扫描文件必须限定为 `scan_roots` 内的生产源码（`src/**/*.py` 或顶层包 `*.py`）；`tests/`、`test_*.py`、`migrations/`（Django/Alembic 生成代码）、`venv/`、`__pycache__/`、`build/` 只能作为只读上下文，不计入已审查 Python 文件，也不得作为正式问题位置。
+`SEMANTIC_LEVEL=pyright`/`pylsp`/`jedi` 时必须用对应 LSP 查询 definition/references/diagnostics 理解跨文件调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `scan_roots` 内的生产源码。
+`SEMANTIC_LEVEL=none` 时才允许回退配置 + 文本检索静态分析。
 
 如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」。
 
@@ -539,6 +584,24 @@ test -r "$REPORT_FORMAT_PATH"
 10. AskUserQuestion 交互（模式/报告/入口/范围…）
 11. [分批] `core/plan-file-batches.sh` → 前端文件级分批
 12. [分批] `core/show-batch-status.sh` → 展示批次状态
+13. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
+14. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
+
+
+### Python 扫描流程
+
+1. `core/detect-project.sh` -> 识别项目路径
+2. `core/detect-branches.sh` -> 列出分支（多分支则 AskUserQuestion 选）
+3. `core/switch-branch.sh` -> 切换到选定分支（按需）
+4. `core/detect-language.sh` -> 探测语言（固定 python）
+5. `languages/python/scan-project.sh` -> Python 预扫描（PROFILE_SCHEMA）
+6. `languages/python/detect-code-intelligence.sh` -> pyright/pylsp/jedi 探测
+7. `core/detect-lark-plugin.sh` -> lark-cli 检测
+8. 设置固定 1M 上下文常量（`CONTEXT_WINDOW_TOKENS=1000000`、`CONTEXT_SCALE=5`）
+9. 读 ignore 规则 -> 输出预扫描摘要
+10. AskUserQuestion 交互（模式/报告/入口/范围…）
+11. [分批] `core/plan-file-batches.sh` -> Python 文件级分批
+12. [分批] `core/show-batch-status.sh` -> 展示批次状态
 13. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
 14. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
 
@@ -1049,6 +1112,42 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 
 `scripts/core/merge-batch-results.sh` 的覆盖率展示名根据 `plan.json.language_id` 自动切换为「前端源码文件覆盖率」。前端 batch agent 使用 `cc-code-reviewer-frontend` 子代理，注入 PROFILE 行、source manifest、`SEMANTIC_LEVEL`、批次参数（`RUN_DIR`/`BATCH_PLAN_PATH`/`BATCH_STATUS_PATH`/`BATCH_RESULT_PATH`）。
 
+### Python 分批（LANGUAGE_ID=python）
+
+Python 项目（Django/FastAPI/Flask/通用 Python）必须使用 `scripts/core/plan-file-batches.sh`（语言中立），不得使用 Java 的 `languages/java/plan-file-batches.sh` 或 `languages/java/plan-large-batches.sh`：
+
+```bash
+# 先生成不可变 source manifest（生产 .py，排除 tests/migrations/venv/__pycache__/build）
+MANIFEST="$(mktemp)"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/python/collect-source-files.sh" "$PROJECT_DIR" > "$MANIFEST"
+
+# 若用户选了「指定目录」（REVIEW_SCOPE 为 src 子目录或包目录路径列表，非"全量代码"），
+# 用 Python 专属过滤脚本收敛 manifest。
+if [ "$LANGUAGE_ID" = "python" ] && [ "$REVIEW_SCOPE" != "全量代码" ]; then
+  FILTERED="$(mktemp)"
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/python/filter-source-manifest.sh" \
+    "$PROJECT_DIR" "$MANIFEST" "$REVIEW_SCOPE" > "$FILTERED"
+  mv "$FILTERED" "$MANIFEST"
+fi
+
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
+  "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "python" "$MANIFEST"
+```
+
+**REVIEW_SCOPE 过滤后必须重算审查规模**：manifest 收敛后，`REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 必须按过滤后的 manifest 重新统计，覆盖之前按全项目算的值。`REVIEW_SCOPE=全量代码` 时跳过过滤和重算。
+
+合并：
+```bash
+RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-batch-results.sh" "$RUN_DIR"
+```
+
+Python 批次状态展示：在 Python 分批规划完成后、启动 agent 前，调用批次状态展示脚本。此脚本按 Python plan.json 的 `language_id=python` 读取 `total_source_loc`/`planned_source_loc`，展示「Python 行数」「Python 行覆盖」：
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
+```
+
+`scripts/core/merge-batch-results.sh` 的覆盖率展示名根据 `plan.json.language_id` 自动切换为「Python 文件覆盖率」。Python batch agent 使用 `cc-code-reviewer-python` 子代理，注入 PROFILE 行、source manifest、`SEMANTIC_LEVEL`、批次参数。
+
 ---
 
 ## 子 agent 调用规范
@@ -1058,6 +1157,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 使用 Task 工具启动子代理，子代理类型按 `LANGUAGE_ID` 选择：
 - `LANGUAGE_ID=java` → description: `"执行 Java 代码审查"`，subagent_type: `"cc-code-reviewer:cc-code-reviewer"`
 - `LANGUAGE_ID=frontend` → description: `"执行前端代码审查"`，subagent_type: `"cc-code-reviewer:cc-code-reviewer-frontend"`
+- `LANGUAGE_ID=python` → description: `“执行 Python 代码审查”`，subagent_type: `“cc-code-reviewer:cc-code-reviewer-python”`
 - model: {REVIEW_MODEL}
 - prompt: 下方参数注入格式
 
@@ -1083,7 +1183,9 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | React 规则路径 | {REACT_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Vue 规则路径 | {VUE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Node 规则路径 | {NODE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
-| 源码范围路径 | {SOURCE_SCOPE_PATH}（仅 LANGUAGE_ID=frontend） |
+| Django 规则路径 | {DJANGO_RULES_PATH}（仅 LANGUAGE_ID=python） |
+| FastAPI 规则路径 | {FASTAPI_RULES_PATH}（仅 LANGUAGE_ID=python） |
+| 源码范围路径 | {SOURCE_SCOPE_PATH}（仅 LANGUAGE_ID=frontend 或 python） |
 | 报告格式路径 | {REPORT_FORMAT_PATH} |
 | 项目 ignore 文件路径 | {IGNORE_RULES_PATH 或 未配置} |
 | 项目 ignore 是否启用 | {IGNORE_RULES_ENABLED} |
@@ -1126,15 +1228,17 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `REVIEW_SCOPE` | 交互步骤4 | `最近5次提交` / `全量代码` / `yudao-module-mes,yudao-framework` |
 | `STOCK_REVIEW_STRATEGY` | 交互步骤4B（仅 Maven 多模块存量） | `module-sequential` / `ai-planned` |
 | `PROJECT_SCAN_RESULT` | languages/java/project-scan.sh 完整输出 | 项目概况、模块结构 |
-| `SEMANTIC_LEVEL` | Java：languages/java/detect-code-intelligence.sh 输出转换（`CODE_INTELLIGENCE_AVAILABLE=true` → `jdtls-lsp`，否则 `maven-static`）；前端：`detect-code-intelligence.sh` 输出转换（`CODE_INTELLIGENCE_PROVIDER=typescript-lsp` → `typescript-lsp`，否则 `none`） | `jdtls-lsp` / `typescript-lsp` |
-| `DETECTED_TECH_STACK` | 从 `PROJECT_SCAN_RESULT` 的 `TECH_STACK:` 行解析，来源为 Maven/Gradle 依赖指纹 | `Spring Boot, MyBatis, Redis/Cache` |
+| `SEMANTIC_LEVEL` | Java：`detect-code-intelligence.sh` 输出转换（`CODE_INTELLIGENCE_AVAILABLE=true` → `jdtls-lsp`，否则 `maven-static`）；前端：`CODE_INTELLIGENCE_PROVIDER=typescript-lsp` → `typescript-lsp`，否则 `none`；Python：`CODE_INTELLIGENCE_PROVIDER=pyright|pylsp|jedi` → 同名，否则 `none` | `jdtls-lsp` / `typescript-lsp` / `pyright` |
+| `DETECTED_TECH_STACK` | 从 `PROJECT_SCAN_RESULT` 的 `TECH_STACK:` 行解析，来源为各语言依赖指纹 | `Spring Boot, MyBatis, Redis/Cache` |
 | `REVIEW_FILE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `76` |
 | `REVIEW_LINE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `16637` |
-| `REVIEW_FRAMEWORK_PATH` | 按 `LANGUAGE_ID` 分支：`java` → `references/languages/java/review-framework.md`；`frontend` → `references/languages/frontend/review-framework.md`。启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/java/review-framework.md` |
+| `REVIEW_FRAMEWORK_PATH` | 按 `LANGUAGE_ID` 分支：`java` → `references/languages/java/review-framework.md`；`frontend` → `references/languages/frontend/review-framework.md`；`python` → `references/languages/python/review-framework.md`。启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/java/review-framework.md` |
 | `REACT_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/react-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/react-rules.md` |
 | `VUE_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/vue-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/vue-rules.md` |
 | `NODE_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/node-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/node-rules.md` |
-| `SOURCE_SCOPE_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/source-scope.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/source-scope.md` |
+| `DJANGO_RULES_PATH` | 仅 `LANGUAGE_ID=python`：`references/languages/python/django-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/python/django-rules.md` |
+| `FASTAPI_RULES_PATH` | 仅 `LANGUAGE_ID=python`：`references/languages/python/fastapi-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/python/fastapi-rules.md` |
+| `SOURCE_SCOPE_PATH` | 仅 `LANGUAGE_ID=frontend` 或 `python`：对应 `references/languages/{lang}/source-scope.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/source-scope.md` |
 | `REPORT_FORMAT_PATH` | `${CLAUDE_PLUGIN_ROOT}/references/report-format.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/report-format.md` |
 | `GIT_LOG_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git log --oneline -N` |
 | `CHANGED_FILES_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git diff --name-only` |

@@ -1,14 +1,14 @@
 # cc-code-reviewer
 
-> Claude Code plugin · Java 与 React/Vue/Node/TypeScript/JavaScript 代码审查 + 报告驱动修复
+> Claude Code plugin · Java、React/Vue/Node/TypeScript/JavaScript 与 Python（Django/FastAPI/Flask）代码审查 + 报告驱动修复
 
-`cc-code-reviewer` 是一个面向工程团队的代码审查插件。统一入口同时支持 **Java** 和 **React/Vue2/Vue3/Node/TS/JS 前端族群**审查：先预扫描项目与语言，再通过结构化交互确认范围，最后生成可追踪的审查报告。Fix 阶段只消费人工确认后的问题清单，避免扫描和修复混在一起。
+`cc-code-reviewer` 是一个面向工程团队的代码审查插件。统一入口同时支持 **Java**、**React/Vue2/Vue3/Node/TS/JS 前端族群**与 **Python（Django/FastAPI/Flask）**审查：先预扫描项目与语言，再通过结构化交互确认范围，最后生成可追踪的审查报告。Fix 阶段只消费人工确认后的问题清单，避免扫描和修复混在一起。
 
 ```mermaid
 flowchart LR
     Input["项目路径 / Git 仓库"] --> Prescan["预扫描<br/>语言 / 分支 / 技术栈"]
     Prescan --> Gate["人工确认<br/>模式 / 范围 / 输出"]
-    Gate --> Scan["Scan Agent<br/>Java 或 Frontend"]
+    Gate --> Scan["Scan Agent<br/>Java / Frontend / Python"]
     Scan --> Report["审查报告"]
     Report --> Confirm["人工确认问题"]
     Confirm --> Fix["Fix<br/>修复 / 验证 / 写回"]
@@ -20,7 +20,8 @@ flowchart LR
 |------|----------|------|
 | Java | Maven / Gradle / 常见企业 Java 项目 | 支持增量、全量、指定 Maven 模块、大仓库分批 |
 | Frontend family | React、Vue 2.x、Vue 3.x、Node.js + TypeScript / JavaScript | 支持 Vite / Webpack / workspace/monorepo 的 package-local `src`；Vue2/Vue3 与 React 信号共存时按 Vue 优先仲裁，Vue2 legacy 按专项规则加强审查 |
-| Mixed repo | Java + React/Vue/Node 同仓 | 运行时选择一种语言；另一语言只作为背景，不产出正式问题 |
+| Python | Django / FastAPI / Flask / 通用 Python | 支持 src layout 与 flat layout；Django/FastAPI 专项规则；ORM N+1、反序列化 RCE、async 阻塞等 Python 高频事故点 |
+| Mixed repo | Java + 前端 + Python 同仓 | 运行时选择一种语言；其他语言只作为背景，不产出正式问题 |
 
 Next.js、Nuxt 和无 React/Vue/Node 信号的通用 TS/JS 仍会标记为不支持并停止，不会误套专项规则。
 
@@ -143,10 +144,11 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 - `skills/cc-code-reviewer`：Scan 编排、预扫描、交互确认、批次调度、飞书输出
 - `agents/cc-code-reviewer`：Java 审查执行，只保存本地报告，不上传飞书
 - `agents/cc-code-reviewer-frontend`：React/Vue2/Vue3/Node/TS/JS 前端族群审查执行
+- `agents/cc-code-reviewer-python`：Django/FastAPI/Flask/通用 Python 审查执行
 - `skills/cc-code-fixer`：读取确认后的问题清单，执行修复、验证、报告和写回
 - `skills/cc-code-ignore`：维护项目级 ignore 规则
 - `scripts/core`：语言无关内核，负责项目获取、Git、固定 1M 分批、合并和状态展示
-- `scripts/languages/java` / `scripts/languages/frontend`：语言适配器，负责预扫描、源码边界和语言专属能力探测
+- `scripts/languages/java` / `scripts/languages/frontend` / `scripts/languages/python`：语言适配器，负责预扫描、源码边界和语言专属能力探测
 
 ## 详细文档
 
@@ -154,11 +156,15 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 |------|------|
 | [Java 审查框架](references/languages/java/review-framework.md) | Java 15 维度、技术栈规则、模式矩阵 |
 | [Frontend 审查框架](references/languages/frontend/review-framework.md) | 前端 12 维度（维度 12 设计系统一致性仅 deep）、模式矩阵、P0 门槛 |
+| [Python 审查框架](references/languages/python/review-framework.md) | Python 12 维度、技术栈规则（Django/FastAPI/SQLAlchemy/Celery）、模式矩阵、P0 门槛 |
 | [React 专项规则](references/languages/frontend/react-rules.md) | React / Router / 构建配置专项审查规则 |
 | [Vue 专项规则](references/languages/frontend/vue-rules.md) | Vue2 legacy / Vue3 / Router / Vuex / Pinia 专项审查规则 |
 | [Node 专项规则](references/languages/frontend/node-rules.md) | Node runtime / HTTP API / BFF / 模块系统专项审查规则 |
+| [Django 专项规则](references/languages/python/django-rules.md) | Django ORM / middleware / signals / admin / CSRF / migration 专项审查规则 |
+| [FastAPI 专项规则](references/languages/python/fastapi-rules.md) | FastAPI DI / Pydantic / async / OpenAPI 专项审查规则 |
 | [源码范围契约](references/languages/frontend/source-scope.md) | 前端正式源码、上下文和排除项 |
-| [语言适配器契约](references/language-adapter-contract.md) | Java / Frontend 与共享内核之间的 PROFILE_SCHEMA |
+| [Python 源码范围契约](references/languages/python/source-scope.md) | Python 正式源码、上下文和排除项 |
+| [语言适配器契约](references/language-adapter-contract.md) | Java / Frontend / Python 与共享内核之间的 PROFILE_SCHEMA |
 | [报告格式](references/report-format.md) | Scan 报告结构化输出规范 |
 | [飞书集成](references/feishu-integration.md) | Scan 阶段云文档和多维表格输出 |
 | [Fix 工作流](references/fix-workflow.md) | 修复阶段输入、范围确认、执行路线和写回规则 |

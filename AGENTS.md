@@ -8,7 +8,7 @@ This is a **claudecode plugin skill** for enterprise-grade Java code review and 
 
 **Important**: This repository intentionally uses **skill-only entry points** plus dedicated sub-agents. Claude Code can invoke the skills explicitly via `/cc-code-reviewer:cc-code-reviewer` for scan, `/cc-code-reviewer:cc-code-ignore` for scan ignore-rule maintenance, and `/cc-code-reviewer:cc-code-fixer` for fix.
 
-- **Multi-language support**: supports Java plus the frontend family: React, Vue 2.x, Vue 3.x, Node.js, TypeScript, and JavaScript. The unified entry `/cc-code-reviewer:cc-code-reviewer` auto-routes by language detection; mixed repos require the user to pick one language. The frontend path is built on a language-neutral shared kernel (`scripts/core/`) plus a frontend adapter (`scripts/languages/frontend/`) and a dedicated sub-agent (`agents/cc-code-reviewer-frontend.md`). Vue 2/3 and React signals coexist (common in monorepos) Vue wins arbitration; Vue2 legacy projects receive stronger Vue2-specific review rules. See `docs/superpowers/specs/2026-06-23-multi-language-reviewer-design.md`.
+- **Multi-language support**: supports Java, the frontend family (React, Vue 2.x, Vue 3.x, Node.js, TypeScript, JavaScript), and Python (Django, FastAPI, Flask). The unified entry `/cc-code-reviewer:cc-code-reviewer` auto-routes by language detection; mixed repos require the user to pick one language. The frontend path uses a language-neutral shared kernel (`scripts/core/`) plus a frontend adapter (`scripts/languages/frontend/`) and sub-agent (`agents/cc-code-reviewer-frontend.md`); the Python path uses the same kernel plus a Python adapter (`scripts/languages/python/`) and sub-agent (`agents/cc-code-reviewer-python.md`). Vue 2/3 and React signals coexist (common in monorepos) Vue wins arbitration; Vue2 legacy projects receive stronger Vue2-specific review rules. See `docs/superpowers/specs/2026-06-23-multi-language-reviewer-design.md`.
 
 ## Architecture
 
@@ -118,8 +118,10 @@ references/
   ├── languages/
   │   ├── java/
   │   │   └── review-framework.md     # Java 15 dimensions definition + mode matrix
-  │   └── frontend/
-  │       └── review-framework.md     # Frontend 12 dimensions (independent set; dim 12 design-system deep-only)
+  │   ├── frontend/
+  │   │   └── review-framework.md     # Frontend 12 dimensions (independent set; dim 12 design-system deep-only)
+  │   └── python/
+  │       └── review-framework.md     # Python 12 dimensions (Django + FastAPI + generic; independent set)
   ├── report-format.md                # Report output format specification
   ├── feishu-integration.md           # Feishu upload operation reference
   ├── ignore-workflow.md              # Project-level ignore rule format and workflow
@@ -157,6 +159,12 @@ scripts/
   │       ├── collect-source-files.sh    # Production source file manifest
   │       ├── filter-source-manifest.sh  # Selected src-directory manifest filter
   │       └── detect-project.sh          # Frontend project type detection
+  │   └── python/                        # Python-specific scripts
+  │       ├── scan-project.sh            # Python PROFILE_SCHEMA scan
+  │       ├── detect-code-intelligence.sh # pyright/pylsp/jedi detection
+  │       ├── collect-source-files.sh    # Production source file manifest
+  │       ├── filter-source-manifest.sh  # Selected directory manifest filter
+  │       └── detect-project.sh          # Python project type detection
 ```
 
 ## Common Development Tasks

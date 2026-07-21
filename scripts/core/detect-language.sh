@@ -13,7 +13,11 @@ PRUNE_PATHS=(
   -path '*/target/*' -o
   -path '*/build/*' -o
   -path '*/dist/*' -o
-  -path '*/.git/*'
+  -path '*/.git/*' -o
+  -path '*/venv/*' -o
+  -path '*/.venv/*' -o
+  -path '*/__pycache__/*' -o
+  -path '*/site-packages/*'
 )
 
 has_java() {
@@ -33,10 +37,22 @@ has_frontend() {
   return 1
 }
 
+# 复用 python adapter 的项目类型识别，避免 Django/FastAPI/Flask 支持边界在两处漂移。
+has_python() {
+  local out ptype
+  out="$(bash "$ROOT_DIR/scripts/languages/python/detect-project.sh" "$PROJECT_DIR" 2>/dev/null || true)"
+  ptype="$(printf '%s\n' "$out" | sed -n 's/^PROJECT_TYPE=//p' | cut -d'|' -f1 | head -1)"
+  case "$ptype" in
+    python-django|python-fastapi|python-flask|python-generic) return 0 ;;
+  esac
+  return 1
+}
+
 emit() { printf 'CANDIDATE_LANGUAGE:%s|evidence=%s\n' "$1" "$2"; }
 
 found=0
 if has_java; then emit java "maven/gradle-or-java-source"; found=1; fi
 if has_frontend; then emit frontend "react-vue-node-supported-project"; found=1; fi
+if has_python; then emit python "django-fastapi-flask-or-python-source"; found=1; fi
 if [ "$found" -eq 0 ]; then echo "CANDIDATE_LANGUAGE:none"; fi
 exit 0

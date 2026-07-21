@@ -314,6 +314,7 @@ LANGUAGE_ID="$(json_get "$PLAN_PATH" language_id)"
 [ -n "$LANGUAGE_ID" ] || LANGUAGE_ID="java"
 case "$LANGUAGE_ID" in
   frontend) LOC_LABEL="前端源码行数"; FILE_LABEL="前端源码文件"; COVERAGE_LABEL="前端源码行覆盖" ;;
+  python)   LOC_LABEL="Python 行数";   FILE_LABEL="Python 文件";   COVERAGE_LABEL="Python 行覆盖" ;;
   *)        LOC_LABEL="Java 行数";    FILE_LABEL="Java 文件";    COVERAGE_LABEL="Java 行覆盖" ;;
 esac
 # 读时 fallback：先 source_*（前端），空则 java_*（Java）

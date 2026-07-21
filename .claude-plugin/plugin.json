@@ -1,11 +1,11 @@
 {
   "name": "cc-code-reviewer",
-  "description": "Java 与前端族群（React/Vue2/Vue3/Node/TS/JS）代码审查与修复插件 - 15维度智能审查，多语言统一入口，支持基于报告的 TDD code-fixer 修复流程",
+  "description": "Java、前端族群（React/Vue2/Vue3/Node/TS/JS）与 Python（Django/FastAPI/Flask）代码审查与修复插件 - 多维度智能审查，多语言统一入口，支持基于报告的 TDD code-fixer 修复流程",
   "version": "1.4.3",
   "author": {
     "name": "ataskite"
   },
   "repository": "https://github.com/ataskite/cc-code-reviewer",
   "license": "MIT",
-  "keywords": ["java", "react", "typescript", "code-review", "code-fix", "security", "frontend"]
+  "keywords": ["java", "react", "typescript", "python", "django", "fastapi", "code-review", "code-fix", "security", "frontend"]
 }

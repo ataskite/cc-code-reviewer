@@ -126,7 +126,8 @@ BATCH_COUNT="$(json_get "$PLAN_PATH" batch_count)"
 
 case "$LANGUAGE_ID" in
   frontend) COVERAGE_LABEL="前端源码文件覆盖率" ;;
-  *) COVERAGE_LABEL="Java 文件覆盖率" ;;
+  python)   COVERAGE_LABEL="Python 文件覆盖率" ;;
+  *)        COVERAGE_LABEL="Java 文件覆盖率" ;;
 esac
 
 ALL_BATCH_IDS=()
@@ -303,9 +304,9 @@ JSON
 mv "$RUN_DIR/summary.json.tmp" "$RUN_DIR/summary.json"
 
 # Java 兼容：补写 java_* 别名字段，保持调用方契约（java_loc_coverage_percent 等）。
-# source_* 字段保留不动（前端契约 + merge 内部用）。
+# source_* 字段保留不动（前端/Python 契约 + merge 内部用）。
 # 用正则就近插入，保持原 heredoc 的多行缩进格式（不重排字段、不改空格），避免破坏现有 grep 断言。
-if [ "$LANGUAGE_ID" != "frontend" ]; then
+if [ "$LANGUAGE_ID" = "java" ]; then
   perl -i -pe '
     if (/"covered_source_loc":\s*(\d+)/) {
       my $v = $1;
@@ -347,8 +348,8 @@ cat > "$FINAL_REPORT.tmp" <<MD
 - ${COVERAGE_LABEL}：${COVERED_FILES} / ${TOTAL_FILE_COUNT}（${FILE_COVERAGE}%）
 MD
 
-# Java 兼容：补发「审查范围说明」+「大仓库审查执行摘要」两个 Java 习惯的摘要段（前端报告保持精简）。
-if [ "$LANGUAGE_ID" != "frontend" ]; then
+# Java 兼容：补发「审查范围说明」+「大仓库审查执行摘要」两个 Java 习惯的摘要段（前端/Python 报告保持精简）。
+if [ "$LANGUAGE_ID" = "java" ]; then
   SEMANTIC_LEVEL="$(json_get "$PLAN_PATH" semantic_level)"
   cat >> "$FINAL_REPORT.tmp" <<MD
 
@@ -399,8 +400,8 @@ cat >> "$FINAL_REPORT.tmp" <<'MD'
 MD
 if [ -s "$CROSS_BATCH_LEADS" ]; then sort -u "$CROSS_BATCH_LEADS" >> "$FINAL_REPORT.tmp"; else echo "暂无跨批依赖线索。" >> "$FINAL_REPORT.tmp"; fi
 
-# Java 兼容：补发「覆盖限制与未审查范围」段（前端报告保持精简）
-if [ "$LANGUAGE_ID" != "frontend" ]; then
+# Java 兼容：补发「覆盖限制与未审查范围」段（前端/Python 报告保持精简）
+if [ "$LANGUAGE_ID" = "java" ]; then
   cat >> "$FINAL_REPORT.tmp" <<'MD'
 
 ## 覆盖限制与未审查范围
