@@ -1,14 +1,41 @@
 ---
-description: Java 代码审查 — 支持增量/存量审查、15维度评估、飞书报告上传
+name: cc-code-reviewer
+description: Java、前端与 Python 代码审查 — 支持增量/存量审查、按语言矩阵评估、飞书报告上传
 ---
 
 ## 执行算法（最高优先级，必须严格按此顺序执行）
 
 以下是你必须遵循的执行顺序。不允许跳过、合并、重新排序或即兴发挥。
 
+### 第零步：解析插件根目录 PLUGIN_ROOT（最先执行）
+
+本文件是 Claude Code / Codex / ZCode 三端共同发现的唯一权威审查流程。开始前必须根据当前宿主身份固定 `RUNTIME_ID=claude-code|codex|zcode`，完整读取 `runtime/contract.md` 和对应 adapter；若当前宿主身份不明确，必须在预扫描前失败，不得通过已安装目录、工具名称或当前工作目录猜测。所有脚本和参考文件路径只使用平台无关的 `${PLUGIN_ROOT}`。
+
+- **三端统一**：本 Skill 位于 `${PLUGIN_ROOT}/skills/cc-code-reviewer/SKILL.md`。以 Skill 资源目录为基准向上两级解析绝对路径，不把文档示例当作 shell 脚本执行，也不使用 shell 入口参数。
+
+解析后必须同时校验版本文件、核心脚本与当前共享 Skill。未解析出可读插件根目录时必须立即失败，不得进入预扫描，不得部分执行：
+
+```bash
+[ -f "${PLUGIN_ROOT}/VERSION" ] && \
+[ -f "${PLUGIN_ROOT}/scripts/core/detect-project.sh" ] && \
+[ -f "${PLUGIN_ROOT}/skills/cc-code-reviewer/SKILL.md" ] || \
+  { echo "❌ PLUGIN_ROOT 不可读或不是 cc-code-reviewer 插件根: ${PLUGIN_ROOT}"; exit 1; }
+```
+
+### 跨平台人工确认契约（三端等价）
+
+本 Skill 的人工确认状态机在三端语义等价，差异只存在于交互呈现（见 `runtime/contract.md`「人工确认状态机」与各平台适配器）。本文中的 `INTERACT` 是逻辑动作，不是具体工具名：
+
+- **单选确认**：Claude Code adapter 映射为 `AskUserQuestion`（`multiSelect: false`）；Codex / ZCode 用平台结构化输入，不可用时逐轮单问。
+- **多选报告目标**：Claude Code 用 `multiSelect: true`；Codex 拆成组合选项或连续单选；ZCode 用原生多选，不可用时连续单选。
+- **4 个以上选项**：Claude Code 原样展示；Codex 分级菜单满足 2–3 选项上限；ZCode 原样或分级菜单。
+- **最终执行确认**：三端都必须单独一步，不得跳过。
+
+不变量（三端都必须保持）：预扫描先于交互、摘要先于问题、每步等待用户响应、禁止合并步骤、禁止命令行参数绕过确认。适配器可以改变交互呈现，但不得改变已确认范围、默认值或跳过最终确认。无结构化输入能力时，一次只问一个问题，必须等待响应，不得把多个步骤合并成一段文本。
+
 ### 第一步：提取项目路径（最先执行）
 
-必须先从用户输入中提取 `PROJECT_INPUT`，再进入预扫描。此步骤只是解析输入，不得调用 AskUserQuestion。
+必须先从用户输入中提取 `PROJECT_INPUT`，再进入预扫描。此步骤只是解析输入，不得调用 INTERACT。
 
 #### 项目路径提取规则
 
@@ -36,16 +63,16 @@ description: Java 代码审查 — 支持增量/存量审查、15维度评估、
 
 仅支持 macOS / Linux（Bash）：
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-project.sh" "<用户输入的路径>"
+bash "${PLUGIN_ROOT}/scripts/core/detect-project.sh" "<用户输入的路径>"
 # 输出：PROJECT_DIR=<路径> PROJECT_SOURCE=local|git-cache
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-branches.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/core/detect-branches.sh" "$PROJECT_DIR"
 # 输出：IS_GIT_REPO=true/false CURRENT_BRANCH=<分支> BRANCH: ...（最多5个本地分支）
 ```
 
 **Git 项目分支选择**（在此阶段立即执行）：
 
-当 `IS_GIT_REPO=true` 且本地分支数 > 1 时，**必须**立即调用 AskUserQuestion 让用户选择分支。
+当 `IS_GIT_REPO=true` 且本地分支数 > 1 时，**必须**立即调用 INTERACT 让用户选择分支。
 
 **分支选择交互**：
 - question: "检测到 Git 仓库（当前分支：{CURRENT_BRANCH}），请选择要审查的分支"
@@ -55,7 +82,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-branches.sh" "$PROJECT_DIR"
 
 **用户响应后**：
 - 设置 TARGET_BRANCH
-- 如不是当前分支，执行 `bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/switch-branch.sh" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
+- 如不是当前分支，执行 `bash "${PLUGIN_ROOT}/scripts/core/switch-branch.sh" "$PROJECT_DIR" "{TARGET_BRANCH}" "$CURRENT_BRANCH" "$PROJECT_SOURCE"`
 - 切换失败时继续使用当前分支
 
 **单分支或非 Git 项目**：跳过交互，自动使用 CURRENT_BRANCH。
@@ -65,7 +92,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-branches.sh" "$PROJECT_DIR"
 分支选择完成后，必须先识别候选语言，再执行任何语言专属预扫描脚本：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-language.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/core/detect-language.sh" "$PROJECT_DIR"
 # 输出：CANDIDATE_LANGUAGE:java|evidence=... 和/或 CANDIDATE_LANGUAGE:frontend|evidence=... 和/或 CANDIDATE_LANGUAGE:python|evidence=... 或 CANDIDATE_LANGUAGE:none
 ```
 
@@ -73,7 +100,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-language.sh" "$PROJECT_DIR"
 - **纯 Java**（仅 `CANDIDATE_LANGUAGE:java`）：走现有 Java 预扫描（detect-project -> detect-branches -> project-scan -> detect-code-intelligence -> detect-lark-plugin），流程不变。
 - **纯前端**（仅 `CANDIDATE_LANGUAGE:frontend`）：走「前端预扫描」分支。
 - **纯 Python**（仅 `CANDIDATE_LANGUAGE:python`）：走「Python 预扫描」分支。
-- **混合仓库**（两者或以上皆有）：**必须调用 AskUserQuestion** 让用户选择一种语言：
+- **混合仓库**（两者或以上皆有）：**必须调用 INTERACT** 让用户选择一种语言：
   - question: "检测到多语言仓库（{命中的语言列表}），本次审查目标语言？"
   - header: "审查语言"
   - options（按命中顺序，仅命中的语言出现在选项中）:
@@ -81,7 +108,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-language.sh" "$PROJECT_DIR"
       description: "审查 Java 生产源码（src/main/java），使用 Java 审查矩阵"
     - label: "前端族群（React/Vue/Node）"
       description: "审查 React、Vue2/Vue3 或 Node 的生产源码（src 下 .ts/.tsx/.js/.jsx/.vue/.mjs/.cjs），使用前端审查矩阵"
-    - label: "Python（Django/FastAPI/Flask）"
+    - label: "Python（Django/FastAPI/通用 Python）"
       description: "审查 Python 生产源码（src 或顶层包下 .py），使用 Python 审查矩阵"
   - multiSelect: false
   - 用户选择后设 `LANGUAGE_ID`，其他语言仅作仓库背景，不得产出正式问题。
@@ -89,35 +116,35 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-language.sh" "$PROJECT_DIR"
 
 ### 第四步：按语言执行项目预扫描
 
-语言已确定后，按 `LANGUAGE_ID` 执行且只执行对应语言的预扫描脚本。此阶段必须全部脚本执行完成后才能继续；禁止调用 AskUserQuestion，禁止输出任何交互式提问。
+语言已确定后，按 `LANGUAGE_ID` 执行且只执行对应语言的预扫描脚本。此阶段必须全部脚本执行完成后才能继续；禁止调用 INTERACT，禁止输出任何交互式提问。
 
 **Java 预扫描分支**（`LANGUAGE_ID=java` 时执行）：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/project-scan.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/languages/java/project-scan.sh" "$PROJECT_DIR"
 # 输出：PROJECT_TYPE=maven-single|maven-multi|... MODULE:模块名|相对路径|Java文件数|代码行数 TECH_STACK:技术栈|dependency:命中依赖|dimensions:建议维度|rules:专项规则
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/detect-code-intelligence.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/languages/java/detect-code-intelligence.sh" "$PROJECT_DIR"
 # 输出：CODE_INTELLIGENCE_AVAILABLE=true|false CODE_INTELLIGENCE_PROVIDER=jdtls-lsp|none CODE_INTELLIGENCE_REASON=...
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
+bash "${PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
 # 输出：LARK_PLUGIN_INSTALLED=true|false，失败时附带 LARK_PLUGIN_REASON
 ```
 
 **前端预扫描分支**（`LANGUAGE_ID=frontend` 时执行）：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/detect-project.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/languages/frontend/detect-project.sh" "$PROJECT_DIR"
 # 输出 PROJECT_TYPE=frontend-react|frontend-vue2|frontend-vue3|node；不支持（nextjs/nuxt/generic-tsjs）时停止，不套用专项规则
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/scan-project.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/languages/frontend/scan-project.sh" "$PROJECT_DIR"
 # 输出 PROFILE_SCHEMA v1：SOURCE_FILE_COUNT/SOURCE_LINE_COUNT/FORMAL_CONFIG_FILE_COUNT/COMPONENT/TECH_STACK/SOURCE_SCOPE
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/detect-code-intelligence.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/languages/frontend/detect-code-intelligence.sh" "$PROJECT_DIR"
 # 输出 CODE_INTELLIGENCE_PROVIDER=typescript-lsp|none（覆盖 scan-project 的占位）
 # 主 skill 据此派生 SEMANTIC_LEVEL：CODE_INTELLIGENCE_PROVIDER=typescript-lsp → SEMANTIC_LEVEL=typescript-lsp；否则 SEMANTIC_LEVEL=none
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
+bash "${PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
 # 复用 lark-cli 检测
 ```
 
@@ -126,21 +153,21 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
 **Python 预扫描分支**（`LANGUAGE_ID=python` 时执行）：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/python/detect-project.sh" "$PROJECT_DIR"
-# 输出 PROJECT_TYPE=python-django|python-fastapi|python-flask|python-generic|python-unsupported
+bash "${PLUGIN_ROOT}/scripts/languages/python/detect-project.sh" "$PROJECT_DIR"
+# 输出 PROJECT_TYPE=python-django|python-fastapi|python-generic|python-unsupported
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/python/scan-project.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/languages/python/scan-project.sh" "$PROJECT_DIR"
 # 输出 PROFILE_SCHEMA v1：SOURCE_FILE_COUNT/SOURCE_LINE_COUNT/FORMAL_CONFIG_FILE_COUNT/COMPONENT/TECH_STACK/SOURCE_SCOPE
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/python/detect-code-intelligence.sh" "$PROJECT_DIR"
-# 输出 CODE_INTELLIGENCE_PROVIDER=pyright|pylsp|jedi|none（覆盖 scan-project 的占位）
-# 主 skill 据此派生 SEMANTIC_LEVEL：pyright/pylsp/jedi -> 同名；none -> SEMANTIC_LEVEL=none
+bash "${PLUGIN_ROOT}/scripts/languages/python/detect-code-intelligence.sh" "$PROJECT_DIR"
+# 输出 CODE_INTELLIGENCE_PROVIDER=pyright|pyright-cli|pylsp|jedi|none（覆盖 scan-project 的占位）
+# 主 skill 据此派生 SEMANTIC_LEVEL：pyright/pylsp/jedi -> 同名 LSP；pyright-cli -> pyright-cli（仅 diagnostics）；none -> none
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
+bash "${PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
 # 复用 lark-cli 检测
 ```
 
-> Python 分支下，后续交互步骤（模式/报告/入口/范围/确认）、增量预处理、固定 1M 分批、合并、报告保存、飞书输出**全部复用现有流程**；差异仅在：预扫描数据来自 Python PROFILE_SCHEMA，`SEMANTIC_LEVEL` 从 `CODE_INTELLIGENCE_PROVIDER` 派生（`pyright`/`pylsp`/`jedi`/`none`），分批用 `scripts/core/plan-file-batches.sh` + source manifest，合并用 `scripts/core/merge-batch-results.sh`，子 agent 用 `cc-code-reviewer-python`。
+> Python 分支下，后续交互步骤（模式/报告/入口/范围/确认）、增量预处理、固定 1M 分批、合并、报告保存、飞书输出**全部复用现有流程**；差异仅在：预扫描数据来自 Python PROFILE_SCHEMA，`SEMANTIC_LEVEL` 从 `CODE_INTELLIGENCE_PROVIDER` 派生（`pyright`/`pylsp`/`jedi` 为 LSP，`pyright-cli` 仅提供 diagnostics，`none` 静态降级），分批用 `scripts/core/plan-file-batches.sh` + source manifest，合并用 `scripts/core/merge-batch-results.sh`，子 agent 用 `cc-code-reviewer-python`。
 
 ### 第三步之后：读取项目级 ignore 规则
 
@@ -223,7 +250,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 
 🔌 lark-cli：{LARK_PLUGIN_INSTALLED=true 时显示 "✅ lark-cli 与 lark-doc/lark-base 技能可用，支持飞书保存" / false 时显示 "⚠️ 飞书保存不可用：{LARK_PLUGIN_REASON}，报告将仅保存到本地文件"}
 
-🧠 代码智能：{LANGUAGE_ID=java 时，CODE_INTELLIGENCE_AVAILABLE=true 显示 "✅ jdtls-lsp 可用，可用于跨目录调用链理解" / false 显示 "⚠️ 未启用 jdtls-lsp，将使用 Maven 静态依赖分批；建议安装 jdtls 并启用 jdtls-lsp 提升跨模块理解质量"}{LANGUAGE_ID=frontend 时，CODE_INTELLIGENCE_PROVIDER=typescript-lsp 显示 "✅ typescript-lsp 可用，可用于跨目录调用链理解" / none 显示 "⚠️ 未启用 typescript-lsp，将使用 import graph + 配置 + 文本检索静态分析；建议启用 typescript-lsp 提升跨文件理解质量"}{LANGUAGE_ID=python 时，CODE_INTELLIGENCE_PROVIDER=pyright|pylsp|jedi 显示 "✅ {PROVIDER} 可用，可用于跨文件调用链理解" / none 显示 "⚠️ 未启用 Python LSP，将使用配置 + 文本检索静态分析；建议安装 pyright 或 python-lsp-server 提升跨文件理解质量"}
+🧠 代码智能：{LANGUAGE_ID=java 时，CODE_INTELLIGENCE_AVAILABLE=true 显示 "✅ jdtls-lsp 可用，可用于跨目录调用链理解" / false 显示 "⚠️ 未启用 jdtls-lsp，将使用 Maven 静态依赖分批；建议安装 jdtls 并启用 jdtls-lsp 提升跨模块理解质量"}{LANGUAGE_ID=frontend 时，CODE_INTELLIGENCE_PROVIDER=typescript-lsp 显示 "✅ typescript-lsp 可用，可用于跨目录调用链理解" / none 显示 "⚠️ 未启用 typescript-lsp，将使用 import graph + 配置 + 文本检索静态分析；建议启用 typescript-lsp 提升跨文件理解质量"}{LANGUAGE_ID=python 时，CODE_INTELLIGENCE_PROVIDER=pyright|pylsp|jedi 显示 "✅ {PROVIDER} LSP 可用，可用于跨文件调用链理解" / pyright-cli 显示 "ℹ️ pyright CLI 可用，仅提供类型诊断；定义/引用查询使用静态检索" / none 显示 "⚠️ 未启用 Python LSP，将使用配置 + 文本检索静态分析；建议安装 pyright language server 或 python-lsp-server 提升跨文件理解质量"}
 
 🧩 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "✅ 已启用：.cc-code-reviewer/ignore/issues.yml（已忽略 {IGNORE_RULE_COUNT} 个问题）" / false 且文件不存在时显示 "未配置" / false 且不可读时显示 "⚠️ 文件存在但不可读：{原因}"}
 ```
@@ -248,24 +275,31 @@ CONTEXT_SCALE=5
 CONTEXT_TIER=large
 ```
 
-所有受支持模型都按 1M 上下文规划，固定推荐 `opus`；模型角色只影响审查质量与速度，不影响批次预算。
+所有受支持模型都按 1M 上下文规划。模型档位只影响审查质量与速度，不影响批次预算。
 
-**必须调用 AskUserQuestion 工具，参数如下**：
-- question: "请选择审查使用的 AI 模型"
+**必须调用 INTERACT 工具，参数如下**：
+- question: "请选择审查使用的模型档位"
 - header: "审查模型"
-- options（按 opus / sonnet / haiku 顺序，固定给 opus 标「（推荐）」）:
-  - label: "opus（推荐）"
-    description: "1M 上下文，最强推理，适合深度/大仓库审查"
-  - label: "sonnet"
-    description: "1M 上下文，平衡速度与质量"
-  - label: "haiku"
-    description: "1M 上下文，最快速度，适合快速扫雷或小项目"
+- options:
+  - label: "继承当前会话（推荐）"
+    description: "不切换宿主模型，保持当前会话的模型与推理强度"
+  - label: "经济档"
+    description: "优先低成本和速度，适合小项目或快速扫雷"
+  - label: "平衡档"
+    description: "平衡速度与分析质量"
+  - label: "最高能力档"
+    description: "优先最高推理能力，适合深度、安全或大仓库审查"
 - multiSelect: false
 
 **用户响应后变量赋值**：
-- 选哪个角色 → REVIEW_MODEL = 该角色（opus / sonnet / haiku）
+- 继承当前会话 → `MODEL_PROFILE=inherit`
+- 经济档 → `MODEL_PROFILE=economy`
+- 平衡档 → `MODEL_PROFILE=balanced`
+- 最高能力档 → `MODEL_PROFILE=maximum`
 
 > **设计依据**：后续模型统一使用 1M 上下文，不再保留易误判的模型白名单、后缀标记和 200k 回退。模型选择放在分批之前，保持交互顺序稳定。
+
+> **跨平台模型档位**：共享流程只保存 `inherit / economy / balanced / maximum`。具体模型 ID 或 reasoning effort 只由当前 runtime adapter 决定；不得把 Claude、Codex 或 ZCode 的具体模型名写回共享状态。
 
 ### 第五步之后：分批判定
 
@@ -335,7 +369,7 @@ Maven 大仓库规划使用 semantic-cost batching：
 
 Maven 大仓库模式仍然只对存量审查生效。增量审查、Gradle 项目、单模块项目继续走现有流程。指定模块审查可以进入 Maven 大仓库模式：`ai-planned` 使用 semantic-cost batching 在所选模块内智能拆分，`module-sequential` 按所选模块依次启动批次；模块过大时必须提醒用户但不阻断。
 
-Maven 大仓库模式必须在步骤 1 确定 `REVIEW_MODE` 且步骤 3/4 确定审查入口与范围后、步骤 5 选择本轮执行批次前完成规划；规划完成后必须立即展示分批表格和推荐计划，再进入 AskUserQuestion。
+Maven 大仓库模式必须在步骤 1 确定 `REVIEW_MODE` 且步骤 3/4 确定审查入口与范围后、步骤 5 选择本轮执行批次前完成规划；规划完成后必须立即展示分批表格和推荐计划，再进入 INTERACT。
 
 批次状态值固定为：
 ```text
@@ -360,13 +394,13 @@ if [ "$CODE_INTELLIGENCE_AVAILABLE" = "true" ]; then
   SEMANTIC_LEVEL="jdtls-lsp"
 fi
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/plan-large-batches.sh" "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "$SEMANTIC_LEVEL" "$REVIEW_SCOPE" "$STOCK_REVIEW_STRATEGY"
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/languages/java/plan-large-batches.sh" "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "$SEMANTIC_LEVEL" "$REVIEW_SCOPE" "$STOCK_REVIEW_STRATEGY"
+bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 ```
 
 ### 第五步：交互式参数收集
 
-按以下步骤逐个调用 **AskUserQuestion 工具**（禁止用纯文本输出替代）。每个步骤必须单独调用 AskUserQuestion 并等待用户响应后才能进入下一步。**禁止在一次回复中合并多个交互步骤。**
+按以下步骤逐个调用 **INTERACT 工具**（禁止用纯文本输出替代）。每个步骤必须单独调用 INTERACT 并等待用户响应后才能进入下一步。**禁止在一次回复中合并多个交互步骤。**
 
 **注意**：分支选择已在第二步（项目识别与分支检测）完成，本步骤从选择审查类型开始。
 
@@ -377,29 +411,29 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 在调用子 agent 之前，必须基于插件根目录生成参考文件绝对路径，并校验文件可读：
 
 ```bash
-REPORT_FORMAT_PATH="${CLAUDE_PLUGIN_ROOT}/references/report-format.md"
+REPORT_FORMAT_PATH="${PLUGIN_ROOT}/references/report-format.md"
 if [ "$LANGUAGE_ID" = "frontend" ]; then
-  REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/review-framework.md"
-  REACT_RULES_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/react-rules.md"
-  VUE_RULES_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/vue-rules.md"
-  NODE_RULES_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/node-rules.md"
-  SOURCE_SCOPE_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/frontend/source-scope.md"
+  REVIEW_FRAMEWORK_PATH="${PLUGIN_ROOT}/references/languages/frontend/review-framework.md"
+  REACT_RULES_PATH="${PLUGIN_ROOT}/references/languages/frontend/react-rules.md"
+  VUE_RULES_PATH="${PLUGIN_ROOT}/references/languages/frontend/vue-rules.md"
+  NODE_RULES_PATH="${PLUGIN_ROOT}/references/languages/frontend/node-rules.md"
+  SOURCE_SCOPE_PATH="${PLUGIN_ROOT}/references/languages/frontend/source-scope.md"
   test -r "$REVIEW_FRAMEWORK_PATH"
   test -r "$REACT_RULES_PATH"
   test -r "$VUE_RULES_PATH"
   test -r "$NODE_RULES_PATH"
   test -r "$SOURCE_SCOPE_PATH"
 elif [ "$LANGUAGE_ID" = "python" ]; then
-  REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/python/review-framework.md"
-  DJANGO_RULES_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/python/django-rules.md"
-  FASTAPI_RULES_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/python/fastapi-rules.md"
-  SOURCE_SCOPE_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/python/source-scope.md"
+  REVIEW_FRAMEWORK_PATH="${PLUGIN_ROOT}/references/languages/python/review-framework.md"
+  DJANGO_RULES_PATH="${PLUGIN_ROOT}/references/languages/python/django-rules.md"
+  FASTAPI_RULES_PATH="${PLUGIN_ROOT}/references/languages/python/fastapi-rules.md"
+  SOURCE_SCOPE_PATH="${PLUGIN_ROOT}/references/languages/python/source-scope.md"
   test -r "$REVIEW_FRAMEWORK_PATH"
   test -r "$DJANGO_RULES_PATH"
   test -r "$FASTAPI_RULES_PATH"
   test -r "$SOURCE_SCOPE_PATH"
 else
-  REVIEW_FRAMEWORK_PATH="${CLAUDE_PLUGIN_ROOT}/references/languages/java/review-framework.md"
+  REVIEW_FRAMEWORK_PATH="${PLUGIN_ROOT}/references/languages/java/review-framework.md"
   test -r "$REVIEW_FRAMEWORK_PATH"
 fi
 test -r "$REPORT_FORMAT_PATH"
@@ -415,18 +449,56 @@ test -r "$REPORT_FORMAT_PATH"
 
 #### 路径 A：单 agent 模式（BATCH_MODE=false）
 
-使用 Task 工具启动子代理，子代理类型按 `LANGUAGE_ID` 选择：
-- `LANGUAGE_ID=java` → subagent_type: `"cc-code-reviewer:cc-code-reviewer"`，description: `"执行 Java 代码审查"`
-- `LANGUAGE_ID=frontend` → subagent_type: `"cc-code-reviewer:cc-code-reviewer-frontend"`，description: `"执行前端代码审查"`
-- `LANGUAGE_ID=python` → subagent_type: `“cc-code-reviewer:cc-code-reviewer-python”`，description: `“执行 Python 代码审查”`
-- prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据
-- model: {REVIEW_MODEL}
+**单 agent 模式下的 source manifest 生成**（仅 `LANGUAGE_ID=frontend` 或 `python`）：
+
+Java 单 agent 自行 Glob 确定文件集合（与其 agent 契约一致，不生成 source manifest）。前端和 Python 单 agent 必须在调用子 agent 前生成不可变 source manifest 并注入，以兑现前端/Python agent 契约（"单 agent 模式下从 source manifest 确定文件集合"）：
+
+```bash
+# 仅 frontend/python：生成不可变 source manifest 注入子 agent（Java 单 agent 自行 Glob，不生成）
+if [ "$LANGUAGE_ID" = "frontend" ] || [ "$LANGUAGE_ID" = "python" ]; then
+  MANIFEST="$(mktemp)"
+  bash "${PLUGIN_ROOT}/scripts/languages/${LANGUAGE_ID}/collect-source-files.sh" "$PROJECT_DIR" > "$MANIFEST"
+
+  if [ ! -s "$MANIFEST" ]; then
+    echo "NO_${LANGUAGE_ID}_SOURCE_FILES=$PROJECT_DIR" >&2
+    exit 1
+  fi
+
+  # 只有存量审查的「指定目录/模块」才按 REVIEW_SCOPE 过滤。
+  # 增量审查以 CHANGED_FILES_OUTPUT 为主输入，manifest 只用作生产源码边界，不做目录过滤。
+  if [ "$REVIEW_TYPE" = "存量审查" ] && [ "${REVIEW_SCOPE:-全量代码}" != "全量代码" ]; then
+    FILTERED="$(mktemp)"
+    bash "${PLUGIN_ROOT}/scripts/languages/${LANGUAGE_ID}/filter-source-manifest.sh" \
+      "$PROJECT_DIR" "$MANIFEST" "$REVIEW_SCOPE" > "$FILTERED"
+    mv "$FILTERED" "$MANIFEST"
+    if [ ! -s "$MANIFEST" ]; then
+      echo "NO_${LANGUAGE_ID}_SOURCE_FILES_IN_SCOPE=$REVIEW_SCOPE" >&2
+      exit 1
+    fi
+  fi
+
+  # 重算审查规模（与分批段落规则一致）：manifest 收敛后必须覆盖 REVIEW_FILE_COUNT / REVIEW_LINE_COUNT
+  REVIEW_FILE_COUNT="$(grep -c . "$MANIFEST")"
+  REVIEW_LINE_COUNT=0
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    REVIEW_LINE_COUNT=$((REVIEW_LINE_COUNT + $(wc -l < "$f" | tr -d ' ')))
+  done < "$MANIFEST"
+fi
+```
+
+调用逻辑动作 `DISPATCH_AGENT` 启动子代理，`agent_prompt` 按 `LANGUAGE_ID` 选择：
+- `LANGUAGE_ID=java` -> `${PLUGIN_ROOT}/agents/cc-code-reviewer.md`，description: `"执行 Java 代码审查"`
+- `LANGUAGE_ID=frontend` -> `${PLUGIN_ROOT}/agents/cc-code-reviewer-frontend.md`，description: `"执行前端代码审查"`
+- `LANGUAGE_ID=python` -> `${PLUGIN_ROOT}/agents/cc-code-reviewer-python.md`，description: `"执行 Python 代码审查"`
+- prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据（frontend/python 额外注入 source manifest）
+- model_profile: {MODEL_PROFILE}
 
 详细参数注入格式见下方「子 agent 调用规范」章节。
 
 #### 路径 B：分批并行模式（BATCH_MODE=true）
 
-使用 Agent 工具启动多个 `cc-code-reviewer` 子代理，按轮次并发执行。
+重复调用逻辑动作 `DISPATCH_AGENT` 启动多个子代理，按轮次并发执行。
 
 **编排逻辑**：
 
@@ -448,14 +520,27 @@ test -r "$REPORT_FORMAT_PATH"
   → 等待全部完成
 ```
 
-每轮同时发出 CONCURRENCY 个 Agent 工具调用。当前轮所有 agent 返回后，开始下一轮。CONCURRENCY=1 时退化为串行。
+每轮同时发出 CONCURRENCY 个 `DISPATCH_AGENT` 调用。当前轮所有 agent 返回后，开始下一轮。CONCURRENCY=1 时退化为串行。
 
 **每个 batch agent 的调用参数**：
 
 - description: "Batch {BATCH_INDEX}/{BATCH_COUNT} 代码审查"
-- subagent_type: 按 `LANGUAGE_ID` 选择（`java` → `cc-code-reviewer:cc-code-reviewer`；`frontend` → `cc-code-reviewer:cc-code-reviewer-frontend`；`python` → `cc-code-reviewer:cc-code-reviewer-python`）
-- model: {REVIEW_MODEL}
+- agent_prompt: 按 `LANGUAGE_ID` 选择 `${PLUGIN_ROOT}/agents/cc-code-reviewer.md`、`${PLUGIN_ROOT}/agents/cc-code-reviewer-frontend.md` 或 `${PLUGIN_ROOT}/agents/cc-code-reviewer-python.md`
+- model_profile: {MODEL_PROFILE}
 - prompt: 见下方「Batch Agent Prompt 注入格式」
+
+**文件级分批参数派生**（`strategy=file-token-batching`）：每次启动子 agent 前必须用当前 `BATCH_ID` 生成并校验以下路径，不得只在 prompt 中保留未替换的 `{BATCH_FILE_LIST}` 占位符：
+
+```bash
+BATCH_PLAN_PATH="$RUN_DIR/batches/$BATCH_ID.json"
+BATCH_FILE_LIST="$RUN_DIR/batches/$BATCH_ID.files"
+BATCH_STATUS_PATH="$RUN_DIR/results/$BATCH_ID.status.json"
+BATCH_RESULT_PATH="$RUN_DIR/results/$BATCH_ID.md"
+test -r "$BATCH_PLAN_PATH"
+test -r "$BATCH_FILE_LIST"
+```
+
+Maven 大仓库模式不注入 `BATCH_FILE_LIST`，仍以 `BATCH_PLAN_PATH` 中的 `scan_roots` / `units` 为正式边界。
 
 **Batch Agent Prompt 注入格式**：
 
@@ -469,10 +554,11 @@ test -r "$REPORT_FORMAT_PATH"
 | 项目路径 | {PROJECT_DIR} |
 | 项目名称 | {PROJECT_NAME} |
 | 项目类型 | {PROJECT_TYPE} |
+| 语言 ID | {LANGUAGE_ID} |
 | 审查类型 | {REVIEW_TYPE} |
 | 审查范围 | {REVIEW_SCOPE} |
 | 审查模式 | {REVIEW_MODE} |
-| 审查模型 | {REVIEW_MODEL} |
+| 审查模型 | {MODEL_PROFILE} |
 | 审查文件数量 | {BATCH_FILE_COUNT} |
 | 审查代码行数 | {BATCH_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
@@ -492,28 +578,32 @@ test -r "$REPORT_FORMAT_PATH"
 | 批次结果文件 | {BATCH_RESULT_PATH}（对应 RUN_DIR/results/batch-XXX.md） |
 | 批次编号 | {BATCH_INDEX}/{BATCH_COUNT}（仅旧批次模式） |
 | 语义增强 | {SEMANTIC_LEVEL} |
+| source manifest | {不可变源码清单绝对路径}（仅 frontend/python 文件级分批） |
+| 本批审查文件列表 | {BATCH_FILE_LIST}（仅文件级分批模式） |
 | 审查输出模式 | 仅发现清单 |
 
 ### 本批审查边界
-请读取 `BATCH_PLAN_PATH`，以其中 `scan_roots` 作为正式审查边界。
-若批次计划包含 `units`，以 `units[].path` / `units[].scan_roots` 对应的 `scan_roots` 为准；`context_roots` are read-only context，只能用于理解依赖关系。
+请读取 `BATCH_PLAN_PATH`，按批次计划中的策略字段确定正式审查边界：
+- **Maven 大仓库模式**（plan.json 含 `scan_roots` 或 `units`）：以 `scan_roots` 作为正式审查边界。若批次计划包含 `units`，以 `units[].path` / `units[].scan_roots` 对应的 `scan_roots` 为准；`context_roots` are read-only context，只能用于理解依赖关系。
+- **文件级分批模式**（plan.json 含 `batch_file_list`，即 file-token-batching 策略）：以 `BATCH_FILE_LIST` 指向的文件清单（对应 batch.json 的 `batch_file_list` 字段）作为本批正式审查文件集合。该清单由主 skill 通过 `collect-source-files.sh` 生成并经 `filter-source-manifest.sh` 收敛，子 agent 直接使用，不得再次扫描或外扩。
 
 **LANGUAGE_ID=java 时**：
-正式扫描文件必须限定为 `scan_roots` 内的 `src/main/java` 生产源码；`src/test/java` 只能作为测试质量判断的只读上下文，不计入已审查 Java 文件，也不得作为正式问题位置。
-`SEMANTIC_LEVEL=jdtls-lsp` 时表示 jdtls-lsp 可用时必须使用：本批子 agent 必须用 jdtls 查询 definition、references、implementations、call hierarchy 来理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `scan_roots` 内的 `src/main/java` 生产源码。
+Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/main/java`；Maven 单模块、Gradle 或未知项目的 file-token-batching 批次必须限定为 `BATCH_FILE_LIST`。`src/test/java` 只能作为测试质量判断的只读上下文，不计入已审查 Java 文件，也不得作为正式问题位置。
+`SEMANTIC_LEVEL=jdtls-lsp` 时表示 jdtls-lsp 可用时必须使用：本批子 agent 必须用 jdtls 查询 definition、references、implementations、call hierarchy 来理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于当前模式的 `scan_roots` 或 `BATCH_FILE_LIST` 边界内。
 `SEMANTIC_LEVEL=maven-static` 时才允许回退 Maven 静态依赖与文本检索。
 
 **LANGUAGE_ID=frontend 时**：
-正式扫描文件必须限定为 `scan_roots` 内的 `src/` 下生产源码（`.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`）；测试文件（`*.test.*`/`*.spec.*`/`__tests__`/`e2e`/`cypress`）、产物（`dist`/`build`）、`.d.ts` 只能作为只读上下文，不计入已审查前端文件，也不得作为正式问题位置。
-`SEMANTIC_LEVEL=typescript-lsp` 时必须用 TS LSP 查询 definition/references/implementations/diagnostics 理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `scan_roots` 内的生产源码。
+正式扫描文件必须限定为 `BATCH_FILE_LIST`（文件级分批）内的 `src/` 下生产源码（`.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`）；测试文件（`*.test.*`/`*.spec.*`/`__tests__`/`e2e`/`cypress`）、产物（`dist`/`build`）、`.d.ts` 只能作为只读上下文，不计入已审查前端文件，也不得作为正式问题位置。
+`SEMANTIC_LEVEL=typescript-lsp` 时必须用 TS LSP 查询 definition/references/implementations/diagnostics 理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `BATCH_FILE_LIST` 内的生产源码。
 `SEMANTIC_LEVEL=none` 时才允许回退 import graph + 配置 + 文本检索静态分析。
 
 **LANGUAGE_ID=python 时**：
-正式扫描文件必须限定为 `scan_roots` 内的生产源码（`src/**/*.py` 或顶层包 `*.py`）；`tests/`、`test_*.py`、`migrations/`（Django/Alembic 生成代码）、`venv/`、`__pycache__/`、`build/` 只能作为只读上下文，不计入已审查 Python 文件，也不得作为正式问题位置。
-`SEMANTIC_LEVEL=pyright`/`pylsp`/`jedi` 时必须用对应 LSP 查询 definition/references/diagnostics 理解跨文件调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `scan_roots` 内的生产源码。
+正式源码必须限定为 `BATCH_FILE_LIST`（文件级分批）内的生产源码（`src/**/*.py` 或顶层包 `*.py`，含根级单文件应用入口）。`PROJECT_SCAN_RESULT` 的 `FORMAL_CONFIG_FILE:` 路径（含 `uv.lock`/`poetry.lock`/`Pipfile.lock`）也可产生正式配置问题，但不计入 Python 源码覆盖率；分批模式仅 `batch-001` 审查这些正式配置，避免跨批重复。`tests/`、`test_*.py`、`migrations/`（Django/Alembic 生成代码）、`venv/`、`__pycache__/`、`build/` 只能作为只读上下文，不得作为正式问题位置。
+`SEMANTIC_LEVEL=pyright`/`pylsp`/`jedi` 时必须用对应 LSP 查询 definition/references/diagnostics 理解跨文件调用链，并在批次结果中写明「语义增强使用情况」。生产源码问题必须位于 `BATCH_FILE_LIST` 内；正式配置问题必须位于 `FORMAL_CONFIG_FILE:` 路径内。
+`SEMANTIC_LEVEL=pyright-cli` 时只运行注入命令获取 diagnostics；definition/references/hover 必须使用静态检索，不得声称由 LSP 提供。
 `SEMANTIC_LEVEL=none` 时才允许回退配置 + 文本检索静态分析。
 
-如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」。
+如果疑似问题位置在当前正式边界（`BATCH_FILE_LIST`、`scan_roots`，或 Python 的 `FORMAL_CONFIG_FILE:`）外，写入「跨批依赖待复核」。
 
 ### 项目概况（预扫描结果）
 {PROJECT_SCAN_RESULT}
@@ -533,7 +623,7 @@ test -r "$REPORT_FORMAT_PATH"
 | 报告保存方式 | 不注入子 agent（飞书上传由主 skill 处理） | 不注入子 agent（飞书上传由主 skill 合并后处理） |
 | 批次编号 | 无 | BATCH_INDEX/BATCH_COUNT |
 | 审查输出模式 | 无（默认完整报告） | "仅发现清单" |
-| 文件列表来源 | agent 自行 Glob | 外部注入，agent 不扫描 |
+| 文件列表来源 | Java：agent 自行 Glob；frontend/python：注入 source manifest | 外部注入（BATCH_FILE_LIST 或 scan_roots），agent 不扫描 |
 | 增量数据 | 注入 GIT_LOG 等 | 不注入（分批仅支持存量审查） |
 
 **飞书保存**：batch agent 不执行飞书保存。飞书保存由主 skill 在合并完成后统一处理。
@@ -556,7 +646,7 @@ test -r "$REPORT_FORMAT_PATH"
 ### Java 扫描流程
 
 1. `core/detect-project.sh` → 识别项目路径
-2. `core/detect-branches.sh` → 列出分支（多分支则 AskUserQuestion 选）
+2. `core/detect-branches.sh` → 列出分支（多分支则 INTERACT 选）
 3. `core/switch-branch.sh` → 切换到选定分支（按需）
 4. `core/detect-language.sh` → 探测语言（固定 java）
 5. `languages/java/project-scan.sh` → Java 预扫描（Maven/技术栈）
@@ -564,7 +654,7 @@ test -r "$REPORT_FORMAT_PATH"
 7. `core/detect-lark-plugin.sh` → lark-cli 检测
 8. 设置固定 1M 上下文常量（`CONTEXT_WINDOW_TOKENS=1000000`、`CONTEXT_SCALE=5`）
 9. 读 ignore 规则 → 输出预扫描摘要
-10. AskUserQuestion 交互（模式/报告/入口/范围…）
+10. INTERACT 交互（模式/报告/入口/范围…）
 11. [分批] `languages/java/plan-large-batches.sh` 或 `plan-file-batches.sh`
 12. [分批] `core/show-batch-status.sh` → 展示批次状态
 13. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
@@ -573,7 +663,7 @@ test -r "$REPORT_FORMAT_PATH"
 ### 前端扫描流程
 
 1. `core/detect-project.sh` → 识别项目路径
-2. `core/detect-branches.sh` → 列出分支（多分支则 AskUserQuestion 选）
+2. `core/detect-branches.sh` → 列出分支（多分支则 INTERACT 选）
 3. `core/switch-branch.sh` → 切换到选定分支（按需）
 4. `core/detect-language.sh` → 探测语言（固定 frontend）
 5. `languages/frontend/scan-project.sh` → 前端预扫描（PROFILE_SCHEMA）
@@ -581,7 +671,7 @@ test -r "$REPORT_FORMAT_PATH"
 7. `core/detect-lark-plugin.sh` → lark-cli 检测
 8. 设置固定 1M 上下文常量（`CONTEXT_WINDOW_TOKENS=1000000`、`CONTEXT_SCALE=5`）
 9. 读 ignore 规则 → 输出预扫描摘要
-10. AskUserQuestion 交互（模式/报告/入口/范围…）
+10. INTERACT 交互（模式/报告/入口/范围…）
 11. [分批] `core/plan-file-batches.sh` → 前端文件级分批
 12. [分批] `core/show-batch-status.sh` → 展示批次状态
 13. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
@@ -591,7 +681,7 @@ test -r "$REPORT_FORMAT_PATH"
 ### Python 扫描流程
 
 1. `core/detect-project.sh` -> 识别项目路径
-2. `core/detect-branches.sh` -> 列出分支（多分支则 AskUserQuestion 选）
+2. `core/detect-branches.sh` -> 列出分支（多分支则 INTERACT 选）
 3. `core/switch-branch.sh` -> 切换到选定分支（按需）
 4. `core/detect-language.sh` -> 探测语言（固定 python）
 5. `languages/python/scan-project.sh` -> Python 预扫描（PROFILE_SCHEMA）
@@ -599,7 +689,7 @@ test -r "$REPORT_FORMAT_PATH"
 7. `core/detect-lark-plugin.sh` -> lark-cli 检测
 8. 设置固定 1M 上下文常量（`CONTEXT_WINDOW_TOKENS=1000000`、`CONTEXT_SCALE=5`）
 9. 读 ignore 规则 -> 输出预扫描摘要
-10. AskUserQuestion 交互（模式/报告/入口/范围…）
+10. INTERACT 交互（模式/报告/入口/范围…）
 11. [分批] `core/plan-file-batches.sh` -> Python 文件级分批
 12. [分批] `core/show-batch-status.sh` -> 展示批次状态
 13. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
@@ -610,8 +700,8 @@ test -r "$REPORT_FORMAT_PATH"
 ## 交互式确认步骤定义
 
 > **强制规则**：
-> - 每个步骤必须调用 AskUserQuestion 工具，**禁止用纯文本提问替代**
-> - 每个步骤的 AskUserQuestion 调用后，必须等待用户响应
+> - 每个步骤必须调用 INTERACT 工具，**禁止用纯文本提问替代**
+> - 每个步骤的 INTERACT 调用后，必须等待用户响应
 > - 不允许在一次回复中包含多个交互步骤的动作
 > - 用户响应后，处理结果、设置变量，然后才能进入下一步
 
@@ -619,7 +709,7 @@ test -r "$REPORT_FORMAT_PATH"
 
 ### 步骤 1：选择审查模式
 
-审查模式选择是固定必问步骤。无论是否进入分批、无论当前项目是 Java 还是前端，都**必须调用 AskUserQuestion 工具，参数如下**：
+审查模式选择是固定必问步骤。无论是否进入分批、无论当前项目是 Java、前端还是 Python，都**必须调用 INTERACT 工具，参数如下**：
 - question: "请选择审查模式"
 - header: "审查模式"
 - options:
@@ -628,7 +718,7 @@ test -r "$REPORT_FORMAT_PATH"
   - label: "standard（推荐）"
     description: "标准审查，覆盖常规核心维度 + API设计 + 缓存基础 + 核心测试缺失，日常迭代推荐"
   - label: "deep"
-    description: "深度审查，全量 15 维度，适合大版本上线前"
+    description: "深度审查，启用目标语言的全部审查维度（Java 15 维度；前端/Python 12 维度），适合大版本上线前"
   - label: "security"
     description: "安全专项，聚焦安全核心维度"
 - multiSelect: false
@@ -647,7 +737,7 @@ test -r "$REPORT_FORMAT_PATH"
 
 报告保存方式为多选。用户可选择本地 Markdown 报告、飞书云文档和飞书多维表格中的任意一个或多个，支持任意组合多选。
 
-**必须调用 AskUserQuestion 工具，参数如下**：
+**必须调用 INTERACT 工具，参数如下**：
 - question: "请选择审查报告的保存方式"
 - header: "报告保存方式"
 - options:
@@ -667,7 +757,7 @@ test -r "$REPORT_FORMAT_PATH"
 
 ### 步骤 3：选择审查入口
 
-**必须调用 AskUserQuestion 工具，参数如下**：
+**必须调用 INTERACT 工具，参数如下**：
 - question: "请选择本次审查入口"
 - header: "审查入口"
 - options:
@@ -690,14 +780,17 @@ test -r "$REPORT_FORMAT_PATH"
 - 增量审查时 → 必须执行
 - 指定模块 + 多模块 → 必须执行（模块选择流程见下）
 - 指定模块 + 前端（`LANGUAGE_ID=frontend`，`PROJECT_TYPE=frontend-react|frontend-vue2|frontend-vue3|node`）→ 按前端目录选择流程处理（见下）；若预扫描无 `COMPONENT:` 行（`src/` 下无子目录），跳过并自动设 `REVIEW_SCOPE=全量代码`，提示用户"前端项目未识别到可选择的 src 子目录，将进行全量审查"
+- 指定模块 + Python（`LANGUAGE_ID=python`，`PROJECT_TYPE=python-django|python-fastapi|python-generic`）→ 按 Python 包目录选择流程处理（见下）；若预扫描无 `COMPONENT:` 行（只有根级单文件等情形），跳过并自动设 `REVIEW_SCOPE=全量代码`，提示用户"Python 项目未识别到可选择的包目录，将进行全量审查"
 - 指定模块 + 单模块 → 跳过，自动设 REVIEW_SCOPE=全量代码
 - 全量审查 → 跳过，已在步骤 3 设 REVIEW_SCOPE=全量代码
 
 > 前端项目（`PROJECT_TYPE=frontend-react|frontend-vue2|frontend-vue3|node`）既非 `*-single` 也非 `maven-multi`，不进入 Java 的模块树流程；前端的"模块"语义是 `src/` 下的顶层目录（即预扫描 `COMPONENT:` 行）。
 
-**增量审查时，必须先扫描并展示最近提交，再调用 AskUserQuestion 工具**：
+> Python 项目也不进入 Java 模块树流程；Python 的"模块"语义是最终 source manifest 派生的不重叠顶层包目录（即预扫描 `COMPONENT:` 行）。
 
-1. 执行最近提交预览脚本（仅用于交互式用户决策，不替代后续增量预处理）：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/preview-recent-commits.sh" "$PROJECT_DIR"`
+**增量审查时，必须先扫描并展示最近提交，再调用 INTERACT 工具**：
+
+1. 执行最近提交预览脚本（仅用于交互式用户决策，不替代后续增量预处理）：`bash "${PLUGIN_ROOT}/scripts/core/preview-recent-commits.sh" "$PROJECT_DIR"`
 2. 展示脚本输出，格式如下；最多展示最近 10 次提交，不足 10 次时展示实际数量：
    ```text
    📜 最近提交概览：
@@ -708,7 +801,7 @@ test -r "$REPORT_FORMAT_PATH"
    ```
 3. 如果输出为 `（无提交记录）`，告知用户当前 Git 仓库没有可用于增量审查的提交，不进入提交次数选择。
 
-**然后必须调用 AskUserQuestion 工具，参数如下**：
+**然后必须调用 INTERACT 工具，参数如下**：
 - question: "审查最近几次提交的变更？"
 - header: "提交次数"
 - options:
@@ -722,9 +815,15 @@ test -r "$REPORT_FORMAT_PATH"
     description: "审查列表中的第 1-10 条提交"
 - multiSelect: false
 
-**指定模块 + 多模块时，先展示模块树，再调用 AskUserQuestion 工具**：
+**增量审查用户响应后变量赋值**：
+- 最近 1 次 → `COMMIT_COUNT=1`，`REVIEW_SCOPE=最近 1 次提交`
+- 最近 3 次 → `COMMIT_COUNT=3`，`REVIEW_SCOPE=最近 3 次提交`
+- 最近 5 次 → `COMMIT_COUNT=5`，`REVIEW_SCOPE=最近 5 次提交`
+- 最近 10 次 → `COMMIT_COUNT=10`，`REVIEW_SCOPE=最近 10 次提交`
 
-**展示模块树**（在调用 AskUserQuestion 之前，用文本输出；完整模块列表只能作为普通文本展示，不得放入 AskUserQuestion options）：
+**指定模块 + 多模块时，先展示模块树，再调用 INTERACT 工具**：
+
+**展示模块树**（在调用 INTERACT 之前，用文本输出；完整模块列表只能作为普通文本展示，不得放入 INTERACT options）：
 ```
 📊 项目模块概览：
 
@@ -738,12 +837,12 @@ test -r "$REPORT_FORMAT_PATH"
 
 数据来源：解析阶段四预扫描输出的 `MODULE:` 行，提取每个模块的名称、Java 文件数、代码行数。
 
-**AskUserQuestion payload 约束**：
-- 不得把每个模块都作为 AskUserQuestion option；大仓库模块数量可能很多，容易触发 Invalid tool parameters
+**INTERACT payload 约束**：
+- 不得把每个模块都作为 INTERACT option；大仓库模块数量可能很多，容易触发 Invalid tool parameters
 - 该步骤最多 3 个固定选项，模块路径通过 Other/free-form 或后续输入步骤收集
 - 模块列表越长，越应该只在普通文本概览中展示，并引导用户输入模块相对路径
 
-**然后调用 AskUserQuestion 工具，参数如下**：
+**然后调用 INTERACT 工具，参数如下**：
 - question: "请选择本次希望 AI 扫描的模块"
 - header: "扫描模块"
 - options:
@@ -758,7 +857,7 @@ test -r "$REPORT_FORMAT_PATH"
 **指定模块 + 多模块用户响应后**：
 - 选择"全部模块" → REVIEW_SCOPE=全量代码
 - 选择"前 5 个大模块" → REVIEW_SCOPE=按 `MODULE:` 行 Java 行数降序取前 5 个模块路径，逗号分隔
-- 选择"手动输入模块路径" 或 Other/free-form → 读取用户提供的模块相对路径，支持逗号、中文逗号、顿号、空格或换行分隔多个模块；若 AskUserQuestion 当前交互没有返回自定义文本，追加一次 AskUserQuestion 收集模块路径，header 使用 "输入模块"，仍只提供固定选项并要求用户在 Other/free-form 填写模块路径
+- 选择"手动输入模块路径" 或 Other/free-form → 读取用户提供的模块相对路径，支持逗号、中文逗号、顿号、空格或换行分隔多个模块；若 INTERACT 当前交互没有返回自定义文本，追加一次 INTERACT 收集模块路径，header 使用 "输入模块"，仍只提供固定选项并要求用户在 Other/free-form 填写模块路径
 - 模块路径必须是 `PROJECT_DIR` 内的相对路径；不得接受绝对路径、`..` 路径穿越或解析后位于项目根之外的路径，规划脚本必须以 `SELECTED_MODULE_OUTSIDE_PROJECT` 阻止越界输入
 - 自定义模块路径必须逐个校验是否存在于预扫描结果的 `MODULE:` 行中；不存在时提示有效模块列表并重新收集，最多重试 3 次
 
@@ -769,11 +868,11 @@ test -r "$REPORT_FORMAT_PATH"
 
 ---
 
-**指定模块 + 前端时，先展示 src 目录概览，再调用 AskUserQuestion 工具**：
+**指定模块 + 前端时，先展示 src 目录概览，再调用 INTERACT 工具**：
 
 前端没有 Maven 模块，其可选择的"分区"是 `src/` 下的顶层目录（如 `components`/`pages`/`hooks`/`store`），由前端 `scan-project.sh` 输出的 `COMPONENT:` 行提供。
 
-**展示目录概览**（在调用 AskUserQuestion 之前，用文本输出；完整目录列表只能作为普通文本展示，不得放入 AskUserQuestion options）：
+**展示目录概览**（在调用 INTERACT 之前，用文本输出；完整目录列表只能作为普通文本展示，不得放入 INTERACT options）：
 ```
 📂 前端目录概览：
 
@@ -787,11 +886,11 @@ test -r "$REPORT_FORMAT_PATH"
 
 数据来源：解析阶段四预扫描输出的 `COMPONENT:` 行（格式 `COMPONENT:{目录名}|{相对路径}|{文件数}|{代码行数}`），提取每个目录的名称、文件数、代码行数。单包项目相对路径通常是 `src/{目录名}`；monorepo/package 项目可能是 `apps/web/src/{目录名}` 或 `packages/admin/src/{目录名}`。仅展示 `COMPONENT:` 行，不展示 `src/` 下的零散文件。
 
-**AskUserQuestion payload 约束**：
-- 不得把每个目录都作为 AskUserQuestion option；目录数量可能较多
+**INTERACT payload 约束**：
+- 不得把每个目录都作为 INTERACT option；目录数量可能较多
 - 该步骤最多 3 个固定选项，目录路径通过 Other/free-form 或后续输入步骤收集
 
-**然后调用 AskUserQuestion 工具，参数如下**：
+**然后调用 INTERACT 工具，参数如下**：
 - question: "请选择本次希望 AI 扫描的 src 目录"
 - header: "扫描目录"
 - options:
@@ -806,7 +905,7 @@ test -r "$REPORT_FORMAT_PATH"
 **指定模块 + 前端用户响应后**：
 - 选择"全部目录" → REVIEW_SCOPE=全量代码
 - 选择"前 3 个大目录" → REVIEW_SCOPE=按 `COMPONENT:` 行代码行数降序取前 3 个目录的相对路径（如 `src/components`），逗号分隔
-- 选择"手动输入目录路径" 或 Other/free-form → 读取用户提供的相对路径，支持逗号、中文逗号、顿号、空格或换行分隔多个目录；若 AskUserQuestion 当前交互没有返回自定义文本，追加一次 AskUserQuestion 收集目录路径，header 使用 "输入目录"，仍只提供固定选项并要求用户在 Other/free-form 填写目录路径
+- 选择"手动输入目录路径" 或 Other/free-form → 读取用户提供的相对路径，支持逗号、中文逗号、顿号、空格或换行分隔多个目录；若 INTERACT 当前交互没有返回自定义文本，追加一次 INTERACT 收集目录路径，header 使用 "输入目录"，仍只提供固定选项并要求用户在 Other/free-form 填写目录路径
 - 目录路径必须是 `src/` 下的相对路径（形如 `src/{目录名}` 或 `{目录名}`，后者自动补 `src/` 前缀）；不得接受绝对路径、`..` 路径穿越或解析后位于 `PROJECT_DIR/src/` 之外的路径
 - 自定义目录路径必须逐个校验是否存在于预扫描结果的 `COMPONENT:` 行中；不存在时提示有效目录列表并重新收集，最多重试 3 次
 - 校验通过后，主 skill 在前端 manifest 生成阶段（见「前端分批」段落）按所选目录过滤 source manifest，使分批与扫描真正收敛到所选目录
@@ -816,13 +915,53 @@ test -r "$REPORT_FORMAT_PATH"
 - 前 3 个大目录 → REVIEW_SCOPE=src 子目录相对路径（逗号分隔，如 `src/components,src/pages,src/hooks`）
 - 自定义目录路径 → REVIEW_SCOPE=src 子目录相对路径（逗号分隔）
 
+---
+
+**指定模块 + Python 时，先展示包目录概览，再调用 INTERACT 工具**：
+
+Python 可选分区由 `scan-project.sh` 基于最终 source manifest 输出的 `COMPONENT:` 行提供，各分区不重叠。分区策略：
+- **Monorepo**（仓库内有 ≥2 个子项目根，即含 `pyproject.toml`/`setup.py`/`setup.cfg`/`requirements*.txt`/`Pipfile` 的子目录）：每个子项目根各成独立 COMPONENT，使 `services/api`、`services/worker` 等真实业务模块可被单独选择扫描。
+- **单项目**（0 或 1 个子项目根）：`src` layout 使用 `src/` 下顶层包，flat layout 使用项目根下顶层包。
+
+**展示包目录概览**：
+```text
+📂 Python 包目录概览：
+
+{项目名称}/
+├── {包1路径}/     {N} 文件 · {M} 行
+├── {包2路径}/     {N} 文件 · {M} 行
+└── {包3路径}/     {N} 文件 · {M} 行
+```
+
+数据来源：解析预扫描输出的 `COMPONENT:{名称}|{相对路径}|{文件数}|{代码行数}` 行。只展示这些行，根级单文件不作为可选包目录。
+
+**必须调用 INTERACT 工具，参数如下**：
+- question: "请选择本次希望 AI 扫描的 Python 包目录"
+- header: "扫描包"
+- options:
+  - label: "全部包"
+    description: "扫描所有 Python 生产源码，等同全量审查"
+  - label: "手动输入包路径"
+    description: "在 Other/free-form 中输入一个或多个 COMPONENT 相对路径，逗号分隔"
+  - label: "前 3 个大包"
+    description: "按代码行数选择最大的 3 个包目录"
+- multiSelect: false
+
+**Python 用户响应与校验**：
+- "全部包" → `REVIEW_SCOPE=全量代码`
+- "前 3 个大包" → 按 `COMPONENT:` 行代码行数降序取前 3 个相对路径，逗号分隔
+- "手动输入包路径" 或 Other/free-form → 读取用户提供的相对路径；若未返回自定义文本，追加一次 INTERACT，header 使用"输入包"
+- 路径必须是 `PROJECT_DIR` 内的相对路径，拒绝绝对路径、`..` 和越界解析
+- 每个路径必须精确存在于预扫描 `COMPONENT:` 行；无效时展示有效路径并重新收集，最多重试 3 次
+- 校验通过后设置 `REVIEW_SCOPE`，由 Python `filter-source-manifest.sh` 在单 agent 或分批路径中收敛清单
+
 ### 步骤 4B：选择存量审查方式（条件步骤）
 
 **触发条件**：
 - REVIEW_TYPE=存量审查
 - PROJECT_TYPE=maven-multi
 
-**必须调用 AskUserQuestion 工具，参数如下**：
+**必须调用 INTERACT 工具，参数如下**：
 - question: "请选择存量审查方式"
 - header: "审查方式"
 - options:
@@ -844,9 +983,9 @@ test -r "$REPORT_FORMAT_PATH"
 
 触发此步骤前，必须先完成 Maven 大仓库分批规划，生成或恢复 `RUN_DIR/plan.json` 和 `RUN_DIR/batches/*.json`。
 
-在调用 AskUserQuestion 之前，必须先展示当前 run 状态、批次表、可执行批次和预估时间计划。`core/show-batch-status.sh` 只作为数据来源；不得只依赖 Bash 工具输出，因为 Claude Code 会折叠工具输出，导致用户必须按 `ctrl+o` 才能看到。主 skill 必须读取脚本输出，并在普通助手消息中重新展示完整 Markdown 表格和推荐计划，像技术栈扫描摘要一样直接展示给用户。
+在调用 INTERACT 之前，必须先展示当前 run 状态、批次表、可执行批次和预估时间计划。`core/show-batch-status.sh` 只作为数据来源；不得只依赖 Bash 工具输出，因为宿主可能折叠工具结果。主 Skill 必须读取脚本输出，并在普通助手消息中重新展示完整 Markdown 表格和推荐计划，像技术栈扫描摘要一样直接展示给用户。
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 ```
 
 该输出必须包含：
@@ -863,8 +1002,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 
 **动态选项规则**：
 - 先从状态表计算 `RUNNABLE_BATCH_IDS` 和 `RUNNABLE_COUNT`，只包含 `pending` / `failed` 批次。
-- `RUNNABLE_COUNT=0` → 不调用 AskUserQuestion；输出没有可执行批次，进入合并或结束提示。
-- `RUNNABLE_COUNT=1` → 不调用 AskUserQuestion；自动设置 `RUN_BATCH_IDS` 为唯一可执行批次，`RUN_BATCH_COUNT=1`，直接进入步骤 5B 选择并发数。
+- `RUNNABLE_COUNT=0` → 不调用 INTERACT；输出没有可执行批次，进入合并或结束提示。
+- `RUNNABLE_COUNT=1` → 不调用 INTERACT；自动设置 `RUN_BATCH_IDS` 为唯一可执行批次，`RUN_BATCH_COUNT=1`，直接进入步骤 5B 选择并发数。
 - `RUNNABLE_COUNT=2` → options 只包含 `执行 1 批`、`执行全部 2 批（推荐）` 和 Other/free-form；不得出现 `执行 3 批`、`执行 5 批` 或 `执行 10 批`。
 - `RUNNABLE_COUNT=3` → options 只包含 `执行 1 批`、`执行 2 批`、`执行全部 3 批（推荐）` 和 Other/free-form；不得出现 `执行 5 批` 或 `执行 10 批`。
 - `RUNNABLE_COUNT=4|5` → options 只包含 `执行 2 批`、`执行 3 批（推荐）`、`执行全部 {RUNNABLE_COUNT} 批` 和 Other/free-form。
@@ -872,7 +1011,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 - `RUNNABLE_COUNT>10` → options 只包含 `执行 3 批`、`执行 5 批（推荐）`、`执行 10 批`、`执行全部 {RUNNABLE_COUNT} 批` 和 Other/free-form。
 - 固定选项描述中的批次数必须使用实际 `RUNNABLE_COUNT` 截断后的数量；不得出现“执行 5 批”但描述里又显示“最多 3 批”。
 
-**必须调用 AskUserQuestion 工具，参数如下**：
+**必须调用 INTERACT 工具，参数如下**：
 - question: "请选择本轮执行批次"
 - header: "执行批次"
 - options: 按上方「动态选项规则」生成，不得写死 3 / 5 / 10 / 全部四个选项
@@ -882,7 +1021,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 - 固定选项 → 设置 `CURRENT_RUN_BATCH_LIMIT` 为该选项对应的实际批次数，`执行全部 {RUNNABLE_COUNT} 批` 设置为 `all`
 - Other/free-form 批次号 → 设置 `BATCH_SELECTION` 为用户输入的批次号列表；支持 `batch-002,batch-004`、`2,4,7`、空格或中文顿号/逗号分隔
 - 解析 `BATCH_SELECTION` 时必须标准化为 `batch-XXX` 格式，并校验这些批次存在且状态为 `pending` 或 `failed`
-- 输入包含不存在、已完成或执行中的批次时，不得继续执行；必须再次调用 AskUserQuestion 让用户重新选择
+- 输入包含不存在、已完成或执行中的批次时，不得继续执行；必须再次调用 INTERACT 让用户重新选择
 - `completed` 批次必须跳过
 - 固定选项只调度状态表顺序中前 N 个 `pending` / `failed` 批次；未调度批次保持 `pending`
 
@@ -892,10 +1031,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 
 **前置计算**：触发此步骤前，必须先完成分批计算（见「分批计算」章节），得到 BATCH_COUNT。
 - 若 `PROJECT_TYPE=maven-multi` 且 `STOCK_REVIEW_STRATEGY=module-sequential|ai-planned`，必须先完成 Maven 大仓库模式的步骤 5 批次表展示和本轮执行批次选择；不得改走文件级 planner。
-- 若不满足 Maven 大仓库模式但 `BATCH_MODE=true`（包括 Maven 单模块、Gradle 或其他 Java 项目），必须先调用 `languages/java/plan-file-batches.sh` 生成文件级批次，并把脚本输出的 `简要分批计划` 原样展示到控制台；不得只输出总批次数后直接询问并发数。
+- 若 `LANGUAGE_ID=java` 且不满足 Maven 大仓库模式，但 `BATCH_MODE=true`（Maven 单模块、Gradle 或未知 Java 项目），必须先调用 `languages/java/plan-file-batches.sh` 生成文件级批次，并把脚本输出的 `简要分批计划` 原样展示到控制台；不得只输出总批次数后直接询问并发数。
 - 若 `LANGUAGE_ID=frontend` 且 `BATCH_MODE=true`，必须先调用 `scripts/core/plan-file-batches.sh` 生成前端文件级批次，并确认 `plan.json budget.context_scale=5`、`budget.context_window_tokens=1000000`。
+- 若 `LANGUAGE_ID=python` 且 `BATCH_MODE=true`，必须先调用 `scripts/core/plan-file-batches.sh` 生成 Python 文件级批次，并确认 `plan.json budget.context_scale=5`、`budget.context_window_tokens=1000000`。
 
-在调用 AskUserQuestion 之前，先输出并发策略摘要：
+在调用 INTERACT 之前，先输出并发策略摘要：
 ```
 📊 分批并行扫描
 
@@ -910,12 +1050,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 - 如果用户通过 Other/free-form 选择具体批次，`RUN_BATCH_COUNT` 为标准化后有效批次号数量
 
 **动态并发规则**：
-- `RUN_BATCH_COUNT=1` → 不调用 AskUserQuestion；自动设置 `CONCURRENCY=1`，直接进入步骤 6 确认执行计划。
-- `RUN_BATCH_COUNT=2` → AskUserQuestion options 只包含 `串行执行（默认）` 和 `2 路并发`；不得出现 `3 路并发`。
-- `RUN_BATCH_COUNT>=3` → AskUserQuestion options 包含 `串行执行（默认）`、`2 路并发`、`3 路并发`。
+- `RUN_BATCH_COUNT=1` → 不调用 INTERACT；自动设置 `CONCURRENCY=1`，直接进入步骤 6 确认执行计划。
+- `RUN_BATCH_COUNT=2` → INTERACT options 只包含 `串行执行（默认）` 和 `2 路并发`；不得出现 `3 路并发`。
+- `RUN_BATCH_COUNT>=3` → INTERACT options 包含 `串行执行（默认）`、`2 路并发`、`3 路并发`。
 - 任意路径下都不得提供大于 `RUN_BATCH_COUNT` 的并发选项；例如只执行 1 批时不能展示 2 / 3 路，只执行 2 批时不能展示 3 路。
 
-**必须调用 AskUserQuestion 工具，参数如下**：
+**必须调用 INTERACT 工具，参数如下**：
 - question: "请选择并发扫描策略"
 - header: "并发数"
 - options: 按上方「动态并发规则」生成
@@ -948,7 +1088,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 
 审查模型选择已前移到「第五步之后：选择审查模型 + 固定 1M 上下文」段（在分批判定之前执行）。此处不再重复询问。
 
-执行计划展示中的「审查模型」行直接引用前移步骤确定的 `REVIEW_MODEL`。
+执行计划展示中的「审查模型」行直接引用前移步骤确定的 `MODEL_PROFILE`。
 
 ### 步骤 6：确认执行计划
 
@@ -963,14 +1103,14 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 - 审查范围：{REVIEW_SCOPE}
 - 审查模式：{REVIEW_MODE}
 - 输出级别：仅 P0  ← 仅 REVIEW_MODE=fast 时显示
-- 审查模型：{REVIEW_MODEL}（固定 1M 上下文）
+- 审查模型：{MODEL_PROFILE}（固定 1M 上下文）
 - 启用维度：{根据模式 × 维度矩阵列出具体维度名称}
 - 项目 ignore：{IGNORE_RULES_ENABLED=true 时显示 "已启用 .cc-code-reviewer/ignore/issues.yml（已忽略 {IGNORE_RULE_COUNT} 个问题）"；否则显示 "未配置"}
 - 报告保存方式：{FEISHU_UPLOAD_OPTION}
 - 扫描策略：分批并行扫描（本轮 {RUN_BATCH_COUNT 或 BATCH_COUNT} / 总 {BATCH_COUNT} 批 / {CONCURRENCY} 路并发）  ← 仅 BATCH_MODE=true 时显示
 ```
 
-**必须调用 AskUserQuestion 工具，参数如下**：
+**必须调用 INTERACT 工具，参数如下**：
 - question: "确认以上执行计划后开始审查"
 - header: "确认执行"
 - options:
@@ -987,7 +1127,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 ```
 🚀 正在启动独立代码审查子代理...
 
-📋 任务配置：{REVIEW_MODE} 模式（{REVIEW_MODEL}） · {REVIEW_TYPE} · {REVIEW_SCOPE}
+📋 任务配置：{REVIEW_MODE} 模式（{MODEL_PROFILE}） · {REVIEW_TYPE} · {REVIEW_SCOPE}
 📌 子代理将独立执行完整审查流程，完成后自动返回结果。
 
 {选择飞书输出时追加}
@@ -1001,7 +1141,7 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 ```
 🚀 正在启动分批并行代码审查...
 
-📋 任务配置：{REVIEW_MODE} 模式（{REVIEW_MODEL}） · {REVIEW_TYPE} · {REVIEW_SCOPE}
+📋 任务配置：{REVIEW_MODE} 模式（{MODEL_PROFILE}） · {REVIEW_TYPE} · {REVIEW_SCOPE}
 📊 扫描策略：本轮 {RUN_BATCH_COUNT 或 BATCH_COUNT} / 总 {BATCH_COUNT} 批 / {CONCURRENCY} 路并发
 📌 本轮 {RUN_BATCH_COUNT 或 BATCH_COUNT} 批次将按 {CONCURRENCY} 路并发执行；未调度批次保持 pending，完成后生成阶段性或完整合并结果。
 
@@ -1029,7 +1169,7 @@ if [ "$CODE_INTELLIGENCE_AVAILABLE" = "true" ]; then
   SEMANTIC_LEVEL="jdtls-lsp"
 fi
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/plan-large-batches.sh" \
+bash "${PLUGIN_ROOT}/scripts/languages/java/plan-large-batches.sh" \
   "$PROJECT_DIR" \
   "$REVIEW_MODE" \
   "{TARGET_BRANCH 或 CURRENT_BRANCH}" \
@@ -1046,14 +1186,14 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/plan-large-batches.sh" \
 
 脚本输出的 `RUN_DIR`、`plan.json`、`batches/*.json` 和 `results/*.status.json` 是后续批次展示、选择本轮执行批次、启动 batch agent 和合并报告的唯一数据来源。
 
-### 非 Maven 兼容分批
+### Java 非 Maven 多模块文件级分批
 
-仅当 `PROJECT_TYPE` 不是 Maven 多模块且 `BATCH_MODE=true` 时，必须统一调用 `languages/java/plan-file-batches.sh` 生成简单文件级批次，覆盖 Maven 单模块、Gradle 项目和未知 Java 项目：
+仅当 `LANGUAGE_ID=java`、`PROJECT_TYPE` 不是 Maven 多模块且 `BATCH_MODE=true` 时，必须统一调用 `languages/java/plan-file-batches.sh` 生成简单文件级批次，覆盖 Maven 单模块、Gradle 项目和未知 Java 项目。`LANGUAGE_ID=frontend|python` 绝不得进入本分支：
 
 Maven 多模块存量分批绝不调用 `languages/java/plan-file-batches.sh`。即使只选择一个模块，也必须使用 Maven 多模块 planner，以便 `REVIEW_SCOPE` 限定在所选模块内，避免生成全项目批次。
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/plan-file-batches.sh" \
+bash "${PLUGIN_ROOT}/scripts/languages/java/plan-file-batches.sh" \
   "$PROJECT_DIR" \
   "$REVIEW_MODE" \
   "{TARGET_BRANCH 或 CURRENT_BRANCH}"
@@ -1077,7 +1217,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/plan-file-batches.sh" \
 ```bash
 # 先生成不可变 source manifest（生产 .ts/.tsx/.js/.jsx/.vue/.mjs/.cjs，排除测试/产物/配置脚本）
 MANIFEST="$(mktemp)"
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/collect-source-files.sh" "$PROJECT_DIR" > "$MANIFEST"
+bash "${PLUGIN_ROOT}/scripts/languages/frontend/collect-source-files.sh" "$PROJECT_DIR" > "$MANIFEST"
 
 # 若用户在步骤 4 选了「指定目录」（REVIEW_SCOPE 为 src 子目录路径列表，非"全量代码"），
 # 用前端专属过滤脚本收敛 manifest：只保留落在所选 src 子目录内的文件。
@@ -1087,12 +1227,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/collect-source-files.sh" 
 # `*/src/components/`；`apps/web/src/components` 这类完整相对路径只匹配对应 package。
 if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_SCOPE" != "全量代码" ]; then
   FILTERED="$(mktemp)"
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/frontend/filter-source-manifest.sh" \
+  bash "${PLUGIN_ROOT}/scripts/languages/frontend/filter-source-manifest.sh" \
     "$PROJECT_DIR" "$MANIFEST" "$REVIEW_SCOPE" > "$FILTERED"
   mv "$FILTERED" "$MANIFEST"
 fi
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
+bash "${PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
   "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "frontend" "$MANIFEST"
 ```
 
@@ -1102,35 +1242,35 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
 
 合并：
 ```bash
-RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-batch-results.sh" "$RUN_DIR"
+RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${PLUGIN_ROOT}/scripts/core/merge-batch-results.sh" "$RUN_DIR"
 ```
 
 前端批次状态展示：在前端分批规划完成后、启动 agent 前（或本轮批次跑完准备合并时），调用批次状态展示脚本向用户展示批次表与动态执行计划。此脚本按前端 plan.json 的 `language_id=frontend` 读取 `total_source_loc`/`planned_source_loc`，展示「前端源码行数」「前端源码行覆盖」：
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 ```
 
 `scripts/core/merge-batch-results.sh` 的覆盖率展示名根据 `plan.json.language_id` 自动切换为「前端源码文件覆盖率」。前端 batch agent 使用 `cc-code-reviewer-frontend` 子代理，注入 PROFILE 行、source manifest、`SEMANTIC_LEVEL`、批次参数（`RUN_DIR`/`BATCH_PLAN_PATH`/`BATCH_STATUS_PATH`/`BATCH_RESULT_PATH`）。
 
 ### Python 分批（LANGUAGE_ID=python）
 
-Python 项目（Django/FastAPI/Flask/通用 Python）必须使用 `scripts/core/plan-file-batches.sh`（语言中立），不得使用 Java 的 `languages/java/plan-file-batches.sh` 或 `languages/java/plan-large-batches.sh`：
+Python 项目（Django/FastAPI/通用 Python）必须使用 `scripts/core/plan-file-batches.sh`（语言中立），不得使用 Java 的 `languages/java/plan-file-batches.sh` 或 `languages/java/plan-large-batches.sh`：
 
 ```bash
 # 先生成不可变 source manifest（生产 .py，排除 tests/migrations/venv/__pycache__/build）
 MANIFEST="$(mktemp)"
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/python/collect-source-files.sh" "$PROJECT_DIR" > "$MANIFEST"
+bash "${PLUGIN_ROOT}/scripts/languages/python/collect-source-files.sh" "$PROJECT_DIR" > "$MANIFEST"
 
 # 若用户选了「指定目录」（REVIEW_SCOPE 为 src 子目录或包目录路径列表，非"全量代码"），
 # 用 Python 专属过滤脚本收敛 manifest。
 if [ "$LANGUAGE_ID" = "python" ] && [ "$REVIEW_SCOPE" != "全量代码" ]; then
   FILTERED="$(mktemp)"
-  bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/python/filter-source-manifest.sh" \
+  bash "${PLUGIN_ROOT}/scripts/languages/python/filter-source-manifest.sh" \
     "$PROJECT_DIR" "$MANIFEST" "$REVIEW_SCOPE" > "$FILTERED"
   mv "$FILTERED" "$MANIFEST"
 fi
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
+bash "${PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
   "$PROJECT_DIR" "$REVIEW_MODE" "{TARGET_BRANCH 或 CURRENT_BRANCH}" "python" "$MANIFEST"
 ```
 
@@ -1138,12 +1278,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
 
 合并：
 ```bash
-RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-batch-results.sh" "$RUN_DIR"
+RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${PLUGIN_ROOT}/scripts/core/merge-batch-results.sh" "$RUN_DIR"
 ```
 
 Python 批次状态展示：在 Python 分批规划完成后、启动 agent 前，调用批次状态展示脚本。此脚本按 Python plan.json 的 `language_id=python` 读取 `total_source_loc`/`planned_source_loc`，展示「Python 行数」「Python 行覆盖」：
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 ```
 
 `scripts/core/merge-batch-results.sh` 的覆盖率展示名根据 `plan.json.language_id` 自动切换为「Python 文件覆盖率」。Python batch agent 使用 `cc-code-reviewer-python` 子代理，注入 PROFILE 行、source manifest、`SEMANTIC_LEVEL`、批次参数。
@@ -1154,14 +1294,14 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 
 ### 调用方式
 
-使用 Task 工具启动子代理，子代理类型按 `LANGUAGE_ID` 选择：
-- `LANGUAGE_ID=java` → description: `"执行 Java 代码审查"`，subagent_type: `"cc-code-reviewer:cc-code-reviewer"`
-- `LANGUAGE_ID=frontend` → description: `"执行前端代码审查"`，subagent_type: `"cc-code-reviewer:cc-code-reviewer-frontend"`
-- `LANGUAGE_ID=python` → description: `“执行 Python 代码审查”`，subagent_type: `“cc-code-reviewer:cc-code-reviewer-python”`
-- model: {REVIEW_MODEL}
+调用逻辑动作 `DISPATCH_AGENT`，`agent_prompt` 按 `LANGUAGE_ID` 选择：
+- `LANGUAGE_ID=java` → `${PLUGIN_ROOT}/agents/cc-code-reviewer.md`
+- `LANGUAGE_ID=frontend` → `${PLUGIN_ROOT}/agents/cc-code-reviewer-frontend.md`
+- `LANGUAGE_ID=python` → `${PLUGIN_ROOT}/agents/cc-code-reviewer-python.md`
+- model_profile: {MODEL_PROFILE}
 - prompt: 下方参数注入格式
 
-不要传 `run_in_background`；该字段不属于 Claude Code Task 调用契约。子 agent 会独立执行审查，主 agent 等待其返回结构化结果后展示给用户。
+不得让主 Skill 代替子 Agent 执行正式审查。子 Agent 独立执行审查，主 Agent 等待其返回结构化结果后展示给用户；具体调度字段由 runtime adapter 映射。
 
 ### 参数注入格式
 
@@ -1173,10 +1313,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | 项目路径 | {PROJECT_DIR} |
 | 项目名称 | {PROJECT_NAME} |
 | 项目类型 | {PROJECT_TYPE} |
+| 语言 ID | {LANGUAGE_ID} |
 | 审查类型 | {REVIEW_TYPE} |
 | 审查范围 | {REVIEW_SCOPE} |
 | 审查模式 | {REVIEW_MODE} |
-| 审查模型 | {REVIEW_MODEL} |
+| 审查模型 | {MODEL_PROFILE} |
 | 审查文件数量 | {REVIEW_FILE_COUNT} |
 | 审查代码行数 | {REVIEW_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
@@ -1191,6 +1332,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | 项目 ignore 是否启用 | {IGNORE_RULES_ENABLED} |
 | 项目 ignore 问题数量 | {IGNORE_RULE_COUNT} |
 | 语义增强 | {SEMANTIC_LEVEL} |
+| source manifest | {MANIFEST 绝对路径}（仅 LANGUAGE_ID=frontend 或 python；Java 单 agent 自行 Glob，不注入） |
+| 本批审查文件列表 | {BATCH_FILE_LIST}（仅文件级分批模式，单 agent 模式不注入） |
 
 ### 项目概况（预扫描结果）
 {PROJECT_SCAN_RESULT}
@@ -1219,7 +1362,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `PROJECT_NAME` | `basename "$PROJECT_DIR"` | `spring-ai-agent-utils` |
 | `PROJECT_TYPE` | languages/java/project-scan.sh 脚本输出 | `maven-single` 等 |
 | `REVIEW_MODE` | 交互步骤1 | `fast` / `standard` 等 |
-| `REVIEW_MODEL` | 第五步之后（模型选择已前移至分批前） | `sonnet` / `opus` / `haiku` |
+| `MODEL_PROFILE` | 第五步之后（模型选择已前移至分批前） | `inherit` / `economy` / `balanced` / `maximum` |
 | `CONTEXT_SCALE` | 固定 1M 分批常量 | `5` |
 | `CONTEXT_WINDOW_TOKENS` | 固定 1M 分批常量 | `1000000` |
 | `FEISHU_UPLOAD_OPTION` | 交互步骤2 | `本地 Markdown 报告` 或 `飞书云文档, 飞书多维表格` 等 |
@@ -1228,7 +1371,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `REVIEW_SCOPE` | 交互步骤4 | `最近5次提交` / `全量代码` / `yudao-module-mes,yudao-framework` |
 | `STOCK_REVIEW_STRATEGY` | 交互步骤4B（仅 Maven 多模块存量） | `module-sequential` / `ai-planned` |
 | `PROJECT_SCAN_RESULT` | languages/java/project-scan.sh 完整输出 | 项目概况、模块结构 |
-| `SEMANTIC_LEVEL` | Java：`detect-code-intelligence.sh` 输出转换（`CODE_INTELLIGENCE_AVAILABLE=true` → `jdtls-lsp`，否则 `maven-static`）；前端：`CODE_INTELLIGENCE_PROVIDER=typescript-lsp` → `typescript-lsp`，否则 `none`；Python：`CODE_INTELLIGENCE_PROVIDER=pyright|pylsp|jedi` → 同名，否则 `none` | `jdtls-lsp` / `typescript-lsp` / `pyright` |
+| `SEMANTIC_LEVEL` | Java：`detect-code-intelligence.sh` 输出转换（`CODE_INTELLIGENCE_AVAILABLE=true` → `jdtls-lsp`，否则 `maven-static`）；前端：`CODE_INTELLIGENCE_PROVIDER=typescript-lsp` → `typescript-lsp`，否则 `none`；Python：`CODE_INTELLIGENCE_PROVIDER=pyright|pylsp|jedi` → 同名 LSP，`pyright-cli` → `pyright-cli`（仅 diagnostics），否则 `none` | `jdtls-lsp` / `typescript-lsp` / `pyright` / `pyright-cli` |
 | `DETECTED_TECH_STACK` | 从 `PROJECT_SCAN_RESULT` 的 `TECH_STACK:` 行解析，来源为各语言依赖指纹 | `Spring Boot, MyBatis, Redis/Cache` |
 | `REVIEW_FILE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `76` |
 | `REVIEW_LINE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `16637` |
@@ -1239,14 +1382,14 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `DJANGO_RULES_PATH` | 仅 `LANGUAGE_ID=python`：`references/languages/python/django-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/python/django-rules.md` |
 | `FASTAPI_RULES_PATH` | 仅 `LANGUAGE_ID=python`：`references/languages/python/fastapi-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/python/fastapi-rules.md` |
 | `SOURCE_SCOPE_PATH` | 仅 `LANGUAGE_ID=frontend` 或 `python`：对应 `references/languages/{lang}/source-scope.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/source-scope.md` |
-| `REPORT_FORMAT_PATH` | `${CLAUDE_PLUGIN_ROOT}/references/report-format.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/report-format.md` |
+| `REPORT_FORMAT_PATH` | `${PLUGIN_ROOT}/references/report-format.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/report-format.md` |
 | `GIT_LOG_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git log --oneline -N` |
 | `CHANGED_FILES_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git diff --name-only` |
 | `DIFF_STATS_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git diff --stat` |
 
 ### 增量审查预处理（仅增量审查时执行）
 
-在调用子 agent 之前，执行增量预处理脚本：`bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/prepare-incremental.sh" "$PROJECT_DIR" {N}`
+在调用子 agent 之前，执行增量预处理脚本：`bash "${PLUGIN_ROOT}/scripts/core/prepare-incremental.sh" "$PROJECT_DIR" {N}`
 
 脚本输出用 `# ===` 分隔为三部分：
 1. `# === 提交记录 ===` → GIT_LOG_OUTPUT
@@ -1261,7 +1404,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 
 Maven 大仓库模式必须通过确定性脚本合并，并把本轮主任务批次通过 `RUN_BATCH_IDS` 传给脚本：
 ```bash
-RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-batch-results.sh" "$RUN_DIR"
+RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${PLUGIN_ROOT}/scripts/core/merge-batch-results.sh" "$RUN_DIR"
 ```
 
 该脚本会生成 `summary.json` 和 `final/code-review-report-*`，并在报告中写入“批次状态总览”，列明本轮主任务批次、已纳入合并的批次、失败/缺失/等待超时遗留批次，以及未纳入本轮的遗留批次。
@@ -1362,8 +1505,8 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-b
 
 #### 步骤 2：按 FEISHU_UPLOAD_OPTION 执行飞书上传
 
-- **包含 `飞书云文档`**：通过 `lark-cli` + `lark-doc` skill 创建飞书云文档。CLI 固定使用 `lark-cli docs +create --api-version v2 --doc-format markdown --content @{REPORT_BASENAME}`，先 `cd` 到报告文件所在目录再用相对文件名。文档标题由 Markdown 一级标题承载，不要传 `--title`。从响应 `data.doc_url` 提取云文档链接 `DOC_URL`。详细步骤见 `${CLAUDE_PLUGIN_ROOT}/references/feishu-integration.md`「上传报告到飞书云文档」章节。
-- **包含 `飞书多维表格`**：通过 `lark-cli` + `lark-base` skill 创建飞书多维表格并录入问题清单。按 17 字段定义创建表 → 重命名默认主字段为"备注" → 创建其余 16 字段 → 批量录入问题数据（从子 agent 返回的完整报告内容中解析各级别问题）→ 清理默认字段。从响应提取多维表格链接 `BASE_URL`。详细步骤见 `${CLAUDE_PLUGIN_ROOT}/references/feishu-integration.md`「创建飞书多维表格」章节。
+- **包含 `飞书云文档`**：通过 `lark-cli` + `lark-doc` skill 创建飞书云文档。CLI 固定使用 `lark-cli docs +create --api-version v2 --doc-format markdown --content @{REPORT_BASENAME}`，先 `cd` 到报告文件所在目录再用相对文件名。文档标题由 Markdown 一级标题承载，不要传 `--title`。从响应 `data.doc_url` 提取云文档链接 `DOC_URL`。详细步骤见 `${PLUGIN_ROOT}/references/feishu-integration.md`「上传报告到飞书云文档」章节。
+- **包含 `飞书多维表格`**：通过 `lark-cli` + `lark-base` skill 创建飞书多维表格并录入问题清单。按 17 字段定义创建表 → 重命名默认主字段为"备注" → 创建其余 16 字段 → 批量录入问题数据（从子 agent 返回的完整报告内容中解析各级别问题）→ 清理默认字段。从响应提取多维表格链接 `BASE_URL`。详细步骤见 `${PLUGIN_ROOT}/references/feishu-integration.md`「创建飞书多维表格」章节。
 - **只含 `本地 Markdown 报告`、或值为 `lark-cli未安装` / `飞书上传不可用`**：跳过飞书上传，直接进入步骤 3 的「未上传飞书」分支。
 
 #### 步骤 3：输出最终汇总
@@ -1442,4 +1585,4 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/merge-b
 
 ## 示例对话
 
-完整的示例对话详见 `${CLAUDE_PLUGIN_ROOT}/references/examples.md`。
+完整的示例对话详见 `${PLUGIN_ROOT}/references/examples.md`。

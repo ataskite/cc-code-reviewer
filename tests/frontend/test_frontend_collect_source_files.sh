@@ -4,7 +4,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/fe-collect.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-D="$TMP_DIR/app"
+D="$TMP_DIR/build/app"
 mkdir -p "$D/src/components" "$D/src/test" "$D/src/types" "$D/dist" "$D/node_modules" "$D/scripts" "$D/tools"
 D="$(cd "$D" && pwd -P)"
 cat > "$D/package.json" <<'JSON'

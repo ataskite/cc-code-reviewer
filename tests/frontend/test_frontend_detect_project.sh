@@ -93,6 +93,10 @@ grep -q "PROJECT_TYPE=frontend-vue3" < <(bash "$ROOT_DIR/scripts/languages/front
 mk_node_service node_api
 grep -q "PROJECT_TYPE=node" < <(bash "$ROOT_DIR/scripts/languages/frontend/detect-project.sh" "$TMP_DIR/node_api")
 
+# 项目绝对路径包含 build 时，不能因为全路径排除规则误 prune 项目根目录。
+mk_react_vite build/react_vite
+grep -q "PROJECT_TYPE=frontend-react" < <(bash "$ROOT_DIR/scripts/languages/frontend/detect-project.sh" "$TMP_DIR/build/react_vite")
+
 # Next.js → 不支持
 mk_nextjs nx
 OUT="$(bash "$ROOT_DIR/scripts/languages/frontend/detect-project.sh" "$TMP_DIR/nx")"

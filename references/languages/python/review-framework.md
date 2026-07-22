@@ -1,6 +1,6 @@
 # Python 代码审查框架
 
-本手册定义 Python 项目（Django / FastAPI / Flask / 通用 Python，服务端聚焦）代码审查的 12 个维度。维度与 Java 的 15 维度、前端的 12 维度结构完全独立，不编号、不映射。各模式的启用范围以"审查模式 × 维度覆盖矩阵"为准。
+本手册定义 Python 项目（Django / FastAPI / 通用 Python，服务端聚焦）代码审查的 12 个维度。维度与 Java 的 15 维度、前端的 12 维度结构完全独立，不编号、不映射。各模式的启用范围以"审查模式 × 维度覆盖矩阵"为准。
 
 > 审查框架各语言独立。Java 框架见 `references/languages/java/review-framework.md`；前端框架见 `references/languages/frontend/review-framework.md`；本文件不引用任何其他语言的维度编号。
 
@@ -40,7 +40,6 @@
 |---|---|---|---|
 | Django | `django` in pyproject.toml/setup.py/requirements.txt | 1, 4, 5, 6, 7, 10, 12 | ORM/middleware/signals/admin/CSRF/template/migration，见 `django-rules.md` |
 | FastAPI | `fastapi` in dependencies | 1, 4, 5, 6, 8, 12 | DI/Pydantic/async/OpenAPI，见 `fastapi-rules.md` |
-| Flask | `flask` in dependencies | 1, 4, 6, 10, 12 | blueprint/session/template 注入（本轮框架检测保留，专项规则见后续版本） |
 | SQLAlchemy | `sqlalchemy` in dependencies | 5, 6, 7 | Session 生命周期、ORM N+1、raw SQL 注入、连接池 |
 | Django ORM | `django` + `models.Model` | 5, 6, 7 | queryset 懒加载、select_related/prefetch_related、事务 `atomic` |
 | Celery | `celery` in dependencies | 8, 10 | 任务幂等、重试、超时、死信队列、broker 连接 |
@@ -107,9 +106,9 @@
 - **secrets 硬编码**：API key/token/密码直接写在源码、`.env` 提交到版本库、secret 写入日志
 - **路径穿越**：用户输入拼路径未规范化（`os.path.join` + `..`）、`open(user_path)` 未校验根目录
 - **SSRF**：`requests.get(user_url)`/`httpx.get(user_url)` 未校验内网地址
-- **XSS（Django/Flask 模板）**：`mark_safe`/`|safe` 过滤器渲染用户输入、Jinja2 `autoescape` 关闭
+- **XSS（Django 模板）**：`mark_safe`/`|safe` 过滤器渲染用户输入、Jinja2 `autoescape` 关闭
 - **依赖漏洞（OWASP 2025 A03）**：lockfile 未提交、未运行 `pip-audit`/`safety`、`postinstall` 等价物（`setup.py` 的恶意钩子）、provenance 缺失
-- **CSP**：Django/Flask CSP 头未配置、`X-Content-Type-Options`/`X-Frame-Options` 缺失
+- **CSP**：Django CSP 头未配置、`X-Content-Type-Options`/`X-Frame-Options` 缺失
 - **依赖风险结论规则**：见下文专节
 
 ### 7. 性能

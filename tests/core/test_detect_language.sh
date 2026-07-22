@@ -48,6 +48,11 @@ FOUT="$(bash "$ROOT_DIR/scripts/core/detect-language.sh" "$TMP_DIR/react_only")"
 grep -q "CANDIDATE_LANGUAGE:frontend" <<< "$FOUT"
 ! grep -q "CANDIDATE_LANGUAGE:java" <<< "$FOUT"
 
+# 项目绝对路径包含 build 时，统一语言探测仍必须识别项目内容。
+mk_react build/react_only
+FOUT_BUILD="$(bash "$ROOT_DIR/scripts/core/detect-language.sh" "$TMP_DIR/build/react_only")"
+grep -q "CANDIDATE_LANGUAGE:frontend" <<< "$FOUT_BUILD"
+
 # Vue 2 legacy 也应路由到 frontend
 mk_vue2 vue2_only
 VOUT="$(bash "$ROOT_DIR/scripts/core/detect-language.sh" "$TMP_DIR/vue2_only")"

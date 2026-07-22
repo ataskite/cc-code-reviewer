@@ -9,21 +9,15 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # 统一的排除目录（不使用 eval：直接作为 find 的位置参数）
 PRUNE_PATHS=(
-  -path '*/node_modules/*' -o
-  -path '*/target/*' -o
-  -path '*/build/*' -o
-  -path '*/dist/*' -o
-  -path '*/.git/*' -o
-  -path '*/venv/*' -o
-  -path '*/.venv/*' -o
-  -path '*/__pycache__/*' -o
-  -path '*/site-packages/*'
+  -type d \( -name 'node_modules' -o -name 'target' -o -name 'build' -o -name 'dist' \
+    -o -name '.git' -o -name 'venv' -o -name '.venv' -o -name '__pycache__' \
+    -o -name 'site-packages' \)
 )
 
 has_java() {
   [ -f "$PROJECT_DIR/pom.xml" ] && return 0
   find "$PROJECT_DIR" -maxdepth 1 -name 'build.gradle*' -type f -print -quit 2>/dev/null | grep -q . && return 0
-  find "$PROJECT_DIR" \( "${PRUNE_PATHS[@]}" \) -prune -o -name '*.java' -print -quit 2>/dev/null | grep -q .
+  find "$PROJECT_DIR" -mindepth 1 \( "${PRUNE_PATHS[@]}" \) -prune -o -name '*.java' -print -quit 2>/dev/null | grep -q .
 }
 
 # 复用 frontend adapter 的项目类型识别，避免 React/Vue/Node 支持边界在两处漂移。
@@ -37,13 +31,13 @@ has_frontend() {
   return 1
 }
 
-# 复用 python adapter 的项目类型识别，避免 Django/FastAPI/Flask 支持边界在两处漂移。
+# 复用 python adapter 的项目类型识别，避免 Django/FastAPI 支持边界在两处漂移。
 has_python() {
   local out ptype
   out="$(bash "$ROOT_DIR/scripts/languages/python/detect-project.sh" "$PROJECT_DIR" 2>/dev/null || true)"
   ptype="$(printf '%s\n' "$out" | sed -n 's/^PROJECT_TYPE=//p' | cut -d'|' -f1 | head -1)"
   case "$ptype" in
-    python-django|python-fastapi|python-flask|python-generic) return 0 ;;
+    python-django|python-fastapi|python-generic) return 0 ;;
   esac
   return 1
 }
@@ -53,6 +47,6 @@ emit() { printf 'CANDIDATE_LANGUAGE:%s|evidence=%s\n' "$1" "$2"; }
 found=0
 if has_java; then emit java "maven/gradle-or-java-source"; found=1; fi
 if has_frontend; then emit frontend "react-vue-node-supported-project"; found=1; fi
-if has_python; then emit python "django-fastapi-flask-or-python-source"; found=1; fi
+if has_python; then emit python "django-fastapi-or-python-source"; found=1; fi
 if [ "$found" -eq 0 ]; then echo "CANDIDATE_LANGUAGE:none"; fi
 exit 0

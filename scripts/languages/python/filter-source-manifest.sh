@@ -42,17 +42,32 @@ while IFS= read -r file; do
 
   while IFS= read -r scope; do
     [ -n "$scope" ] || continue
-    # src/<dir> 或 <dir> 匹配模式（与前端 filter 对齐）：
-    # - 完整路径 src/api 匹配 src/api/... 和 */src/api/...
-    # - 短名 api 匹配 */api/...（所有包下的 api 目录）
+    # 匹配模式（与前端 filter 对齐 + 扩展 flat layout）：
+    # - 完整 src 路径含包前缀（apps/web/src/api）：精确前缀匹配
+    # - src/ 前缀短路径（src/api）：去掉 src/ 前缀当短名处理，匹配 src/api/* 和 */src/api/*
+    # - 完整 flat 路径（myapp/api，含 / 但不含 src/）：精确前缀匹配
+    # - 短名（api）：匹配 src/api/*、*/src/api/*、api/*（根级 flat 包）、*/api/*（包级 flat 子目录）
     if [[ "$scope" == */src/* ]]; then
+      # 完整路径含 src/（如 apps/web/src/api）：精确前缀匹配
+      case "$rel" in
+        "$scope"/*) printf '%s\n' "$file" >> "$MATCH_FILE"; break ;;
+      esac
+    elif [[ "$scope" == src/* ]]; then
+      # src/ 前缀短路径（如 src/api）：当短名处理
+      sub="${scope#src/}"
+      case "$rel" in
+        "src/$sub"/*|*/"src/$sub"/*|"$sub"/*|*/"$sub"/*) printf '%s\n' "$file" >> "$MATCH_FILE"; break ;;
+      esac
+    elif [[ "$scope" == */* ]]; then
+      # 完整 flat 路径: myapp/api
       case "$rel" in
         "$scope"/*) printf '%s\n' "$file" >> "$MATCH_FILE"; break ;;
       esac
     else
-      sub="${scope#src/}"
+      # 短名: api -> 匹配 src/api/*, */src/api/*, api/*, */api/*
+      sub="$scope"
       case "$rel" in
-        "src/$sub"/*|*/"src/$sub"/*) printf '%s\n' "$file" >> "$MATCH_FILE"; break ;;
+        "src/$sub"/*|*/"src/$sub"/*|"$sub"/*|*/"$sub"/*) printf '%s\n' "$file" >> "$MATCH_FILE"; break ;;
       esac
     fi
   done < "$SCOPE_FILE"

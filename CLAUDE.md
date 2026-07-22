@@ -8,7 +8,9 @@ This is a **Claude Code plugin skill** for enterprise-grade Java code review and
 
 **Important**: This repository intentionally uses **skill-only entry points** plus dedicated sub-agents. Claude Code can invoke the skills explicitly via `/cc-code-reviewer:cc-code-reviewer` for scan, `/cc-code-reviewer:cc-code-ignore` for scan ignore-rule maintenance, and `/cc-code-reviewer:cc-code-fixer` for fix.
 
-- **Multi-language support**: supports Java, the frontend family (React, Vue 2.x, Vue 3.x, Node.js, TypeScript, JavaScript), and Python (Django, FastAPI, Flask). The unified entry `/cc-code-reviewer:cc-code-reviewer` auto-routes by language detection; mixed repos require the user to pick one language. The frontend path uses a language-neutral shared kernel (`scripts/core/`) plus a frontend adapter (`scripts/languages/frontend/`) and sub-agent (`agents/cc-code-reviewer-frontend.md`); the Python path uses the same kernel plus a Python adapter (`scripts/languages/python/`) and sub-agent (`agents/cc-code-reviewer-python.md`). Vue 2/3 and React signals coexist (common in monorepos) Vue wins arbitration; Vue2 legacy projects receive stronger Vue2-specific review rules. See `docs/superpowers/specs/2026-06-23-multi-language-reviewer-design.md`.
+- **Multi-language support**: supports Java, the frontend family (React, Vue 2.x, Vue 3.x, Node.js, TypeScript, JavaScript), and Python (Django, FastAPI, generic Python). The unified entry `/cc-code-reviewer:cc-code-reviewer` auto-routes by language detection; mixed repos require the user to pick one language. The frontend path uses a language-neutral shared kernel (`scripts/core/`) plus a frontend adapter (`scripts/languages/frontend/`) and sub-agent (`agents/cc-code-reviewer-frontend.md`); the Python path uses the same kernel plus a Python adapter (`scripts/languages/python/`) and sub-agent (`agents/cc-code-reviewer-python.md`). Vue 2/3 and React signals coexist (common in monorepos) Vue wins arbitration; Vue2 legacy projects receive stronger Vue2-specific review rules. See `docs/superpowers/specs/2026-06-23-multi-language-reviewer-design.md`.
+
+- **Three-agent plugin compatibility (v1.5.0)**: the same Git repository can be installed by Claude Code, Codex CLI/Desktop, and ZCode. All three native manifests discover root `skills/`, which is the single authoritative workflow. Each Skill selects the adapter from the current host identity and resolves `PLUGIN_ROOT` from its own resource location; it never guesses from installed tools or cwd. Shared logic uses `RUNTIME_ID`, `PLUGIN_ROOT`, `MODEL_PROFILE`, `INTERACT`, and `DISPATCH_AGENT`; it does not use `${CLAUDE_PLUGIN_ROOT}`, Claude `subagent_type`, or concrete model IDs. Version truth lives in `VERSION`; versioned plugin manifests must match it, while the Codex marketplace index resolves version through its local source.
 
 ## Architecture
 
@@ -65,7 +67,7 @@ flowchart TD
 **Main Skill (`skills/cc-code-reviewer/SKILL.md`)**:
 - Pre-scan: project detection → branch detection → project scan → jdtls/code-intelligence detection → lark-cli detection
 - Reads `.cc-code-reviewer/ignore/issues.yml` after pre-scan and injects AI-readable skip rules into the scan agent
-- Interactive mode: Collect user config via AskUserQuestion after pre-scan: review mode → model → report handling → review entry → scope → optional stock strategy → optional batch selection/concurrency → final confirmation
+- Interactive mode: Collect user config via INTERACT after pre-scan: review mode → model → report handling → review entry → scope → optional stock strategy → optional batch selection/concurrency → final confirmation
 - Batch mode: Auto-triggered for large stock reviews or when a Maven multi-module stock strategy is selected; uses deterministic planner scripts, dispatches parallel sub-agents, gates merge on current-run batch status, and reports included/leftover batches
 - Maven large-repo mode: for Maven multi-module stock full-code or selected-module reviews using `module-sequential` or `ai-planned`, creates `.cc-code-reviewer/runs/{RUN_ID}` with atomic module/directory batches, status files, resumable execution, and staged/full merge reports
 - File batch mode: for Maven single-module, Gradle, or unknown Java projects when `BATCH_MODE=true`, uses `languages/java/plan-file-batches.sh` and `file-token-batching`
@@ -78,7 +80,7 @@ flowchart TD
 - In Maven large-repo batches, read `BATCH_PLAN_PATH`, keep formal findings inside `scan_roots`, and use `jdtls-lsp` semantic queries when `SEMANTIC_LEVEL=jdtls-lsp`
 - Generate structured report
 - Save local Markdown report only; never upload to Feishu (the main skill handles all Feishu uploads)
-- **Never** interact with user via AskUserQuestion
+- **Never** interact with user via INTERACT
 
 **Ignore Skill (`skills/cc-code-ignore/SKILL.md`)**:
 - Read a scan issue list from Feishu Base or local Markdown
@@ -89,7 +91,7 @@ flowchart TD
 **Fix Skill (`skills/cc-code-fixer/SKILL.md`)**:
 - Normalize fix input from local Markdown, Feishu Doc, or Feishu Base
 - Preflight: project detection → branch detection → project scan → lark-cli detection → optional Superpowers capability detection
-- Collect confirmed issue scope and output target via AskUserQuestion
+- Collect confirmed issue scope and output target via INTERACT
 - Execute the default direct-fix route itself after user confirmation
 - Show the Superpowers route only when the required skills are installed and the user selects it
 
@@ -99,9 +101,9 @@ These rules **must** be strictly followed:
 
 1. **Pre-scan before interaction**: Execute scan/fix preflight scripts first, collect environment data
 2. **Summary before questions**: Output a preflight summary once, only after the required scripts complete
-3. **Structured interaction**: In interactive mode, use AskUserQuestion for each step separately
+3. **Structured interaction**: In interactive mode, use INTERACT for each step separately
 4. **Scan stays interactive**: Scan and Fix stages both require structured human confirmation.
-5. **No text replacement**: Never use plain text questions to replace AskUserQuestion steps
+5. **No text replacement**: Never use plain text questions to replace INTERACT steps
 6. **Never skip summary**: Even if all parameters provided, always show pre-scan summary
 7. **Fix stage honors confirmed scope**: `cc-code-fixer` must only repair the confirmed issue set
 8. **Fix stage defaults to direct repair**: Superpowers is optional and only appears when installed; no dedicated fix sub-agent is used
@@ -114,6 +116,16 @@ skills/cc-code-reviewer/SKILL.md    # Main skill definition (entry point)
 skills/cc-code-ignore/SKILL.md      # Scan ignore-rule maintenance skill
 skills/cc-code-fixer/SKILL.md       # Fix-stage skill definition
 agents/cc-code-reviewer.md          # Sub agent for review execution
+runtime/                            # Three-agent runtime adapters (v1.5.0)
+  ├── contract.md                   # Platform-neutral runtime contract
+  ├── claude-code.md                # INTERACT / Claude Agent mapping
+  ├── codex.md                      # Codex interaction / subagent mapping
+  └── zcode.md                      # ZCode interaction / subagent mapping
+.claude-plugin/                     # Claude Code manifest + marketplace
+.codex-plugin/                      # Codex native manifest
+.zcode-plugin/                      # ZCode native manifest
+.agents/plugins/                    # Codex Git Marketplace manifest
+VERSION                             # Single source of truth for plugin version
 references/
   ├── languages/
   │   ├── java/
@@ -144,6 +156,7 @@ scripts/
   │   ├── detect-language.sh             # Language detection dispatcher
   │   ├── estimate-review-minutes.sh     # Deterministic review time estimation
   │   ├── validate-scope.sh              # Scope path boundary validation (reserved)
+  │   ├── validate-plugin-manifests.sh   # Three-platform plugin manifest validator (v1.5.0)
   │   ├── plan-file-batches.sh           # Language-neutral file-token batch planner
   │   ├── merge-batch-results.sh         # Batch result merge (dedup + coverage)
   │   └── show-batch-status.sh           # User-visible batch status and dynamic execution plan
@@ -174,7 +187,9 @@ scripts/
 Run this before handing off changes:
 
 ```bash
-bash tests/run_all.sh
+# 禁止用管道接 run_all.sh 输出（如 | tail / | head），会吞掉失败退出码。
+# 要看末尾输出请重定向到文件：
+bash tests/run_all.sh > /tmp/test.log 2>&1; echo $?; tail /tmp/test.log
 ```
 
 The suite runs every `tests/test_*.sh` file and then `git diff --check`. It covers:
@@ -182,7 +197,7 @@ The suite runs every `tests/test_*.sh` file and then `git diff --check`. It cove
 - `core/detect-branches.sh` / `core/switch-branch.sh`: branch discovery, clean local checkout, dirty local workspace protection
 - `languages/java/project-scan.sh`: Maven multi-module scans, module paths with spaces, unknown-project line counts
 - `core/detect-lark-plugin.sh`: lark-cli detection output contract
-- `core/preview-recent-commits.sh`: recent commit preview for incremental AskUserQuestion choices
+- `core/preview-recent-commits.sh`: recent commit preview for incremental INTERACT choices
 - `core/prepare-incremental.sh`: incremental diff ranges that include the root commit
 - `languages/java/detect-code-intelligence.sh`: jdtls-lsp availability and fallback messaging
 - `languages/java/plan-large-batches.sh`: scoped Maven module planning, concise `RUN_DIR`, semantic-cost and module-sequential strategies
@@ -249,10 +264,10 @@ Verify installation by triggering the skill with a Java review request such as `
 
 ### Scan Interaction Contract
 
-- Scan always runs the AskUserQuestion flow after pre-scan.
-- fast 模式只输出满足全部 P0 硬门槛的问题；AskUserQuestion 选项必须直观标注“仅输出 P0”，最终执行计划必须再次显示“输出级别：仅 P0”。
+- Scan always runs the INTERACT flow after pre-scan.
+- fast 模式只输出满足全部 P0 硬门槛的问题；INTERACT 选项必须直观标注“仅输出 P0”，最终执行计划必须再次显示“输出级别：仅 P0”。
 - The flow confirms review mode, model, and report handling before review entry; then it confirms entry, scope, optional Maven stock strategy, optional batch execution count, optional concurrency, and final execution.
-- Module selection for large Maven projects must keep AskUserQuestion payloads bounded: show module trees as normal text, keep fixed options small, and collect module paths through Other/free-form when needed.
+- Module selection for large Maven projects must keep INTERACT payloads bounded: show module trees as normal text, keep fixed options small, and collect module paths through Other/free-form when needed.
 - Do not preserve command-line compatibility that bypasses interaction.
 
 ### Batch Planning Contract
@@ -275,12 +290,12 @@ Verify installation by triggering the skill with a Java review request such as `
 ### Fix Mode Detection
 
 - **Fixed interactive mode**: `cc-code-fixer` always requires interactive confirmation. No command-line bypass parameters.
-- User provides project path only; all fix planning is collected through AskUserQuestion steps.
+- User provides project path only; all fix planning is collected through INTERACT steps.
 
-### AskUserQuestion Usage
+### INTERACT Usage
 
 Each interaction step must:
-- Call AskUserQuestion exactly once
+- Call INTERACT exactly once
 - Set `multiSelect: false`, except the scan report-handling step and the multi-module stock-review scope step where selecting multiple values is allowed
 - Present clear options with descriptions
 - Wait for user response before proceeding

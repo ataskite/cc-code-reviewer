@@ -1,0 +1,26 @@
+{
+  "name": "cc-code-reviewer",
+  "description": "Java、前端族群（React/Vue2/Vue3/Node/TS/JS）与 Python（Django/FastAPI/通用 Python）代码审查与 report-driven fixing 报告驱动修复插件 for Codex",
+  "version": "1.5.0",
+  "author": {
+    "name": "ataskite"
+  },
+  "skills": "./skills/",
+  "repository": "https://github.com/ataskite/cc-code-reviewer",
+  "license": "MIT",
+  "keywords": ["java", "react", "typescript", "python", "django", "fastapi", "code-review", "code-fix", "security", "frontend"],
+  "interface": {
+    "displayName": "CC Code Reviewer",
+    "shortDescription": "多语言代码审查与报告驱动修复",
+    "longDescription": "面向 Java、前端与 Python 项目的交互式代码审查、批次合并、项目级忽略规则和报告驱动修复插件。",
+    "developerName": "ataskite",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://github.com/ataskite/cc-code-reviewer",
+    "defaultPrompt": [
+      "审查当前项目并生成本地 Markdown 报告。",
+      "从审查报告中选择问题并执行受控修复。",
+      "把误报沉淀为项目级 ignore 规则。"
+    ]
+  }
+}

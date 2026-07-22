@@ -239,10 +239,10 @@
 - 本次模式下的核心判断
 - 3 个关键行动项
 
-**审查人**: Claude Code 代码审查 Agent (`cc-code-reviewer`)
+**审查人**: cc-code-reviewer Agent
 **报告版本**: 5.4
 **审查模式**: [fast / standard / deep / security]
-**审查模型**: [sonnet / opus / haiku]
+**模型档位**: [inherit / economy / balanced / maximum]
 
 ## 大仓库审查执行摘要
 

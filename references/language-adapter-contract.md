@@ -29,6 +29,8 @@ CODE_INTELLIGENCE_PROVIDER=typescript-lsp
 CODE_INTELLIGENCE_AVAILABLE=true
 
 COMPONENT:app|src/app|126|18200
+FORMAL_CONFIG_FILE:/project/pyproject.toml
+CONTEXT_ROOT:tests|/project/tests
 TECH_STACK:React|dependency:react@19|rules:react
 TECH_STACK:Vue 2|dependency:vue@2/vue-template-compiler|rules:vue2
 TECH_STACK:Node.js|dependency:package.json|rules:node-runtime
@@ -45,9 +47,11 @@ SOURCE_SCOPE:excluded|node_modules/**
 - `LANGUAGE_ID` 在一次运行中不可变。
 - `SOURCE_FILE_COUNT` 只统计生产源码，且必须与覆盖率分母来自同一份不可变 source manifest。
 - `FORMAL_CONFIG_FILE_COUNT` 单独记录可产生正式问题的配置文件，**不进入源码覆盖率分母**。
+- 适配器应为每个正式配置输出 `FORMAL_CONFIG_FILE:<绝对路径>`；它可以产生正式问题，但不进入 source manifest 和源码覆盖率分母。文件级分批时只由首批审查正式配置，避免重复发现。
+- 适配器应为每个只读上下文根目录输出 `CONTEXT_ROOT:<类型>|<绝对路径>`，类型如 `tests`（测试目录）、`migrations`（Django/Alembic 生成代码）。上下文根目录可用于测试质量/迁移质量判断，但**不得成为正式问题位置**，也**不计入源码覆盖率分母**。
 - 公共层使用 `source_file_count` 等中性概念；Java 兼容输出可暂时保留 `selected_java_file_count` 别名（Phase 4 迁移后废弃）。
 - `COMPONENT` / `TECH_STACK` / `SOURCE_SCOPE` 可重复出现。
-  - `COMPONENT` 是语言中性的「目录分区」（前端 = `src` 顶层目录，Java 兼容映射自 `MODULE:`）；公共层**可以**消费 `COMPONENT:` 行做目录概览展示、范围选择（前端「指定模块」入口）和 source manifest 收敛——这些都是目录结构操作，**不涉及框架语义**。
+  - `COMPONENT` 是语言中性的、互不重叠的「目录分区」（前端/Python = source manifest 的顶层源码分区，Java 兼容映射自 `MODULE:`）；公共层**可以**消费 `COMPONENT:` 行做目录概览展示、范围选择和 source manifest 收敛——这些都是目录结构操作，**不涉及框架语义**。
   - 前端 source manifest 收敛必须通过 `scripts/languages/frontend/filter-source-manifest.sh`：`src/components` 或 `components` 匹配所有支持技术栈的 package-local `*/src/components/`，`apps/web/src/components` 只匹配对应 package；绝对路径和 `..` 路径穿越必须拒绝。
   - `TECH_STACK` / `SOURCE_SCOPE` 公共层只负责保存和展示，**不解释框架语义**（专项规则解释仍由各语言 agent 完成）。
 - 混合仓库：用户选择语言后，另一语言只能作仓库背景，不得成为正式问题来源。

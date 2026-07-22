@@ -15,7 +15,7 @@ fi
 
 UPLOAD_MULTISELECT_BLOCK="$(sed -n "${UPLOAD_PICK_LINE},$((UPLOAD_PICK_LINE + 18))p" "$SKILL_FILE")"
 if ! printf '%s\n' "$UPLOAD_MULTISELECT_BLOCK" | grep -q -- "- multiSelect: true"; then
-  echo "report handling AskUserQuestion must be multi-select" >&2
+  echo "report handling INTERACT must be multi-select" >&2
   exit 1
 fi
 

@@ -1,10 +1,13 @@
 ---
+name: cc-code-ignore
 description: 扫描后沉淀项目级 ignore 规则，从飞书 Base 或本地 Markdown 问题清单中选择代表性问题并写入本地 ignore 文件
 ---
 
 # Project Ignore Skill
 
 你负责把扫描后的误报或项目特有设计沉淀为项目级 ignore 规则。ignore 文件是 **AI 指令型 ignore 文件**，供后续 scan agent 读取并跳过同类问题。
+
+> **跨平台运行**：本文件由 Claude Code / Codex / ZCode 三端共同发现。开始前根据当前宿主身份固定 `RUNTIME_ID`，以本 Skill 资源目录为基准向上两级解析 `PLUGIN_ROOT`，再完整读取对应 runtime adapter；若宿主或根目录不明确，在任何读取/写入项目文件前失败。`INTERACT` 是逻辑动作，由 adapter 映射到宿主结构化输入；不可用时才逐轮单问。
 
 ## 入口参数
 
@@ -38,7 +41,7 @@ references/ignore-workflow.md
 
 ### 2. 询问问题清单来源
 
-使用 AskUserQuestion，一次只问来源：
+使用 INTERACT，一次只问来源：
 
 - 飞书 Base
 - 本地 Markdown
@@ -101,7 +104,7 @@ references/ignore-workflow.md
 
 ### 6. 写入前确认
 
-展示拟追加的 YAML 片段，使用 AskUserQuestion 让用户确认：
+展示拟追加的 YAML 片段，使用 INTERACT 让用户确认：
 
 - 确认写入
 - 取消

@@ -253,7 +253,7 @@ grep -q "直接修复路线必须确认工作区策略" "$FIX_WORKFLOW_FILE"
 grep -q "subagent-driven-development" "$FIX_WORKFLOW_FILE"
 grep -q "无已归一化问题上下文时必须停止修复" "$FIX_WORKFLOW_FILE" "$FIX_FEISHU_FILE"
 grep -q "Other/free-form 中粘贴" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
-grep -q "一次 AskUserQuestion 收集问题清单位置" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
+grep -q "一次 INTERACT 收集问题清单位置" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
 grep -q "根据输入动态识别" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"
 grep -q "不得先让用户选择本地 Markdown、飞书云文档或飞书多维表格" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE"
 if grep -q "请提供本次待修复问题确认清单的来源" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"; then
@@ -283,7 +283,7 @@ grep -q "FIX_ACTOR" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE" "$
 grep -q "修复人" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE" "$FIX_FEISHU_FILE" "$FIX_EXAMPLES_FILE"
 grep -q "不得再询问用户" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE"
 if grep -q "是否把修复状态更新回问题清单源" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_EXAMPLES_FILE"; then
-  echo "fix flow must not add a separate post-repair writeback AskUserQuestion" >&2
+  echo "fix flow must not add a separate post-repair writeback INTERACT" >&2
   exit 1
 fi
 if grep -q "SOURCE_STATUS_WRITEBACK" "$FIX_WORKFLOW_FILE" "$FIX_SKILL_FILE" "$FIX_REPORT_FILE"; then
@@ -375,7 +375,7 @@ grep -q "模式判定" "$FIX_SKILL_FILE"
 grep -q "detect-fix-input" "$FIX_SKILL_FILE"
 grep -q "detect-superpowers" "$FIX_SKILL_FILE"
 grep -q "修复输入解析完成" "$FIX_SKILL_FILE"
-grep -q "AskUserQuestion" "$FIX_SKILL_FILE"
+grep -q "INTERACT" "$FIX_SKILL_FILE"
 grep -q "待修复问题确认清单" "$FIX_SKILL_FILE"
 grep -q "问题清单位置" "$FIX_SKILL_FILE"
 grep -q "问题清单表格" "$FIX_SKILL_FILE"
@@ -425,6 +425,31 @@ require_match "plugin.json 必须声明 code-fixer 关键字" "code-fixer" "$PLU
 require_match "plugin.json 必须声明 code-fix skill" '"code-fix"' "$PLUGIN_FILE"
 require_match "marketplace.json 必须声明 code-fix skill" '"code-fix"' "$MARKETPLACE_FILE"
 require_match "marketplace.json 描述必须包含 report-driven fixing" "report-driven fixing" "$MARKETPLACE_FILE"
+
+# === Task 1: 三端清单与 VERSION 单一真相源 ===
+# 版本同步从 Claude 两处一致扩展为所有平台清单与 VERSION 一致。
+VERSION_TRUTH_FILE="$ROOT_DIR/VERSION"
+[ -f "$VERSION_TRUTH_FILE" ] || { echo "VERSION 单一真相源缺失" >&2; exit 1; }
+VERSION_TRUTH="$(tr -d '[:space:]' < "$VERSION_TRUTH_FILE")"
+[ -n "$VERSION_TRUTH" ] || { echo "VERSION 内容为空" >&2; exit 1; }
+version_assert "$PLUGIN_VERSION" "$VERSION_TRUTH" "plugin.json vs VERSION"
+# Codex / ZCode 原生清单必须与 VERSION 一致；Codex marketplace 版本由 source 指向的 plugin.json 提供。
+CODEX_PLUGIN_FILE="$ROOT_DIR/.codex-plugin/plugin.json"
+CODEX_MARKET_FILE="$ROOT_DIR/.agents/plugins/marketplace.json"
+ZCODE_PLUGIN_FILE="$ROOT_DIR/.zcode-plugin/plugin.json"
+for t1_manifest in "$CODEX_PLUGIN_FILE" "$ZCODE_PLUGIN_FILE"; do
+  [ -f "$t1_manifest" ] || { echo "三端清单缺失: $t1_manifest" >&2; exit 1; }
+  t1_ver="$(grep -E '"version":' "$t1_manifest" | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')"
+  version_assert "$t1_ver" "$VERSION_TRUTH" "$(basename "$(dirname "$t1_manifest")")/$(basename "$t1_manifest") vs VERSION"
+done
+[ -f "$CODEX_MARKET_FILE" ] || { echo "Codex marketplace 清单缺失: $CODEX_MARKET_FILE" >&2; exit 1; }
+# 三端清单 name 必须全部为 cc-code-reviewer
+for t1_name_file in "$CODEX_PLUGIN_FILE" "$ZCODE_PLUGIN_FILE"; do
+  t1_name="$(grep -E '"name":' "$t1_name_file" | head -1 | sed 's/.*"name": *"\([^"]*\)".*/\1/')"
+  [ "$t1_name" = "cc-code-reviewer" ] || { echo "三端清单 name 不一致: $t1_name_file => '$t1_name'" >&2; exit 1; }
+done
+# 集成校验脚本必须通过
+bash "$ROOT_DIR/scripts/core/validate-plugin-manifests.sh" >/dev/null || { echo "validate-plugin-manifests.sh 校验失败" >&2; exit 1; }
 
 # === Batch scanning contracts ===
 
@@ -568,8 +593,8 @@ require_literal "$SKILL_FILE" "module-sequential" "stock review flow must suppor
 require_literal "$SKILL_FILE" "ai-planned" "stock review flow must support AI planned batching"
 require_literal "$SKILL_FILE" "按所选模块依次启动" "stock review strategy must describe per-module execution"
 require_literal "$SKILL_FILE" "AI 智能规划分批" "stock review strategy must describe smart batching"
-require_literal "$SKILL_FILE" "不得把每个模块都作为 AskUserQuestion option" "module selection must avoid oversized AskUserQuestion payloads"
-require_literal "$SKILL_FILE" "最多 3 个固定选项" "module selection AskUserQuestion must stay bounded"
+require_literal "$SKILL_FILE" "不得把每个模块都作为 INTERACT option" "module selection must avoid oversized INTERACT payloads"
+require_literal "$SKILL_FILE" "最多 3 个固定选项" "module selection INTERACT must stay bounded"
 require_literal "$SKILL_FILE" "Other/free-form" "module selection must allow manual free-form module paths"
 if grep -q "模块超过 10 个时展示前 9 个" "$SKILL_FILE"; then
   echo "module selection must not dynamically add many module options" >&2
@@ -621,20 +646,20 @@ if [ -z "$MODE_PICK_LINE" ] || [ -z "$UPLOAD_PICK_LINE" ] || [ -z "$ENTRY_PICK_L
   echo "review mode and report handling must be selected before the review entry" >&2
   exit 1
 fi
-MODEL_PICK_LINE="$(grep -n 'question: "请选择审查使用的 AI 模型"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+MODEL_PICK_LINE="$(grep -n 'question: "请选择审查使用的模型档位"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 if [ -z "$MODEL_PICK_LINE" ]; then
-  echo "model selection AskUserQuestion must exist" >&2
+  echo "model selection INTERACT must exist" >&2
   exit 1
 fi
 # 模型选择已前移到分批之前（第四步之后段），出现在文档的"执行算法"段。
 # 断言改为：模型选择必须存在，且文档中必须声明它发生在分批规划之前。
 require_match "SKILL 必须声明模型选择在分批之前（时序前提）" "模型选择放在分批之前" "$SKILL_FILE"
-grep -q "REVIEW_MODEL" "$SKILL_FILE"
+grep -q "MODEL_PROFILE" "$SKILL_FILE"
 require_literal "$SKILL_FILE" "报告保存方式为多选" "report handling must document multi-select semantics"
 require_literal "$SKILL_FILE" "用户可选择本地 Markdown 报告、飞书云文档和飞书多维表格中的任意一个或多个，支持任意组合多选" "dual Feishu upload must be represented by selecting both upload targets"
 UPLOAD_MULTISELECT_BLOCK="$(sed -n "${UPLOAD_PICK_LINE},$((UPLOAD_PICK_LINE + 18))p" "$SKILL_FILE")"
 if ! printf '%s\n' "$UPLOAD_MULTISELECT_BLOCK" | grep -q -- "- multiSelect: true"; then
-  echo "report handling AskUserQuestion must be multi-select" >&2
+  echo "report handling INTERACT must be multi-select" >&2
   exit 1
 fi
 if grep -q "同时上传两者" "$SKILL_FILE" "$AGENT_FILE" "$FEISHU_FILE" "$EXAMPLES_FILE"; then
@@ -689,7 +714,7 @@ if grep -q "批次 状态 行数 成本 文件 模块 原因" "$EXAMPLES_FILE" "
 fi
 require_literal "$SKILL_FILE" "必须根据本轮可执行批次数动态生成" "batch execution options must be dynamic"
 require_literal "$SKILL_FILE" "RUNNABLE_COUNT=1" "single runnable batch must skip batch-selection question"
-require_literal "$SKILL_FILE" "不调用 AskUserQuestion" "single runnable batch must not ask for batch selection"
+require_literal "$SKILL_FILE" "不调用 INTERACT" "single runnable batch must not ask for batch selection"
 require_literal "$SKILL_FILE" "但描述里又显示" "batch options must not show impossible fixed limits"
 require_literal "$ROOT_DIR/scripts/core/show-batch-status.sh" "display_dynamic_plan_rows" "batch status script must render dynamic execution plans"
 require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" 'RUN_ID="$RUN_TIMESTAMP-$(branch_slug "$BRANCH_NAME")-$REVIEW_MODE"' "large planner run dir must be timestamp-branch-mode only"
@@ -822,10 +847,10 @@ grep -q '^| 12 设计系统一致性 | — | — | ✅ | — |' "$FE_FRAMEWORK" 
 grep -q "语言探测与路由" "$SKILL_FILE"
 grep -q "CANDIDATE_LANGUAGE:frontend" "$SKILL_FILE"
 grep -q "cc-code-reviewer-frontend" "$SKILL_FILE"
-# 前端 agent 必须被实际 dispatch（subagent_type 按 LANGUAGE_ID 选择，不能只硬编码 Java agent）
-grep -q 'cc-code-reviewer:cc-code-reviewer-frontend' "$SKILL_FILE"
+# 前端 agent 必须被实际 dispatch（agent_prompt 按 LANGUAGE_ID 选择，不能只硬编码 Java agent）
+grep -q 'agents/cc-code-reviewer-frontend.md' "$SKILL_FILE"
 # 前端 agent 在 dispatch 点必须按 LANGUAGE_ID 条件化（至少出现 2 次）
-FRONTEND_DISPATCH_COUNT="$(grep -c 'cc-code-reviewer:cc-code-reviewer-frontend' "$SKILL_FILE")"
+FRONTEND_DISPATCH_COUNT="$(grep -c 'agents/cc-code-reviewer-frontend.md' "$SKILL_FILE")"
 test "$FRONTEND_DISPATCH_COUNT" -ge 2
 
 # SKILL.md 路径准备必须按 LANGUAGE_ID 分支，前端注入三个专属路径（不能写死 Java 路径）
@@ -906,9 +931,9 @@ grep -q "依赖风险结论规则" "$PY_FRAMEWORK" || { echo "FAIL: Python 框�
 # SKILL.md 必须含 Python 路由
 grep -q "CANDIDATE_LANGUAGE:python" "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须含 CANDIDATE_LANGUAGE:python" >&2; exit 1; }
 grep -q "cc-code-reviewer-python" "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须引用 cc-code-reviewer-python" >&2; exit 1; }
-grep -q "cc-code-reviewer:cc-code-reviewer-python" "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须含 python subagent dispatch" >&2; exit 1; }
+grep -q "agents/cc-code-reviewer-python.md" "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须含 python agent_prompt dispatch" >&2; exit 1; }
 # dispatch 点至少出现 2 次
-PYTHON_DISPATCH_COUNT="$(grep -c 'cc-code-reviewer:cc-code-reviewer-python' "$SKILL_FILE")"
+PYTHON_DISPATCH_COUNT="$(grep -c 'agents/cc-code-reviewer-python.md' "$SKILL_FILE")"
 test "$PYTHON_DISPATCH_COUNT" -ge 2 || { echo "FAIL: python dispatch 必须 >=2 次，当前 $PYTHON_DISPATCH_COUNT" >&2; exit 1; }
 # SKILL.md 路径准备必须按 LANGUAGE_ID 分支，Python 注入专属路径
 grep -q 'LANGUAGE_ID.*python' "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须含 LANGUAGE_ID python 分支" >&2; exit 1; }
@@ -920,6 +945,52 @@ grep -q "review-framework" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须
 grep -q "django-rules" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须引用 django-rules" >&2; exit 1; }
 grep -q "fastapi-rules" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须引用 fastapi-rules" >&2; exit 1; }
 grep -q "source-scope" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须引用 source-scope" >&2; exit 1; }
+# Python agent 必须含 source manifest / BATCH_FILE_LIST / BATCH_PLAN_PATH 参数（与前端 agent 对齐）
+grep -q "source manifest" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须含 source manifest 参数" >&2; exit 1; }
+grep -q "BATCH_FILE_LIST" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须含 BATCH_FILE_LIST 参数" >&2; exit 1; }
+grep -q "BATCH_PLAN_PATH" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须含 BATCH_PLAN_PATH 参数" >&2; exit 1; }
+# SKILL.md 必须含 source manifest 注入（单 agent 路径 A，仅 frontend/python）
+grep -q "source manifest" "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须含 source manifest 注入说明" >&2; exit 1; }
+# SKILL.md 必须含文件级分批模式与 Maven 大仓库模式的边界区分
+grep -q "文件级分批模式" "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须区分文件级分批模式" >&2; exit 1; }
+grep -q "Maven 大仓库模式" "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须区分 Maven 大仓库模式" >&2; exit 1; }
+# Python scan-project.sh 必须区分可正式发现的配置与只读上下文
+grep -q "FORMAL_CONFIG_FILE:" "$ROOT_DIR/scripts/languages/python/scan-project.sh" || { echo "FAIL: Python scan-project.sh 必须含 FORMAL_CONFIG_FILE 输出" >&2; exit 1; }
+grep -q "FORMAL_CONFIG_FILE:" "$ROOT_DIR/scripts/languages/frontend/scan-project.sh" || { echo "FAIL: frontend scan-project.sh 必须含 FORMAL_CONFIG_FILE 输出" >&2; exit 1; }
+grep -q 'batch-001.*FORMAL_CONFIG_FILE' "$FRONTEND_AGENT_FILE" || { echo "FAIL: frontend agent 必须限定 batch-001 唯一审查正式配置" >&2; exit 1; }
+grep -q "CONTEXT_ROOT" "$ROOT_DIR/scripts/languages/python/scan-project.sh" || { echo "FAIL: Python scan-project.sh 必须含 CONTEXT_ROOT 输出" >&2; exit 1; }
+grep -q "FORMAL_CONFIG_FILE:" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须允许显式正式配置产生发现" >&2; exit 1; }
+if grep -q 'FORMAL_CONFIG_FILE.*不得作为正式问题位置' "$PY_AGENT_FILE"; then
+  echo "FAIL: Python agent 不得把 FORMAL_CONFIG_FILE 降级为只读上下文" >&2
+  exit 1
+fi
+# Python 必须具备指定包目录流程，且 Python/前端文件级分批不得落入 Java planner。
+grep -q '指定模块 + Python' "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须含 Python 指定包目录流程" >&2; exit 1; }
+grep -q 'LANGUAGE_ID=python.*BATCH_MODE=true' "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须含 Python core file-batch planner 分支" >&2; exit 1; }
+grep -q '仅当 `LANGUAGE_ID=java`、`PROJECT_TYPE` 不是 Maven 多模块' "$SKILL_FILE" || { echo "FAIL: Java file-batch planner 必须显式限定 LANGUAGE_ID=java" >&2; exit 1; }
+# 单 agent manifest 仅收敛存量目录；增量审查不得误用提交范围字符串过滤 manifest。
+grep -Fq 'if [ "$REVIEW_TYPE" = "存量审查" ] && [ "${REVIEW_SCOPE:-全量代码}" != "全量代码" ]; then' "$SKILL_FILE" || { echo "FAIL: 单 agent manifest 过滤必须限定存量审查" >&2; exit 1; }
+# 文件级分批必须从当前 BATCH_ID 派生真实清单路径，不能只注入占位符。
+grep -Fq 'BATCH_FILE_LIST="$RUN_DIR/batches/$BATCH_ID.files"' "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须显式派生 BATCH_FILE_LIST" >&2; exit 1; }
+grep -q 'NO_${LANGUAGE_ID}_SOURCE_FILES_IN_SCOPE' "$SKILL_FILE" || { echo "FAIL: 指定范围过滤为空时必须阻断" >&2; exit 1; }
+# 三类 agent 都必须按 batch plan 内容分流，并落同一 results/status 契约。
+grep -q 'strategy=file-token-batching' "$AGENT_FILE" || { echo "FAIL: Java agent 必须识别 file-token-batching 计划" >&2; exit 1; }
+grep -q '不得仅凭路径参数存在就假定为 Maven 大仓库模式' "$AGENT_FILE" || { echo "FAIL: Java agent 不得把所有 BATCH_PLAN_PATH 当成 Maven 大仓库" >&2; exit 1; }
+grep -q 'strategy=file-token-batching' "$FRONTEND_AGENT_FILE" || { echo "FAIL: 前端 agent 必须识别 file-token-batching 计划" >&2; exit 1; }
+grep -q 'BATCH_FILE_LIST.*不得查找 `scan_roots`' "$FRONTEND_AGENT_FILE" || { echo "FAIL: 前端文件批次必须使用 BATCH_FILE_LIST" >&2; exit 1; }
+grep -q 'strategy=file-token-batching' "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须识别 file-token-batching 计划" >&2; exit 1; }
+for batch_agent in "$AGENT_FILE" "$FRONTEND_AGENT_FILE" "$PY_AGENT_FILE"; do
+  grep -q 'BATCH_RESULT_PATH' "$batch_agent" || { echo "FAIL: batch agent 缺 BATCH_RESULT_PATH: $batch_agent" >&2; exit 1; }
+  grep -q 'BATCH_STATUS_PATH' "$batch_agent" || { echo "FAIL: batch agent 缺 BATCH_STATUS_PATH: $batch_agent" >&2; exit 1; }
+done
+# Python CLI 与 LSP provider 必须分离，防止上层宣称不存在的 definition/references 能力。
+grep -q 'CODE_INTELLIGENCE_PROVIDER=pyright-cli' "$ROOT_DIR/scripts/languages/python/detect-code-intelligence.sh" || { echo "FAIL: pyright CLI 必须使用独立 provider" >&2; exit 1; }
+grep -q 'SEMANTIC_LEVEL=pyright-cli' "$SKILL_FILE" || { echo "FAIL: SKILL.md 必须声明 pyright-cli 仅 diagnostics 语义" >&2; exit 1; }
+# Bash fenced block 中禁止 Unicode 智能引号；它们会成为路径/参数的一部分。
+if awk '/^```bash[[:space:]]*$/ { in_bash=1; next } /^```/ { in_bash=0 } in_bash { print }' "$SKILL_FILE" | grep -q '[“”]'; then
+  echo "FAIL: SKILL.md Bash 代码块包含 Unicode 智能引号" >&2
+  exit 1
+fi
 # Python agent 不得残留旧 15 维度编号或越界维度 13-15 引用
 if grep -qE 'D(0[1-9]|1[0-5])[^0-9]|维度 ?1[345]|1-1[345]|1[345] 维度' "$PY_AGENT_FILE"; then
   echo "FAIL: Python agent 残留旧 15 维度编号或越界维度 13-15 引用" >&2
@@ -927,11 +998,40 @@ if grep -qE 'D(0[1-9]|1[0-5])[^0-9]|维度 ?1[345]|1-1[345]|1[345] 维度' "$PY_
 fi
 # Python 框架和 agent 必须含性能分级边界（已在上方循环断言，此处补 P0 门槛）
 grep -q "P0 五项硬门槛" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须含 P0 五项硬门槛" >&2; exit 1; }
+# Python agent 必须含 Batch 发现清单输出格式段（对齐 Java/前端 agent）
+PY_BATCH_P0_TEMPLATE="$(awk '
+  /^## Batch 发现清单输出格式$/ { in_batch_format = 1; next }
+  in_batch_format && /^### P0 \|/ { in_p0_template = 1 }
+  in_p0_template && /^### P[1-3] \|/ { exit }
+  in_p0_template { print }
+' "$PY_AGENT_FILE")"
+if [ -z "$PY_BATCH_P0_TEMPLATE" ]; then
+  echo "FAIL: Python agent 必须含 Batch 发现清单输出格式段及 P0 模板" >&2
+  exit 1
+fi
+for py_batch_p0_field in \
+  "置信度：高" \
+  "生产可达路径：" \
+  "事故级影响：" \
+  "有效防护核查：" \
+  "阻断发布理由："; do
+  if ! printf '%s\n' "$PY_BATCH_P0_TEMPLATE" | grep -Fq -- "$py_batch_p0_field"; then
+    echo "FAIL: Python agent Batch P0 模板必须含字段: $py_batch_p0_field" >&2
+    exit 1
+  fi
+done
+grep -q "review-batch-" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须含 review-batch- 历史回退路径" >&2; exit 1; }
+grep -q "BATCH_INDEX" "$PY_AGENT_FILE" || { echo "FAIL: Python agent 必须含 BATCH_INDEX 汇总" >&2; exit 1; }
 # django-rules 必须覆盖关键检查点
 grep -q "on_delete" "$ROOT_DIR/references/languages/python/django-rules.md" || { echo "FAIL: django-rules 必须覆盖 on_delete" >&2; exit 1; }
 grep -q "mark_safe" "$ROOT_DIR/references/languages/python/django-rules.md" || { echo "FAIL: django-rules 必须覆盖 mark_safe XSS" >&2; exit 1; }
 grep -q "select_related" "$ROOT_DIR/references/languages/python/django-rules.md" || { echo "FAIL: django-rules 必须覆盖 select_related N+1" >&2; exit 1; }
 grep -q "DEBUG" "$ROOT_DIR/references/languages/python/django-rules.md" || { echo "FAIL: django-rules 必须覆盖 DEBUG 配置" >&2; exit 1; }
+# P2-4: django-rules 不得直接标注"P0 级"（P0 须通过五项硬门槛核验，由门槛决定级别）
+if grep -q 'P0 级' "$ROOT_DIR/references/languages/python/django-rules.md"; then
+  echo "FAIL: django-rules 不得直接标注 P0 级（须改为 P0 候选）" >&2
+  exit 1
+fi
 # fastapi-rules 必须覆盖关键检查点
 grep -q "Depends" "$ROOT_DIR/references/languages/python/fastapi-rules.md" || { echo "FAIL: fastapi-rules 必须覆盖 Depends" >&2; exit 1; }
 grep -q "Pydantic" "$ROOT_DIR/references/languages/python/fastapi-rules.md" || { echo "FAIL: fastapi-rules 必须覆盖 Pydantic" >&2; exit 1; }

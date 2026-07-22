@@ -67,8 +67,8 @@ PROJECT_DIR="${1:?请输入项目路径}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd -P)"
 
 # 收集所有候选 package.json（根 + maxdepth 3，排除 node_modules/dist/build/.git）
-PKGS="$(find "$PROJECT_DIR" -maxdepth 3 \
-  \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune \
+PKGS="$(find "$PROJECT_DIR" -maxdepth 3 -mindepth 1 \
+  \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \) \) -prune \
   -o -name 'package.json' -type f -print 2>/dev/null)"
 
 has_dep_anywhere() {
@@ -90,8 +90,8 @@ has_node_pkg() {
 }
 
 has_node_source() {
-  find "$PROJECT_DIR" \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune \
+  find "$PROJECT_DIR" -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \) \) -prune \
     -o \( -name '*.ts' -o -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) -type f -print -quit 2>/dev/null | grep -q .
 }
 
@@ -99,8 +99,8 @@ has_node_source() {
 
 # .vue SFC 存在
 has_vue_sfc_anywhere() {
-  find "$PROJECT_DIR" \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune \
+  find "$PROJECT_DIR" -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \) \) -prune \
     -o -name '*.vue' -type f -print -quit 2>/dev/null | grep -q .
 }
 
@@ -110,8 +110,8 @@ has_vue_import_anywhere() {
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     grep -Eq "from ['\"]vue['\"]|require\s*\(\s*['\"]vue['\"]" "$f" 2>/dev/null && return 0
-  done < <(find "$PROJECT_DIR" \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune \
+  done < <(find "$PROJECT_DIR" -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \) \) -prune \
     -o \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.vue' \) -type f -print 2>/dev/null)
   return 1
 }
@@ -124,8 +124,8 @@ has_vue3_content_anywhere() {
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     grep -Eq "createApp\s*\(|createSSRApp\s*\(|defineComponent\s*\(|defineAsyncComponent\s*\(|<script[[:space:]][^>]*setup" "$f" 2>/dev/null && return 0
-  done < <(find "$PROJECT_DIR" \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune \
+  done < <(find "$PROJECT_DIR" -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \) \) -prune \
     -o \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.vue' \) -type f -print 2>/dev/null)
   return 1
 }
@@ -136,8 +136,8 @@ has_vue2_content_anywhere() {
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     grep -Eq "new[[:space:]]+Vue\s*\(|Vue\.extend\s*\(|Vue\.component\s*\(" "$f" 2>/dev/null && return 0
-  done < <(find "$PROJECT_DIR" \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune \
+  done < <(find "$PROJECT_DIR" -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \) \) -prune \
     -o \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.vue' \) -type f -print 2>/dev/null)
   return 1
 }
@@ -213,8 +213,8 @@ has_react=0
 if has_dep_anywhere "react"; then has_react=1; fi
 
 if [ "$has_react" -eq 1 ]; then
-  if find "$PROJECT_DIR" \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune \
+if find "$PROJECT_DIR" -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \) \) -prune \
     -o \( -name '*.tsx' -o -name '*.jsx' \) -print -quit 2>/dev/null | grep -q .; then
     echo "PROJECT_TYPE=frontend-react"; exit 0
   fi
@@ -223,8 +223,8 @@ if [ "$has_react" -eq 1 ]; then
     if grep -Eq "from ['\"]react['\"]|require\\(['\"]react['\"]\\)|React\\.createElement|createElement\\(" "$src" 2>/dev/null; then
       echo "PROJECT_TYPE=frontend-react"; exit 0
     fi
-  done < <(find "$PROJECT_DIR" \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune \
+  done < <(find "$PROJECT_DIR" -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \) \) -prune \
     -o \( -name '*.ts' -o -name '*.js' \) -type f -print 2>/dev/null)
 fi
 
@@ -237,8 +237,8 @@ while IFS= read -r pkg; do
 done <<< "$PKGS"
 
 # 有 TS/JS/Vue 但无受支持技术栈 → 通用 TS/JS，暂不套用专项规则
-if find "$PROJECT_DIR" \
-  \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune \
+  if find "$PROJECT_DIR" -mindepth 1 \
+  \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \) \) -prune \
   -o \( -name '*.ts' -o -name '*.js' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.vue' \) -print -quit 2>/dev/null | grep -q .; then
   echo "PROJECT_TYPE=frontend-unsupported|reason=generic-tsjs"; exit 0
 fi

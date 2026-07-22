@@ -31,6 +31,10 @@ grep -qE "^SOURCE_FILE_COUNT=2$" <<< "$OUT"
 grep -qE "^SOURCE_LINE_COUNT=[1-9]" <<< "$OUT"
 # 正式配置单独计数（package.json + tsconfig + vite.config = 3）
 grep -qE "^FORMAL_CONFIG_FILE_COUNT=3$" <<< "$OUT"
+D_REAL="$(cd "$D" && pwd -P)"
+grep -qF "FORMAL_CONFIG_FILE:$D_REAL/package.json" <<< "$OUT"
+grep -qF "FORMAL_CONFIG_FILE:$D_REAL/tsconfig.json" <<< "$OUT"
+grep -qF "FORMAL_CONFIG_FILE:$D_REAL/vite.config.ts" <<< "$OUT"
 # 技术栈行
 grep -q "TECH_STACK:React" <<< "$OUT"
 # source scope 声明
@@ -56,6 +60,8 @@ WOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/scan-project.sh" "$W")"
 grep -qE "^SOURCE_FILE_COUNT=2$" <<< "$WOUT"
 grep -q "^SOURCE_ROOT:formal|apps/web/src$" <<< "$WOUT"
 grep -q "^COMPONENT:components|apps/web/src/components|" <<< "$WOUT"
+W_REAL="$(cd "$W" && pwd -P)"
+grep -qF "FORMAL_CONFIG_FILE:$W_REAL/apps/web/package.json" <<< "$WOUT"
 
 V="$TMP_DIR/vue2"; mkdir -p "$V/src/components"
 cat > "$V/package.json" <<'JSON'

@@ -1,7 +1,11 @@
 #!/bin/bash
+# Superpowers 能力检测（可选，仅用于 fix 阶段 Superpowers 路线）。
+#
+# 平台中立：Skill 搜索根覆盖 Claude Code / Codex / ZCode / 通用 .agents 四端，
+# 不偏向任一平台。SUPERPOWERS_SKILL_ROOTS 可覆盖默认搜索路径。
 set -euo pipefail
 
-ROOTS="${SUPERPOWERS_SKILL_ROOTS:-$HOME/.agents/skills:$HOME/.codex/skills:$HOME/.codex/skills/.system}"
+ROOTS="${SUPERPOWERS_SKILL_ROOTS:-$HOME/.agents/skills:$HOME/.codex/skills:$HOME/.codex/skills/.system:$HOME/.claude/skills:$HOME/.zcode/skills}"
 REQUIRED_SKILLS=(
   "brainstorming"
   "using-git-worktrees"

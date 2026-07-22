@@ -16,6 +16,7 @@ test-output/
 
 # 本地 Superpowers/SDD 工作产物
 .superpowers/
+.zcode/
 
 # 进程锁定文件
 .in_use/

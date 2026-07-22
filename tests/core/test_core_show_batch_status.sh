@@ -32,6 +32,12 @@ FOUT="$(bash "$SCRIPT" "$FTMP")"
 echo "$FOUT" | grep -q "batch-001"
 echo "$FOUT" | grep -qE "源码行数|源码行覆盖"
 
+# Python plan（同样使用 source_* 字段）
+PYTMP="$(make_run python total_source_loc total_source_file_count)"
+PYOUT="$(bash "$SCRIPT" "$PYTMP")"
+echo "$PYOUT" | grep -q "batch-001"
+echo "$PYOUT" | grep -qE "Python 行数|Python 行覆盖"
+
 # Java plan.json 缺 language_id 时应 fallback 为 java（旧行为兼容）
 JTMP2="$(mktemp -d)"; JRUN2="$JTMP2/.cc-code-reviewer/runs/r2"; mkdir -p "$JRUN2/batches"
 cat > "$JRUN2/plan.json" <<'EOF'
@@ -39,5 +45,5 @@ cat > "$JRUN2/plan.json" <<'EOF'
 EOF
 bash "$SCRIPT" "$JTMP2" >/dev/null  # 不应报错
 
-rm -rf "$JTMP" "$FTMP" "$JTMP2"
+rm -rf "$JTMP" "$FTMP" "$PYTMP" "$JTMP2"
 echo "PASS: core show-batch-status"

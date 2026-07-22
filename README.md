@@ -1,8 +1,8 @@
 # cc-code-reviewer
 
-> Claude Code plugin · Java、React/Vue/Node/TypeScript/JavaScript 与 Python（Django/FastAPI/Flask）代码审查 + 报告驱动修复
+> Claude Code / Codex / ZCode 三平台代码审查与修复插件 · Java、React/Vue/Node/TypeScript/JavaScript 与 Python（Django/FastAPI/通用 Python）代码审查 + 报告驱动修复
 
-`cc-code-reviewer` 是一个面向工程团队的代码审查插件。统一入口同时支持 **Java**、**React/Vue2/Vue3/Node/TS/JS 前端族群**与 **Python（Django/FastAPI/Flask）**审查：先预扫描项目与语言，再通过结构化交互确认范围，最后生成可追踪的审查报告。Fix 阶段只消费人工确认后的问题清单，避免扫描和修复混在一起。
+`cc-code-reviewer` 是一个面向工程团队的代码审查插件。统一入口同时支持 **Java**、**React/Vue2/Vue3/Node/TS/JS 前端族群**与 **Python（Django/FastAPI/通用 Python）**审查：先预扫描项目与语言，再通过结构化交互确认范围，最后生成可追踪的审查报告。Fix 阶段只消费人工确认后的问题清单，避免扫描和修复混在一起。
 
 ```mermaid
 flowchart LR
@@ -20,21 +20,23 @@ flowchart LR
 |------|----------|------|
 | Java | Maven / Gradle / 常见企业 Java 项目 | 支持增量、全量、指定 Maven 模块、大仓库分批 |
 | Frontend family | React、Vue 2.x、Vue 3.x、Node.js + TypeScript / JavaScript | 支持 Vite / Webpack / workspace/monorepo 的 package-local `src`；Vue2/Vue3 与 React 信号共存时按 Vue 优先仲裁，Vue2 legacy 按专项规则加强审查 |
-| Python | Django / FastAPI / Flask / 通用 Python | 支持 src layout 与 flat layout；Django/FastAPI 专项规则；ORM N+1、反序列化 RCE、async 阻塞等 Python 高频事故点 |
+| Python | Django / FastAPI / 通用 Python | 支持 src layout 与 flat layout；Django/FastAPI 专项规则；ORM N+1、反序列化 RCE、async 阻塞等 Python 高频事故点 |
 | Mixed repo | Java + 前端 + Python 同仓 | 运行时选择一种语言；其他语言只作为背景，不产出正式问题 |
 
 Next.js、Nuxt 和无 React/Vue/Node 信号的通用 TS/JS 仍会标记为不支持并停止，不会误套专项规则。
 
 ## 安装
 
+同一 Git 仓库可被 Claude Code、Codex CLI/Desktop 和 ZCode 安装；三个原生清单共同发现根 `skills/` 唯一权威流程，并共享 `scripts/`、`references/`、`agents/`。平台差异限制在插件清单和运行时适配器（`runtime/`）。
+
 ### 前置条件
 
 - macOS / Linux
 - Bash 3.0+、`git`、系统自带 `perl`
-- 已安装 [Claude Code](https://claude.ai/code)
+- 已安装下列任一 Agent 产品：[Claude Code](https://claude.ai/code)、[Codex CLI/Desktop](https://chatgpt.com/codex) 或 [ZCode](https://zcode.z.ai)
 - 可选：`lark-cli`，用于飞书云文档 / 多维表格输出与写回
 
-### 安装插件
+### Claude Code
 
 ```bash
 claude plugin marketplace add ataskite/cc-code-reviewer
@@ -47,11 +49,26 @@ claude plugin install cc-code-reviewer
 /reload-plugins
 ```
 
-### 更新插件
+更新：
 
 ```bash
 claude plugin update cc-code-reviewer@cc-code-reviewer
 ```
+
+### Codex CLI / Desktop
+
+```bash
+codex plugin marketplace add ataskite/cc-code-reviewer
+codex plugin add cc-code-reviewer@cc-code-reviewer
+```
+
+安装后开启新会话即可发现三个 Skill。Codex 插件主要面向 CLI/Desktop；IDE Extension 场景当前以项目级 Skill 降级说明为准，不承诺 IDE 插件安装。
+
+### ZCode（Beta）
+
+ZCode 插件体系仍为 Beta。通过 **Settings → Plugins → Marketplace** 添加同一 GitHub/Git source（`ataskite/cc-code-reviewer`），然后安装插件。ZCode 通过原生 `.zcode-plugin/plugin.json` 清单发现三个 Skill。
+
+> Git 自定义 Marketplace 是 1.5.0 的正式分发路径；进入 ZCode 官方目录不作为发版阻塞项。
 
 ## 快速使用
 
@@ -137,18 +154,20 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 
 ## 架构
 
-![cc-code-reviewer 架构总览](docs/assets/architecture-overview-v1.4.0.png)
+![cc-code-reviewer 1.5.0 架构总览](docs/assets/architecture-overview-v1.5.0.png)
 
-插件采用 skill-only 入口和专属子 agent：
+插件采用 skill-only 入口和专属子 agent，三端共享同一审查内核：
 
 - `skills/cc-code-reviewer`：Scan 编排、预扫描、交互确认、批次调度、飞书输出
 - `agents/cc-code-reviewer`：Java 审查执行，只保存本地报告，不上传飞书
 - `agents/cc-code-reviewer-frontend`：React/Vue2/Vue3/Node/TS/JS 前端族群审查执行
-- `agents/cc-code-reviewer-python`：Django/FastAPI/Flask/通用 Python 审查执行
+- `agents/cc-code-reviewer-python`：Django/FastAPI/通用 Python 审查执行
 - `skills/cc-code-fixer`：读取确认后的问题清单，执行修复、验证、报告和写回
 - `skills/cc-code-ignore`：维护项目级 ignore 规则
 - `scripts/core`：语言无关内核，负责项目获取、Git、固定 1M 分批、合并和状态展示
 - `scripts/languages/java` / `scripts/languages/frontend` / `scripts/languages/python`：语言适配器，负责预扫描、源码边界和语言专属能力探测
+- `runtime/`：三端运行时适配器（`contract.md` 平台无关契约 + `claude-code.md` / `codex.md` / `zcode.md` 平台映射），定义 `PLUGIN_ROOT`、人工确认、模型档位和子 Agent 调度
+- `.claude-plugin/` / `.codex-plugin/` / `.zcode-plugin/` / `.agents/plugins/`：三端插件清单；版本化 plugin manifest 由 `VERSION` 驱动，Codex marketplace 通过 local source 读取 plugin version
 
 ## 详细文档
 

@@ -80,6 +80,8 @@ cat > "$STACK_DIR/pom.xml" <<'POM'
     <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></dependency>
     <dependency><groupId>org.mapstruct</groupId><artifactId>mapstruct</artifactId></dependency>
     <dependency><groupId>com.alibaba.fastjson2</groupId><artifactId>fastjson2</artifactId></dependency>
+    <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-tracing-bridge-otel</artifactId></dependency>
+    <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-openai-spring-boot-starter</artifactId></dependency>
   </dependencies>
 </project>
 POM
@@ -107,3 +109,64 @@ echo "$STACK_OUTPUT" | grep -q "TECH_STACK:MapStruct|"
 echo "$STACK_OUTPUT" | grep -q "TECH_STACK:JSON Serialization|"
 echo "$STACK_OUTPUT" | grep -q "TECH_STACK:Docker|"
 echo "$STACK_OUTPUT" | grep -q "TECH_STACK:Kubernetes|"
+echo "$STACK_OUTPUT" | grep -q "TECH_STACK:Micrometer/OTel|"
+echo "$STACK_OUTPUT" | grep -q "TECH_STACK:Spring AI/LangChain4j|"
+
+# P2-6: 非 Java 21 / 非 Boot 3.2 的 Spring Boot 项目不应输出 Virtual Threads
+if echo "$STACK_OUTPUT" | grep -q "TECH_STACK:Virtual Threads"; then
+  echo "FAIL: 非 Java 21/Boot 3.2 项目不应输出 Virtual Threads TECH_STACK" >&2
+  exit 1
+fi
+
+# P2-6: Java 21 + Boot 3.2 应输出 Virtual Threads
+VT_DIR="$TMP_DIR/vt project"
+mkdir -p "$VT_DIR/src/main/java/com/example"
+cat > "$VT_DIR/pom.xml" <<'POM'
+<project>
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.2.1</version>
+  </parent>
+  <properties>
+    <java.version>21</java.version>
+  </properties>
+  <dependencies>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
+  </dependencies>
+</project>
+POM
+
+VT_OUTPUT="$(bash "$ROOT_DIR/scripts/languages/java/project-scan.sh" "$VT_DIR")"
+echo "$VT_OUTPUT" | grep -q "TECH_STACK:Virtual Threads|" || { echo "FAIL: Java 21+Boot 3.2 应输出 Virtual Threads" >&2; exit 1; }
+
+# Gradle 显式使用虚拟线程时也必须启用专项规则。
+VT_GRADLE_DIR="$TMP_DIR/vt-gradle"
+mkdir -p "$VT_GRADLE_DIR/src/main/java/com/example"
+cat > "$VT_GRADLE_DIR/build.gradle.kts" <<'GRADLE'
+plugins {
+    id("org.springframework.boot") version "3.2.2"
+    java
+}
+java { toolchain { languageVersion.set(JavaLanguageVersion.of(21)) } }
+GRADLE
+cat > "$VT_GRADLE_DIR/src/main/java/com/example/App.java" <<'JAVA'
+package com.example;
+class App { Thread start(Runnable task) { return Thread.ofVirtual().start(task); } }
+JAVA
+VT_GRADLE_OUTPUT="$(bash "$ROOT_DIR/scripts/languages/java/project-scan.sh" "$VT_GRADLE_DIR")"
+echo "$VT_GRADLE_OUTPUT" | grep -q "TECH_STACK:Virtual Threads|" || { echo "FAIL: Gradle 虚拟线程使用应输出 Virtual Threads" >&2; exit 1; }
+
+# 即使尚无显式源码调用，Gradle Java 21 + Boot 3.2 也应识别能力边界。
+VT_GRADLE_CAP_DIR="$TMP_DIR/vt-gradle-capability"
+mkdir -p "$VT_GRADLE_CAP_DIR/src/main/java/com/example"
+cat > "$VT_GRADLE_CAP_DIR/build.gradle" <<'GRADLE'
+plugins {
+    id 'org.springframework.boot' version '3.2.3'
+    id 'java'
+}
+sourceCompatibility = JavaVersion.VERSION_21
+GRADLE
+echo 'package com.example; class App {}' > "$VT_GRADLE_CAP_DIR/src/main/java/com/example/App.java"
+VT_GRADLE_CAP_OUTPUT="$(bash "$ROOT_DIR/scripts/languages/java/project-scan.sh" "$VT_GRADLE_CAP_DIR")"
+echo "$VT_GRADLE_CAP_OUTPUT" | grep -q "TECH_STACK:Virtual Threads|" || { echo "FAIL: Gradle Java 21+Boot 3.2 应输出 Virtual Threads" >&2; exit 1; }

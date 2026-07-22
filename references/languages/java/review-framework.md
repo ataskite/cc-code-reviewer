@@ -56,6 +56,9 @@
 | Jackson / Fastjson / Gson | `jackson-databind`, `fastjson`, `fastjson2`, `gson` | 1, 5, 15 | 反序列化安全、未知字段、日期格式、精度、响应字段暴露 |
 | Docker | `Dockerfile`, `docker-compose.yml` | 3, 5, 7, 8, 12 | 基础镜像、运行用户、密钥注入、资源限制、健康检查、优雅停机 |
 | Kubernetes | `k8s/*.yaml`, `kubernetes/*.yaml`, 含 `apiVersion/kind` 的 YAML | 3, 5, 7, 8, 12 | 探针、resources、Secret/ConfigMap、滚动发布、服务暴露 |
+| Virtual Threads / Java 21+ | `spring-boot-starter` 3.2+, `spring.threads.virtual.enabled`, `Thread.ofVirtual`, `StructuredTaskScope` | 6, 7 | 虚拟线程 Pinning、ThreadLocal 膨胀、资源失配、结构化并发、CompletableFuture 反模式 |
+| Micrometer / OpenTelemetry | `micrometer-tracing-*`, `micrometer-registry-*`, `opentelemetry-*`, `spring-cloud-sleuth` | 8 | Trace 传播、采样、OTLP 导出、Span 命名、指标基数 |
+| Spring AI / LangChain4j | `spring-ai-*`, `langchain4j-*`, `openai-java`, `simple-openai` | 5, 8 | Prompt 注入、敏感数据外泄、超时降级、Token 限流、工具调用安全、RAG 越权 |
 
 Gradle 项目使用同一套依赖指纹，支持常见 Groovy/Kotlin DSL 依赖声明，例如 `implementation 'group:artifact:version'`、`implementation("group:artifact:version")`、`api(...)`、`compileOnly(...)`、`runtimeOnly(...)`、`testImplementation(...)`。
 
@@ -68,6 +71,7 @@ Gradle 项目使用同一套依赖指纹，支持常见 Groovy/Kotlin DSL 依赖
 - **边界条件**：是否正确处理空值、空集合、极值等边界情况
 - **异常处理**：异常捕获是否合理，是否有吞异常的情况
 - **并发正确性**：是否存在共享可变状态导致的竞态条件、丢失更新、check-then-act 等逻辑 Bug
+- **现代 Java 特性误用**：record 作 DTO 反序列化时 `@JsonProperty` 遗漏导致字段静默 null；sealed 接口 + switch 模式匹配缺 default 导致新增子类静默漏处理；`var` 滥用复杂泛型影响可读性
 
 ---
 
@@ -78,6 +82,7 @@ Gradle 项目使用同一套依赖指纹，支持常见 Groovy/Kotlin DSL 依赖
 - **方法复杂度**：方法是否过长或过于复杂
 - **命名规范**：类名、方法名、变量名是否清晰表达意图
 - **代码异味**：识别重复代码、长方法、上帝类、魔法数字/字符串
+- **现代 Java 特性迁移**：新代码是否优先用 record 替代 Lombok `@Data` 值对象；`@Data` 是否误用于 JPA 实体（Lombok 生成的 `equals/hashCode` 对托管实体是坏的）；是否残留 `java.util.Date` / `Calendar`（新代码必须用 `java.time`，UTC 存储 + 时区展示）
 
 ---
 
@@ -140,6 +145,16 @@ Gradle 项目使用同一套依赖指纹，支持常见 Groovy/Kotlin DSL 依赖
 **注意**：
 - 对"是否命中索引""是否全表扫描"这类运行时相关问题，如无执行计划、索引定义或库表结构证据，应表述为"高风险待确认项"
 
+### 4.5 Schema 演进与迁移
+
+> **仅在检测到 Flyway / Liquibase 依赖时启用本章节。**
+
+- **在线 DDL 风险**：大表 `ALTER TABLE ADD COLUMN` 是否锁表；MySQL 8 instant DDL 边界是否确认；是否在低峰执行
+- **迁移不可回滚**：Flyway baseline 是否漂移；Liquibase changeset 已 applied 后是否被修改（hash 不一致）；是否有 down/rollback 脚本
+- **多环境一致性**：dev 用 `ddl-auto=update` prod 用 Flyway 是否导致 schema 漂移；迁移脚本是否版本控制
+- **代码与迁移同步**：先发布代码读新列但迁移未跑；迁移与代码是否同 PR / 同发布单元
+- **多实例启动争抢**：多实例同时启动是否争抢 Flyway 锁；是否配置 `spring.flyway.lock-provider`
+
 ---
 
 ## 5. 安全审查
@@ -192,6 +207,17 @@ Gradle 项目使用同一套依赖指纹，支持常见 Groovy/Kotlin DSL 依赖
 - 只有当 `pom.xml` 中依赖版本可见，且能给出明确依据时，才能下"存在漏洞风险"结论
 - 如果只有"版本较旧"或"框架较老"的印象，没有明确依据，只能写为"升级建议"或"建议补充依赖扫描"
 
+### 5.7 AI / LLM 集成安全
+
+> **仅在检测到 Spring AI / LangChain4j / OpenAI SDK 等 AI 框架依赖时启用本章节。**
+
+- **Prompt 注入**：用户输入是否直接拼入 system prompt / user message；是否可被构造指令覆盖系统指令（如"忽略以上指令"）；是否对用户输入做边界隔离
+- **敏感数据外泄**：日志/异常/监控是否打印原始 user prompt、模型响应、API key、embedding 向量；是否做脱敏；prompt 中是否携带业务敏感数据（用户 PII、内部数据）外传第三方模型
+- **超时与重试**：LLM 调用是否设置超时（默认 60s+ 易拖垮主链路）；是否配置重试与降级；流式响应中断是否处理
+- **Token 与成本失控**：是否设置 `max-tokens`；是否对单用户/单 IP 做速率限制；是否监控 token 消耗与成本告警；长 prompt 是否截断
+- **工具调用（Function Calling）安全**：LLM 可调用的工具函数是否做鉴权；工具参数是否校验；是否暴露危险工具（删数据、执行命令）；工具白名单是否可控
+- **RAG 数据源越权**：向量检索是否带 tenantId / 权限过滤；是否返回无权访问的数据；embedding 模型输入是否脱敏
+
 ---
 
 ## 6. 性能审查
@@ -209,6 +235,19 @@ Gradle 项目使用同一套依赖指纹，支持常见 Groovy/Kotlin DSL 依赖
 - **限流策略**
 - **降级策略**
 
+### 6.5 现代并发与虚拟线程
+
+> **仅在检测到 Java 21+ 或显式使用虚拟线程 / CompletableFuture / StructuredTaskScope 时启用本章节。** 检测到 Spring Boot 3.2+ 且开启 `spring.threads.virtual.enabled=true` 时强制启用。
+
+- **虚拟线程 Pinning 风险**：`synchronized` 块内执行阻塞 I/O（Java 21-23 必 pin，Java 24+ JEP 491 已修复，需确认 JDK 版本）、native/JNI 调用、class initializer 阻塞仍会 pin carrier；是否启用 `-Djdk.tracePinnedThreads` 或 JFR `jdk.VirtualThreadPinned` 事件监控
+- **虚拟线程 + 下游资源失配**：放开虚拟线程后 DB 连接池 / 下游 API 限流 / MQ 吞吐上限是否同步评估；10 万虚拟线程打 20 连接池 DB 的无界并发问题；是否用 Semaphore 兜底
+- **ThreadLocal 内存膨胀**：虚拟线程不复用，ThreadLocal 缓存重对象导致堆爆；是否迁移 `ScopedValue`（JEP 506，Java 25 final）替代 ThreadLocal 做请求上下文传播
+- **CompletableFuture 反模式**：默认 `ForkJoinPool.commonPool()` 被 I/O 阻塞耗尽（8 核仅 7 线程）、`get()` 无超时永久阻塞、异常被吞（未 `exceptionally`/`handle`）、ThreadLocal/MDC/traceId 跨异步边界丢失
+- **结构化并发**：`StructuredTaskScope.ShutdownOnFailure` / `ShutdownOnSuccess` 使用是否正确；子任务是否泄漏；`joinUntil` 超时是否设置；是否用结构化并发替代裸 `ExecutorService` fan-out
+- **线程池配置**：是否用 `ThreadPoolExecutor` 而非 `Executors`（阿里强制规则）；`@Async` 是否指定自定义线程池而非默认；虚拟线程模式下是否保留过大的 Tomcat `maxThreads`（浪费资源）
+- **ThreadLocal 清理**：线程池复用场景下 `ThreadLocal.remove()` 是否在 finally 调用（阿里强制规则）；`TransmittableThreadLocal` 是否用 javaagent 方式而非装饰器（避免侵入）
+- **CPU 密集型误用虚拟线程**：CPU 密集任务用虚拟线程会饿死 carrier 且无收益；是否路由到独立 `ExecutorService`
+
 ---
 
 ## 7. 资源管理审查
@@ -224,12 +263,38 @@ Gradle 项目使用同一套依赖指纹，支持常见 Groovy/Kotlin DSL 依赖
 
 ## 8. 日志与可观测性审查
 
-- **关键日志**
-- **日志级别**
-- **问题排查**
-- **敏感信息**
-- **指标与健康检查**
-- **日志格式**
+### 8.1 日志规范
+
+- **关键日志**：关键业务动作（下单、支付、状态流转）是否有日志；关键路径入参出参是否记录
+- **日志级别**：ERROR/WARN/INFO/DEBUG 是否合理；生产环境是否遗留 DEBUG/TRACE；异常是否用 ERROR 而非 INFO
+- **日志格式**：是否结构化（JSON）；时间戳是否 UTC + ISO-8601；是否包含 traceId/spanId/userId 等检索字段
+- **敏感信息**：日志/异常/响应中是否泄露密码、token、身份证、手机号、银行卡；是否做脱敏
+- **问题排查**：异常堆栈是否完整打印；是否吞异常只打 message；是否缺少上下文（如只打"失败"不打哪个订单）
+
+### 8.2 指标与监控
+
+- **业务指标**：核心业务计数器（订单量、支付成功率）是否暴露；是否用 Micrometer `Counter` / `Gauge` / `Timer`
+- **技术指标**：JVM、线程池、连接池、GC、HTTP 请求耗时是否采集；`/actuator/metrics` 是否暴露必要指标
+- **指标命名与基数**：Micrometer 指标命名是否遵循规范；是否用高基数 tag（userId/orderId 当 tag）打爆 Prometheus
+- **告警规则**：关键指标是否配置告警阈值；告警是否可执行（有 runbook）
+
+### 8.3 分布式追踪
+
+> **仅在检测到 Micrometer Tracing / OpenTelemetry / Sleuth 依赖时启用本章节。**
+
+- **Trace 上下文传播**：traceId/spanId 是否跨线程、跨 `@Async`、跨线程池、跨 CompletableFuture、跨 MQ、跨 Feign/Dubbo 传播；是否断裂导致日志无法串联
+- **采样配置**：`management.tracing.sampling.probability` 是否合理（0 会全丢，1 全采影响性能）；是否按环境区分
+- **OTLP 导出器**：`max-queue-size` / `schedule-delay` / `timeout` 配置是否合理；导出失败是否阻塞主链路
+- **Span 命名与属性**：Span 名称是否有业务语义；是否添加业务属性（orderId、userId）；是否过度添加属性
+
+### 8.4 健康检查与探针
+
+> **仅在检测到 Spring Boot Actuator 或 K8s 部署时启用本章节。**
+
+- **探针配置**：`/actuator/health/liveness` 与 `/readiness` 是否区分使用；K8s `livenessProbe` / `readinessProbe` 是否对应正确探针（混用导致滚动发布卡死）
+- **探针与优雅停机**：`server.shutdown=graceful` + `spring.lifecycle.timeout-per-shutdown-phase` + K8s `terminationGracePeriodSeconds` 三者是否匹配
+- **Actuator 端点暴露**：`/actuator/env`、`/heapdump`、`/threaddump`、`/loggers` 是否暴露到公网；是否用 `management.endpoints.web.exposure.include` 白名单
+- **@Observed / @Timed 注解**：注解是否生效（需 `aspectjweaver` 依赖 + `management.observations.annotations.enabled=true`）
 
 ---
 
@@ -243,6 +308,12 @@ Gradle 项目使用同一套依赖指纹，支持常见 Groovy/Kotlin DSL 依赖
   - **Mock 使用**
   - **边界测试**
   - **事务/鉴权/异常路径测试**
+  - **Testcontainers 使用**：集成测试是否用容器化 DB/Redis/Kafka；是否复用容器提速；是否替代嵌入式 H2（行为不一致假阳性）
+  - **Slice 测试误用**：`@WebMvcTest` 是否误 `@Autowired` Service 导致加载全上下文；`@DataJpaTest` 是否带额外配置
+  - **事务回滚测试假阳性**：测试内 `@Transactional` 回滚是否掩盖真实事务边界问题；是否用 `@Rollback(false)` 或独立事务验证
+  - **Mock 滥用**：是否 Mock 了被测对象自己；Mock 返回 null 导致 NPE 被吞；是否过度 Mock 导致测试脆弱
+  - **异步测试**：是否用 `Awaitility` 而非 `Thread.sleep`；虚拟线程下 `CountDownLatch` 是否正确使用
+  - **覆盖率指标滥用**：JaCoCo 80% 但关键分支未覆盖；是否设分支覆盖率门禁而非行覆盖率
 
 ---
 
@@ -413,5 +484,5 @@ Gradle 项目使用同一套依赖指纹，支持常见 Groovy/Kotlin DSL 依赖
 
 ---
 
-*本手册版本：5.3*
-*最后更新：2026-04-22*
+*本手册版本：5.4*
+*最后更新：2026-07-21*

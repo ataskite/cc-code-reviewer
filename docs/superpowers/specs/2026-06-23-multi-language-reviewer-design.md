@@ -1,9 +1,11 @@
 # cc-code-reviewer 多语言扩展与前端审查设计
 
 **日期**：2026-06-23  
-**状态**：已批准  
+**状态**：已批准（本文保留首期历史边界；当前实现状态见下）
 **首期范围**：统一入口、多语言扩展内核、TypeScript/JavaScript + React Scan  
 **后续顺序**：Vue → Python；前端 Fix 在 Scan 稳定后单独设计
+
+> **1.5.0 实现状态（2026-07-22）**：统一入口现已正式支持 Java、前端族群（React/Vue2/Vue3/Node/TS/JS）和 Python（Django/FastAPI/通用 Python）。下文的“首期”“非目标”和阶段顺序保留为历史设计决策，不再代表当前支持范围。
 
 ## 1. 背景
 

@@ -38,10 +38,10 @@ has_unsupported_meta_framework() {
 }
 source_root_has_production_files() {
   [ -d "$1" ] || return 1
-  find "$1" \
+  find "$1" -mindepth 1 \
     \( \
-      -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/coverage/*' \
-      -o -path '*/.git/*' -o -path '*/.next/*' -o -path '*/.nuxt/*' \
+      -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \
+        -o -name '.git' -o -name '.next' -o -name '.nuxt' \) \
     \) -prune -o \
     -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.vue' -o -name '*.mjs' -o -name '*.cjs' \) \
     -not -name '*.d.ts' \
@@ -53,29 +53,29 @@ source_root_has_production_files() {
 }
 source_root_has_react_code() {
   [ -d "$1" ] || return 1
-  find "$1" \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/coverage/*' \) -prune -o \
+  find "$1" -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \) \) -prune -o \
     \( -name '*.tsx' -o -name '*.jsx' \) -type f -print -quit 2>/dev/null | grep -q . && return 0
   local f
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     grep -Eq "from ['\"]react['\"]|require\\(['\"]react['\"]\\)|React\\.createElement|createElement\\(" "$f" 2>/dev/null && return 0
-  done < <(find "$1" \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/coverage/*' \) -prune -o \
+  done < <(find "$1" -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \) \) -prune -o \
     \( -name '*.ts' -o -name '*.js' \) -type f -print 2>/dev/null)
   return 1
 }
 source_root_has_vue_code() {
   [ -d "$1" ] || return 1
-  find "$1" \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/coverage/*' \) -prune -o \
+  find "$1" -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \) \) -prune -o \
     -name '*.vue' -type f -print -quit 2>/dev/null | grep -q . && return 0
   local f
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     grep -Eq "from ['\"]vue['\"]|require\s*\(\s*['\"]vue['\"]|<script[[:space:]][^>]*setup" "$f" 2>/dev/null && return 0
-  done < <(find "$1" \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/coverage/*' \) -prune -o \
+  done < <(find "$1" -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \) \) -prune -o \
     \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.vue' \) -type f -print 2>/dev/null)
   return 1
 }
@@ -85,8 +85,8 @@ source_root_has_node_code() {
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     grep -Eq "from ['\"](express|koa|fastify|@nestjs/core|hapi|@hapi/hapi|egg)['\"]|require\\(['\"](express|koa|fastify|@nestjs/core|hapi|@hapi/hapi|egg)['\"]\\)" "$f" 2>/dev/null && return 0
-  done < <(find "$1" \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/coverage/*' \) -prune -o \
+  done < <(find "$1" -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \) \) -prune -o \
     \( -name '*.ts' -o -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) -type f -print 2>/dev/null)
   return 1
 }
@@ -126,8 +126,8 @@ while IFS= read -r pkg; do
     [ "$pkg_root" = "$PROJECT_DIR" ] && ROOT_HAS_SUPPORTED_PACKAGE=1
     add_source_root "$pkg_root/src"
   fi
-done < <(find "$PROJECT_DIR" -maxdepth 3 \
-  \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune -o \
+done < <(find "$PROJECT_DIR" -maxdepth 3 -mindepth 1 \
+  \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \) \) -prune -o \
   -name 'package.json' -type f -print 2>/dev/null | sort)
 
 if [ "$ROOT_HAS_SUPPORTED_PACKAGE" -eq 1 ]; then
@@ -140,18 +140,18 @@ if [ "$ROOT_HAS_SUPPORTED_PACKAGE" -eq 1 ]; then
     if has_supported_package "$pkg" || source_root_has_supported_code "$pkg_root/src"; then
       add_source_root "$pkg_root/src"
     fi
-  done < <(find "$PROJECT_DIR" -maxdepth 3 \
-    \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune -o \
+  done < <(find "$PROJECT_DIR" -maxdepth 3 -mindepth 1 \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \) \) -prune -o \
     -name 'package.json' -type f -print 2>/dev/null | sort)
 fi
 
 [ "${#SOURCE_ROOTS[@]}" -gt 0 ] || exit 0
 
 for root in "${SOURCE_ROOTS[@]}"; do
-  find "$root" \
+  find "$root" -mindepth 1 \
     \( \
-      -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/coverage/*' \
-      -o -path '*/.git/*' -o -path '*/.next/*' -o -path '*/.nuxt/*' \
+      -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \
+        -o -name '.git' -o -name '.next' -o -name '.nuxt' \) \
     \) -prune -o \
     -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.vue' -o -name '*.mjs' -o -name '*.cjs' \) \
     -not -name '*.d.ts' \

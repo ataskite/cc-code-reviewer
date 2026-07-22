@@ -1,20 +1,25 @@
 ---
-description: Java 审查问题修复 - 基于人工确认的问题清单，支持直接修复或可选 Superpowers 修复路线
+name: cc-code-fixer
+description: 审查问题修复 - 基于人工确认的问题清单，支持直接修复或可选 Superpowers 修复路线
 ---
 
 ## 执行算法（最高优先级，必须严格按此顺序执行）
 
-`cc-code-fixer` 的入口和 scan 阶段保持一致：用户只需要提供待修复项目地址（本地路径或 Git URL）。待修复问题清单必须通过 AskUserQuestion 在交互中收集和确认。修复阶段必须交互确认，不接受用参数绕过人工确认。
+`cc-code-fixer` 的入口和 scan 阶段保持一致：用户只需要提供待修复项目地址（本地路径或 Git URL）。待修复问题清单必须通过 INTERACT 在交互中收集和确认。修复阶段必须交互确认，不接受用参数绕过人工确认。
 
 主 skill 负责解析项目、预检测、收集待修复问题确认清单、确认执行方式和输出目标。修复执行有两条路线：默认的直接修复路线由主 skill 执行；检测到 Superpowers 相关技能完整安装时，才额外展示 Superpowers 修复路线（brainstorming → subagent-driven-development）。两条路线都必须遵守用户确认的问题范围、测试优先和完成前验证。输出目标必须根据问题清单来源动态压缩：只给一个写回原始来源选项，再给三个额外创建独立修复报告选项。
 
+> **插件根目录**：本文件由 Claude Code / Codex / ZCode 三端共同发现。开始前根据当前宿主身份固定 `RUNTIME_ID` 并读取对应 adapter；若宿主不明确，在预扫描前失败。以本 Skill 资源目录为基准向上两级解析 `PLUGIN_ROOT`，禁止使用当前工作目录或 shell 入口参数。未解析出可读 `${PLUGIN_ROOT}/VERSION`、`${PLUGIN_ROOT}/scripts/core/detect-project.sh` 与本共享 Skill 时必须立即失败。
+
+> **跨平台人工确认**：本 Skill 的人工确认状态机在三端语义等价（见 `runtime/contract.md`「人工确认状态机」）。`INTERACT` 是逻辑动作，由 runtime adapter 映射到宿主结构化输入；不可用时才逐轮单问。不变量：预扫描先于交互、每步等待、禁止合并步骤、禁止命令行参数绕过、最终执行单独确认、fix 只执行确认后的问题集合。
+
 ### 第零步：模式判定（固定交互式）
 
-修复阶段固定为交互式人工确认流程。除项目地址外的任何修复计划都必须通过 AskUserQuestion 在后续步骤中确认。
+修复阶段固定为交互式人工确认流程。除项目地址外的任何修复计划都必须通过 INTERACT 在后续步骤中确认。
 
 ### 第一步：提取项目路径
 
-从用户输入中提取 `PROJECT_INPUT`，此阶段不得调用 AskUserQuestion。
+从用户输入中提取 `PROJECT_INPUT`，此阶段不得调用 INTERACT。
 
 #### 项目路径提取规则
 
@@ -46,31 +51,31 @@ description: Java 审查问题修复 - 基于人工确认的问题清单，支�
 ```text
 ❌ 修复阶段必须交互确认
 
-cc-code-fixer 只接受项目地址。待修复问题确认清单和输出目标会在后续 AskUserQuestion 中逐步确认。
+cc-code-fixer 只接受项目地址。待修复问题确认清单和输出目标会在后续 INTERACT 中逐步确认。
 ```
 
 然后终止，不得降级执行，不得继续调用子 agent。
 
 ### 第二步：项目预检测（5 个脚本按顺序执行，此阶段禁止任何用户交互）
 
-使用第一步提取出的 `PROJECT_INPUT`，按以下顺序执行脚本。此阶段禁止调用 AskUserQuestion，禁止输出交互式提问。
+使用第一步提取出的 `PROJECT_INPUT`，按以下顺序执行脚本。此阶段禁止调用 INTERACT，禁止输出交互式提问。
 
 仅支持 macOS / Linux（Bash）：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-project.sh" "<项目路径或 Git URL>"
+bash "${PLUGIN_ROOT}/scripts/core/detect-project.sh" "<项目路径或 Git URL>"
 # 输出：PROJECT_DIR=<路径> PROJECT_SOURCE=local|git-cache
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-branches.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/core/detect-branches.sh" "$PROJECT_DIR"
 # 输出：IS_GIT_REPO=true/false CURRENT_BRANCH=<分支> BRANCH: ... BRANCH_REMOTE: ...
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/languages/java/project-scan.sh" "$PROJECT_DIR"
+bash "${PLUGIN_ROOT}/scripts/languages/java/project-scan.sh" "$PROJECT_DIR"
 # 输出：PROJECT_TYPE=... MODULE:... TECH_STACK:...
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
+bash "${PLUGIN_ROOT}/scripts/core/detect-lark-plugin.sh"
 # 输出：LARK_PLUGIN_INSTALLED=true|false，失败时附带 LARK_PLUGIN_REASON
 
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-superpowers.sh"
+bash "${PLUGIN_ROOT}/scripts/core/detect-superpowers.sh"
 # 输出：SUPERPOWERS_AVAILABLE=true|false SUPERPOWER_SKILL:<skill>=available|missing
 ```
 
@@ -103,11 +108,11 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-superpowers.sh"
 - 缺失：{SUPERPOWER_MISSING 或 "无"}
 ```
 
-### 第四步：通过 AskUserQuestion 收集待修复问题确认清单
+### 第四步：通过 INTERACT 收集待修复问题确认清单
 
-必须用一次 AskUserQuestion 收集问题清单位置，不得先让用户选择本地 Markdown、飞书云文档或飞书多维表格。该清单必须是人确认过的本地 Markdown、scan 阶段产出的飞书云文档、或 scan 阶段产出的飞书多维表格。不得默认把 scan 产物中的全部候选问题自动纳入修复。
+必须用一次 INTERACT 收集问题清单位置，不得先让用户选择本地 Markdown、飞书云文档或飞书多维表格。该清单必须是人确认过的本地 Markdown、scan 阶段产出的飞书云文档、或 scan 阶段产出的飞书多维表格。不得默认把 scan 产物中的全部候选问题自动纳入修复。
 
-必须调用 AskUserQuestion：
+必须调用 INTERACT：
 
 - question: "请提供待修复问题确认清单的具体位置，并在 Other/free-form 中粘贴 URL 或本地路径"
 - header: "问题清单位置"
@@ -118,12 +123,12 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-superpowers.sh"
     description: "停止本次修复，不修改任何文件"
 - multiSelect: false
 
-如果当前 AskUserQuestion 支持直接自由文本输入，可以直接收集 `FIX_INPUT_SOURCE`；如果只支持选项，必须使用 Other/free-form 收集。收集到 `FIX_INPUT_SOURCE` 后，必须根据输入动态识别来源类型并分流，不得再次询问用户选择来源，也不得把所有输入都交给 Bash 脚本：
+如果当前 INTERACT 支持直接自由文本输入，可以直接收集 `FIX_INPUT_SOURCE`；如果只支持选项，必须使用 Other/free-form 收集。收集到 `FIX_INPUT_SOURCE` 后，必须根据输入动态识别来源类型并分流，不得再次询问用户选择来源，也不得把所有输入都交给 Bash 脚本：
 
 - 识别为本地 Markdown 路径时，执行：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-fix-input.sh" "<FIX_INPUT_SOURCE>"
+bash "${PLUGIN_ROOT}/scripts/core/detect-fix-input.sh" "<FIX_INPUT_SOURCE>"
 ```
 
 - 识别为飞书云文档 URL 时，不得调用 `core/detect-fix-input.sh`；必须直接使用 `lark-cli docs` 和 `lark-doc` skill 读取。
@@ -153,7 +158,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-fix-input.sh" "<FIX_INPUT_SOURCE
 
 ### 第五步：展示问题清单表格并确认修复范围
 
-解析完成后，必须先输出真正的终端表格，再调用 AskUserQuestion。表格只展示状态过滤后的待确认问题；明确标注 `已修复`、`已忽略` 或 `不适用` 的问题不得展示。不要输出项目符号列表，也不要把问题逐条展开成段落。表格最多展示 30 条；超过 30 条时按 P0、P1、P2、P3、待确认排序展示前 30 条，并说明完整清单会注入后续步骤。
+解析完成后，必须先输出真正的终端表格，再调用 INTERACT。表格只展示状态过滤后的待确认问题；明确标注 `已修复`、`已忽略` 或 `不适用` 的问题不得展示。不要输出项目符号列表，也不要把问题逐条展开成段落。表格最多展示 30 条；超过 30 条时按 P0、P1、P2、P3、待确认排序展示前 30 条，并说明完整清单会注入后续步骤。
 
 问题清单表格只展示 5 列：`问题ID`、`严重级别`、`维度`、`问题摘要`、`修复建议`。不要展示 `置信度`、`位置`、`证据`、`影响` 等宽字段；这些细节保留在归一化上下文和后续修复关键点中。
 
@@ -171,7 +176,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-fix-input.sh" "<FIX_INPUT_SOURCE
 | P0-1 | P0 | 安全 | 接口缺少鉴权 | 增加权限校验和测试 |
 ```
 
-随后必须调用 AskUserQuestion：
+随后必须调用 INTERACT：
 
 - question: "请确认本次要纳入修复的问题"
 - header: "确认清单"
@@ -186,7 +191,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-fix-input.sh" "<FIX_INPUT_SOURCE
     description: "停止本次修复，不修改任何文件"
 - multiSelect: false
 
-选择「按问题编号自定义」时，必须追加一次 AskUserQuestion 收集编号，header 使用 "问题编号"。自定义编号必须逐个校验是否存在于归一化问题清单中；不存在时提示有效编号并重新收集，最多重试 3 次。
+选择「按问题编号自定义」时，必须追加一次 INTERACT 收集编号，header 使用 "问题编号"。自定义编号必须逐个校验是否存在于归一化问题清单中；不存在时提示有效编号并重新收集，最多重试 3 次。
 
 ### 第六步：确认修复关键点
 
@@ -200,7 +205,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-fix-input.sh" "<FIX_INPUT_SOURCE
 | P0-1 | ... | ... | ... | ... |
 ```
 
-然后调用 AskUserQuestion：
+然后调用 INTERACT：
 
 - question: "请确认以上修复关键点是否符合预期"
 - header: "关键点确认"
@@ -215,7 +220,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-fix-input.sh" "<FIX_INPUT_SOURCE
 
 ### 第七步：选择输出目标
 
-必须调用 AskUserQuestion：
+必须调用 INTERACT：
 
 - question: "请选择修复结果输出目标"
 - header: "输出目标"
@@ -242,7 +247,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-fix-input.sh" "<FIX_INPUT_SOURCE
 
 ### 第八步：选择执行方式
 
-必须调用 AskUserQuestion：
+必须调用 INTERACT：
 
 - question: "请选择本次修复的执行方式"
 - header: "执行方式"
@@ -261,7 +266,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-fix-input.sh" "<FIX_INPUT_SOURCE
 
 ### 第九步：直接修复路线选择工作区策略
 
-仅当用户选择 `直接开始修复` 时执行本步骤。必须调用 AskUserQuestion：
+仅当用户选择 `直接开始修复` 时执行本步骤。必须调用 INTERACT：
 
 - question: "请选择直接修复使用的工作区策略"
 - header: "工作区策略"
@@ -276,19 +281,19 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/detect-fix-input.sh" "<FIX_INPUT_SOURCE
     description: "停止本次修复，不修改任何文件"
 - multiSelect: false
 
-选择 `创建新分支修复` 或 `创建 worktree 修复` 时，必须追加一次 AskUserQuestion 收集修复分支名，header 使用 "修复分支"。默认建议分支名为 `fix/review-confirmed-issues`，但必须允许用户在 Other/free-form 中输入自定义分支名。
+选择 `创建新分支修复` 或 `创建 worktree 修复` 时，必须追加一次 INTERACT 收集修复分支名，header 使用 "修复分支"。默认建议分支名为 `fix/review-confirmed-issues`，但必须允许用户在 Other/free-form 中输入自定义分支名。
 
 随后调用工作区准备脚本：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/prepare-fix-workspace.sh" "$PROJECT_DIR" "{current|branch|worktree}" "{FIX_BRANCH}"
+bash "${PLUGIN_ROOT}/scripts/core/prepare-fix-workspace.sh" "$PROJECT_DIR" "{current|branch|worktree}" "{FIX_BRANCH}"
 ```
 
 `当前分支修复` 使用 `current`，分支名参数可为空。脚本失败时必须停止在代码变更之前，输出失败原因，不得继续修复。
 
 ### 第十步：确认执行计划
 
-在调用 AskUserQuestion 前必须展示完整执行计划：
+在调用 INTERACT 前必须展示完整执行计划：
 
 ```text
 🛠️ 修复执行计划
@@ -303,7 +308,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/prepare-fix-workspace.sh" "$PROJECT_DIR
 - Superpowers：{SUPERPOWERS_STATUS}
 ```
 
-然后必须调用 AskUserQuestion：
+然后必须调用 INTERACT：
 
 - question: "确认以上修复计划后开始执行"
 - header: "确认执行计划"
@@ -329,7 +334,7 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/prepare-fix-workspace.sh" "$PROJECT_DIR
 5. 修复完成后，在实际修复工作区执行：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/collect-fix-metadata.sh" "{FIX_WORKSPACE_PATH}"
+bash "${PLUGIN_ROOT}/scripts/core/collect-fix-metadata.sh" "{FIX_WORKSPACE_PATH}"
 ```
 
 6. 必须用该脚本输出的 `FIX_COMPLETED_AT` 作为修复时间，`FIX_BRANCH` 作为修复分支，`FIX_ACTOR` 作为修复人；不得再询问用户，也不得使用静态占位值。
@@ -353,7 +358,7 @@ brainstorming 负责形成：
 如果 brainstorming 建议使用 worktree 或新分支策略，调用工作区准备脚本：
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/core/prepare-fix-workspace.sh" "$PROJECT_DIR" "{WORKSPACE_STRATEGY}" "{FIX_BRANCH}"
+bash "${PLUGIN_ROOT}/scripts/core/prepare-fix-workspace.sh" "$PROJECT_DIR" "{WORKSPACE_STRATEGY}" "{FIX_BRANCH}"
 ```
 
 brainstorming 产出 plan 后，调用 `subagent-driven-development` skill 执行修复计划。修复执行必须遵守以下约束：
@@ -380,7 +385,7 @@ brainstorming 产出 plan 后，调用 `subagent-driven-development` skill 执�
 4. `core/detect-lark-plugin.sh` → lark-cli 检测
 5. `core/detect-superpowers.sh` → Superpowers 探测
 6. `core/detect-fix-input.sh` → 修复输入校验
-7. AskUserQuestion 收集确认问题清单与输出目标
+7. INTERACT 收集确认问题清单与输出目标
 8. `core/prepare-fix-workspace.sh` → 修复工作区准备
 9. 执行修复 → `core/collect-fix-metadata.sh` → 收集修复元数据
 

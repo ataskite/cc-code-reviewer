@@ -7,7 +7,19 @@
 进入正式审查范围和文件覆盖率分母的源码：
 
 - `src/**/*.py`（src layout）
-- `<package>/**/*.py`（flat layout，顶层包目录下，含 `__init__.py`）
+- `<package>/**/*.py`（flat layout，顶层包目录下；含 `__init__.py` 的常规包，或不含 `__init__.py` 的 namespace package/PEP 420）
+- 根级单文件应用入口：项目根下的 `app.py`、`main.py`、`wsgi.py`、`asgi.py`、`server.py`、`manage.py`（与 `src/` 或 flat 顶层包合并收集，覆盖 `main.py + app/`、`manage.py + project/` 等常见布局）
+- 通用根级脚本：仅当项目既无 `src/`、flat 顶层包，也无上述白名单入口时，收集根目录其他生产 `.py`（如 `cli.py`、`worker.py`），继续排除测试和打包配置
+
+## 正式配置（SOURCE_SCOPE:formal-config）
+
+可产生正式配置问题，但**不进入 Python 源码文件覆盖率分母**：
+
+- `pyproject.toml`、`setup.py`、`setup.cfg`
+- `requirements*.txt`、`Pipfile`、`uv.lock`、`poetry.lock`、`Pipfile.lock`
+- `tox.ini`、`pytest.ini`、Ruff/mypy/flake8 配置
+
+这些路径由预扫描以 `FORMAL_CONFIG_FILE:<绝对路径>` 显式注入。分批审查时只由 `batch-001` 审查，避免重复发现。
 
 ## 只读上下文（SOURCE_SCOPE:context）
 

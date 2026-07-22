@@ -38,8 +38,8 @@
 - `autoescape` 关闭：`{% autoescape off %}` 块内渲染用户输入
 
 ### Settings
-- `DEBUG=True` 生产配置（P0 级）：泄露源码、堆栈、配置
-- `SECRET_KEY` 硬编码或提交到版本库（P0 级）
+- `DEBUG=True` 生产配置（P0 候选，须通过五项硬门槛核验）：泄露源码、堆栈、配置
+- `SECRET_KEY` 硬编码或提交到版本库（P0 候选，须通过五项硬门槛核验）
 - `ALLOWED_HOSTS = ['*']` 生产配置
 - `DATABASES` 密码硬编码
 - 分环境配置：`settings/` 目录拆分 `base.py`/`dev.py`/`prod.py`，环境变量注入

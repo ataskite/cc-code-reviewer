@@ -27,8 +27,8 @@ done <<< "$MANIFEST"
 PKGS=()
 while IFS= read -r pkg; do
   [ -n "$pkg" ] && PKGS+=("$pkg")
-done < <(find "$PROJECT_DIR" -maxdepth 3 \
-  \( -path '*/node_modules/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/.git/*' \) -prune -o \
+done < <(find "$PROJECT_DIR" -maxdepth 3 -mindepth 1 \
+  \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \) \) -prune -o \
   -name 'package.json' -type f -print 2>/dev/null | sort)
 
 # 统计生产源码
@@ -39,17 +39,21 @@ while IFS= read -r f; do
   LINE_COUNT=$((LINE_COUNT + $(wc -l < "$f" | tr -d ' ')))
 done <<< "$MANIFEST"
 
-# 正式配置文件计数（支持 package 边界内 package.json/tsconfig/vite/vue/webpack/babel 等配置）
-CONFIG_COUNT=0
-for root in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
-  pkg_root="${root%/src}"
-  while IFS= read -r cfg; do
-    [ -n "$cfg" ] && CONFIG_COUNT=$((CONFIG_COUNT+1))
-  done < <(find "$pkg_root" -maxdepth 1 \
-    -type f \( -name 'package.json' -o -name 'tsconfig.json' -o -name 'tsconfig.*.json' \
-      -o -name 'vite.config.*' -o -name 'webpack.config.*' -o -name 'vue.config.*' \
-      -o -name 'babel.config.*' \) -print 2>/dev/null)
-done
+# 正式配置 manifest（支持 package 边界内 package.json/tsconfig/vite/vue/webpack/babel 等配置）。
+# 路径与计数必须来自同一份不可变清单，供 agent 按 FORMAL_CONFIG_FILE 精确读取。
+collect_formal_config_files() {
+  local root pkg_root
+  for root in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
+    pkg_root="${root%/src}"
+    find "$pkg_root" -maxdepth 1 \
+      -type f \( -name 'package.json' -o -name 'tsconfig.json' -o -name 'tsconfig.*.json' \
+        -o -name 'vite.config.*' -o -name 'webpack.config.*' -o -name 'vue.config.*' \
+        -o -name 'babel.config.*' \) -print 2>/dev/null
+  done | sort -u
+}
+
+CONFIG_MANIFEST="$(collect_formal_config_files)"
+CONFIG_COUNT="$(printf '%s\n' "$CONFIG_MANIFEST" | grep -c . || true)"
 
 # 组件维度（每个 source root 下顶层目录作为粗粒度 COMPONENT）
 # 复用 collect-source-files.sh 的同一口径：对项目根调用一次得到完整 manifest，
@@ -144,6 +148,9 @@ echo "CODE_INTELLIGENCE_REASON=typescript-lsp-detection-pending"
 for root in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
   echo "SOURCE_ROOT:formal|$(rel_path "$root")"
 done
+while IFS= read -r cfg; do
+  [ -n "$cfg" ] && printf 'FORMAL_CONFIG_FILE:%s\n' "$cfg"
+done <<< "$CONFIG_MANIFEST"
 emit_components
 
 # 技术栈（依赖证据）

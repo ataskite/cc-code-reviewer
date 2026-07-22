@@ -131,6 +131,74 @@ emit_file_tech_stack() {
   return 1
 }
 
+# 虚拟线程检测：仅当 Java 21+ AND Spring Boot 3.2+，或显式虚拟线程配置/源码使用时返回证据。
+# Maven 与 Gradle 使用同一入口，避免 Gradle 分支静默丢失专项规则。
+detect_virtual_threads() {
+  local file pom build_file java_ver boot_ver major minor
+
+  # 显式源码使用与构建工具无关，优先检测。
+  while IFS= read -r -d '' file; do
+    if grep -qE 'Thread\.ofVirtual|VirtualThread|newVirtualThreadPerTaskExecutor|StructuredTaskScope' "$file" 2>/dev/null; then
+      echo "explicit-virtual-thread-usage:${file#$PROJECT_DIR/}"
+      return 0
+    fi
+  done < <(find "$PROJECT_DIR" -mindepth 1 \
+    \( -type d \( -name target -o -name build -o -name .git \) -prune \) -o \
+    -path '*/src/main/java/*' -type f -name '*.java' -print0 2>/dev/null)
+
+  # Spring Boot 配置位于 application*.properties/yml/yaml，而不是构建文件。
+  while IFS= read -r -d '' file; do
+    if grep -qE 'spring[.]threads[.]virtual[.]enabled[[:space:]]*[:=][[:space:]]*true' "$file" 2>/dev/null; then
+      echo "explicit-virtual-thread-config:${file#$PROJECT_DIR/}"
+      return 0
+    fi
+  done < <(find "$PROJECT_DIR" -mindepth 1 \
+    \( -type d \( -name target -o -name build -o -name .git \) -prune \) -o \
+    -type f \( -name 'application*.properties' -o -name 'application*.yml' -o -name 'application*.yaml' \) -print0 2>/dev/null)
+
+  # Maven：Java 21+ 且 Spring Boot parent 3.2+。
+  while IFS= read -r -d '' pom; do
+    # Java 版本：<java.version> / <maven.compiler.source> / <maven.compiler.release> / <release>
+    java_ver="$(grep -Eo '<(java\.version|maven\.compiler\.(source|release|release))>[[:space:]]*[0-9]+' "$pom" 2>/dev/null | grep -Eo '[0-9]+' | head -1 || true)"
+    # Spring Boot parent 版本：<parent><artifactId>spring-boot-starter-parent</artifactId><version>3.2+
+    boot_ver="$(sed -n '/<parent>/,/<\/parent>/p' "$pom" 2>/dev/null | grep -A2 'spring-boot-starter-parent' | grep -Eo '<version>[0-9]+\.[0-9]+' | grep -Eo '[0-9]+\.[0-9]+' | head -1 || true)"
+
+    # 条件 1：Java 21+ AND Spring Boot 3.2+
+    if [ -n "$java_ver" ] && [ "$java_ver" -ge 21 ] 2>/dev/null && \
+       [ -n "$boot_ver" ]; then
+      major="${boot_ver%%.*}"
+      minor="${boot_ver#*.}"
+      if [ "$major" -ge 4 ] 2>/dev/null || { [ "$major" -eq 3 ] && [ "$minor" -ge 2 ]; } 2>/dev/null; then
+        echo "spring-boot-starter-parent:${boot_ver}+java${java_ver}"
+        return 0
+      fi
+    fi
+
+  done < <(collect_maven_poms)
+
+  # Gradle Groovy/Kotlin DSL：支持 sourceCompatibility、JavaVersion 与 toolchain 写法。
+  while IFS= read -r -d '' build_file; do
+    java_ver="$(perl -0777 -ne '
+      if (/JavaVersion[.]VERSION_([0-9]+)/s) { print $1; exit }
+      if (/JavaLanguageVersion[.]of[(][[:space:]]*([0-9]+)/s) { print $1; exit }
+      if (/sourceCompatibility[[:space:]]*=[[:space:]]*(?:JavaVersion[.]VERSION_)?["\x27]?([0-9]+)/s) { print $1; exit }
+    ' "$build_file" 2>/dev/null || true)"
+    boot_ver="$(perl -0777 -ne '
+      if (/id[[:space:]]*(?:[(][[:space:]]*)?["\x27]org[.]springframework[.]boot["\x27][[:space:]]*[)]?[[:space:]]*version[[:space:]]*(?:[(][[:space:]]*)?["\x27]([0-9]+[.][0-9]+)/s) { print $1; exit }
+    ' "$build_file" 2>/dev/null || true)"
+    if [ -n "$java_ver" ] && [ "$java_ver" -ge 21 ] 2>/dev/null && [ -n "$boot_ver" ]; then
+      major="${boot_ver%%.*}"
+      minor="${boot_ver#*.}"
+      if [ "$major" -ge 4 ] 2>/dev/null || { [ "$major" -eq 3 ] && [ "$minor" -ge 2 ]; } 2>/dev/null; then
+        echo "gradle-spring-boot:${boot_ver}+java${java_ver}"
+        return 0
+      fi
+    fi
+  done < <(collect_gradle_builds)
+
+  return 1
+}
+
 scan_dependency_tech_stack() {
   local detector="$1"
   local fallback_reason="$2"
@@ -166,6 +234,9 @@ scan_dependency_tech_stack() {
   emit_tech_stack "Flyway/Liquibase" "$detector" 'flyway-core|liquibase-core' "4,10,11" "启用数据库迁移顺序、回滚策略、破坏性 DDL 和环境一致性审查" && emitted=1
   emit_tech_stack "MapStruct" "$detector" 'mapstruct' "1,2,10" "启用 DTO/Entity 映射遗漏、默认值、枚举映射和敏感字段透传审查" && emitted=1
   emit_tech_stack "JSON Serialization" "$detector" 'jackson-databind|fastjson2?|gson' "1,5,15" "启用反序列化安全、未知字段、日期格式、精度和响应字段暴露审查" && emitted=1
+  emit_file_tech_stack "Virtual Threads" "detect_virtual_threads" "6,7" "虚拟线程 Pinning、ThreadLocal 膨胀、资源失配和结构化并发审查（仅 Java 21+ AND Spring Boot 3.2+，或显式虚拟线程配置时启用）" && emitted=1
+  emit_tech_stack "Micrometer/OTel" "$detector" 'micrometer-tracing-[A-Za-z0-9_.-]+|micrometer-registry-[A-Za-z0-9_.-]+|opentelemetry-[A-Za-z0-9_.-]+|spring-cloud-sleuth' "8" "启用分布式追踪、Trace 上下文传播、采样配置、OTLP 导出器和指标基数审查" && emitted=1
+  emit_tech_stack "Spring AI/LangChain4j" "$detector" 'spring-ai-[A-Za-z0-9_.-]+|langchain4j[A-Za-z0-9_.-]*|openai-java|simple-openai' "5,8" "启用 Prompt 注入、敏感数据外泄、超时降级、Token 限流、工具调用安全和 RAG 越权审查" && emitted=1
   emit_file_tech_stack "Docker" "detect_docker_file" "3,5,7,8,12" "启用镜像基础版本、运行用户、密钥注入、资源限制、健康检查和优雅停机审查" && emitted=1
   emit_file_tech_stack "Kubernetes" "detect_kubernetes_file" "3,5,7,8,12" "启用探针、资源 requests/limits、Secret/ConfigMap、滚动发布和服务暴露审查" && emitted=1
 

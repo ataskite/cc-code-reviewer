@@ -22,4 +22,4 @@ git -C "$ROOT_DIR" diff --check
 echo "    ok"
 
 echo ""
-echo "All tests passed."
+echo "✅ All tests passed."

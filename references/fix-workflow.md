@@ -8,7 +8,7 @@
 
 ## Fix Input Normalization
 
-`cc-code-fixer` 入口只接收项目地址。待修复问题确认清单必须在项目预检测之后通过一次 AskUserQuestion 收集问题清单位置。不得先让用户选择本地 Markdown、飞书云文档或飞书多维表格；必须明确要求用户在 Other/free-form 中粘贴 URL 或本地路径，并根据输入动态识别为本地 Markdown、飞书云文档或飞书多维表格。
+`cc-code-fixer` 入口只接收项目地址。待修复问题确认清单必须在项目预检测之后通过一次 INTERACT 收集问题清单位置。不得先让用户选择本地 Markdown、飞书云文档或飞书多维表格；必须明确要求用户在 Other/free-form 中粘贴 URL 或本地路径，并根据输入动态识别为本地 Markdown、飞书云文档或飞书多维表格。
 
 归一化结果至少包含：
 
@@ -70,13 +70,13 @@
 2. 检查 `PROJECT_DIR` 是否存在、是否为 Git 仓库、当前分支和工作区状态。
 3. 扫描项目结构、模块、技术栈和默认验证命令线索。
 4. 检测 lark-cli 与 Superpowers 可用性。
-5. 通过一次 AskUserQuestion 收集问题清单位置，并根据输入动态识别清单类型。
+5. 通过一次 INTERACT 收集问题清单位置，并根据输入动态识别清单类型。
 6. 按识别结果读取本地 Markdown、飞书云文档或飞书多维表格，提取可确认的问题编号、位置、问题描述、修复建议和修复状态。
 7. 对归一化问题清单执行状态过滤，跳过明确 `已修复`、`已忽略`、`不适用` 的问题。
 8. 展示状态过滤后的问题清单表格，获得用户对本轮修复问题集合的确认。
 9. 展示修复关键点，获得用户确认。
 10. 获得输出目标确认：根据 `FIX_INPUT_TYPE` 只展示一个写回原始问题清单来源的选项，并同时展示三种独立修复报告选项。
-11. 通过 AskUserQuestion 选择执行方式：直接开始修复，或在 Superpowers 可用时使用 Superpowers 修复。
+11. 通过 INTERACT 选择执行方式：直接开始修复，或在 Superpowers 可用时使用 Superpowers 修复。
 12. 直接修复路线必须确认工作区策略：当前分支、新分支或 worktree。
 13. 输出最终执行计划并获得确认。
 
@@ -86,7 +86,7 @@
 
 ## Execution Route Selection
 
-修复器必须在问题范围、修复关键点和输出目标都确认后，使用 AskUserQuestion 询问执行方式：
+修复器必须在问题范围、修复关键点和输出目标都确认后，使用 INTERACT 询问执行方式：
 
 - `直接开始修复`：由主 skill 执行修复、测试、验证和报告生成。
 - `使用 Superpowers 修复`：只有 `SUPERPOWERS_AVAILABLE=true` 时展示；进入 brainstorming 和 subagent-driven-development。
@@ -98,9 +98,9 @@ Superpowers 不完整安装时，不进入 degraded mode，也不展示 `使用 
 
 ## Output Target Selection
 
-输出目标只通过一次 AskUserQuestion 确认，不得在修复完成后追加新的回写确认问题。
+输出目标只通过一次 INTERACT 确认，不得在修复完成后追加新的回写确认问题。
 
-该 AskUserQuestion 必须根据用户先前提供的问题清单类型动态生成选项：
+该 INTERACT 必须根据用户先前提供的问题清单类型动态生成选项：
 
 - 如果 `FIX_INPUT_TYPE=local-markdown`，写回原始来源选项为 `写回原始本地 Markdown`，只更新 `FIX_INPUT_SOURCE` 指向的原始本地 Markdown 文件。
 - 如果 `FIX_INPUT_TYPE=feishu-doc`，写回原始来源选项为 `写回原始飞书云文档`，只更新 `FIX_INPUT_SOURCE` 指向的原始云文档。

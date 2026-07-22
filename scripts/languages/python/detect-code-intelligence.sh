@@ -3,14 +3,25 @@ set -euo pipefail
 PROJECT_DIR="${1:?请输入项目路径}"
 [ -d "$PROJECT_DIR" ] || { echo "CODE_INTELLIGENCE_AVAILABLE=false"; echo "CODE_INTELLIGENCE_REASON=project-dir-not-found"; exit 0; }
 
-# 探测 Python LSP / 类型检查器。优先级：pyright > pylsp(python-lsp-server) > jedi > none。
+# 探测 Python LSP / 类型检查器。优先级：pyright language server
+# > pylsp(python-lsp-server) > jedi > pyright CLI > none。完整 LSP 始终优先于
+# 只有 diagnostics 的 CLI；CLI 与 LSP 必须用不同 provider，
+# 避免上层把只有 diagnostics 的 pyright CLI 当成 definition/references LSP。
 # 输出 PROFILE_SCHEMA 兼容的 CODE_INTELLIGENCE_* key=value。
 
-detect_pyright() {
-  command -v pyright >/dev/null 2>&1 && return 0
+detect_pyright_langserver() {
   command -v pyright-langserver >/dev/null 2>&1 && return 0
-  # node_modules 本地安装
+  [ -x "$PROJECT_DIR/node_modules/.bin/pyright-langserver" ] && return 0
+  [ -x "$PROJECT_DIR/.venv/bin/pyright-langserver" ] && return 0
+  [ -x "$PROJECT_DIR/venv/bin/pyright-langserver" ] && return 0
+  return 1
+}
+
+detect_pyright_cli() {
+  command -v pyright >/dev/null 2>&1 && return 0
   [ -x "$PROJECT_DIR/node_modules/.bin/pyright" ] && return 0
+  [ -x "$PROJECT_DIR/.venv/bin/pyright" ] && return 0
+  [ -x "$PROJECT_DIR/venv/bin/pyright" ] && return 0
   return 1
 }
 
@@ -25,17 +36,19 @@ detect_pylsp() {
 detect_jedi() {
   command -v jedi-language-server >/dev/null 2>&1 && return 0
   [ -x "$PROJECT_DIR/.venv/bin/jedi-language-server" ] && return 0
+  [ -x "$PROJECT_DIR/venv/bin/jedi-language-server" ] && return 0
   return 1
 }
 
-if detect_pyright; then
-  PROVIDER="pyright"
+if detect_pyright_langserver; then
   if command -v pyright-langserver >/dev/null 2>&1; then
     CMD="pyright-langserver --stdio"
-  elif command -v pyright >/dev/null 2>&1; then
-    CMD="pyright"
+  elif [ -x "$PROJECT_DIR/node_modules/.bin/pyright-langserver" ]; then
+    CMD="$PROJECT_DIR/node_modules/.bin/pyright-langserver --stdio"
+  elif [ -x "$PROJECT_DIR/.venv/bin/pyright-langserver" ]; then
+    CMD="$PROJECT_DIR/.venv/bin/pyright-langserver --stdio"
   else
-    CMD="$PROJECT_DIR/node_modules/.bin/pyright"
+    CMD="$PROJECT_DIR/venv/bin/pyright-langserver --stdio"
   fi
   echo "CODE_INTELLIGENCE_AVAILABLE=true"
   echo "CODE_INTELLIGENCE_LANGUAGE=python"
@@ -64,14 +77,34 @@ fi
 if detect_jedi; then
   if command -v jedi-language-server >/dev/null 2>&1; then
     CMD="jedi-language-server"
-  else
+  elif [ -x "$PROJECT_DIR/.venv/bin/jedi-language-server" ]; then
     CMD="$PROJECT_DIR/.venv/bin/jedi-language-server"
+  else
+    CMD="$PROJECT_DIR/venv/bin/jedi-language-server"
   fi
   echo "CODE_INTELLIGENCE_AVAILABLE=true"
   echo "CODE_INTELLIGENCE_LANGUAGE=python"
   echo "CODE_INTELLIGENCE_PROVIDER=jedi"
   echo "CODE_INTELLIGENCE_COMMAND=$CMD"
   echo "CODE_INTELLIGENCE_CAPABILITIES=definition,references,diagnostics,completion"
+  exit 0
+fi
+
+if detect_pyright_cli; then
+  if command -v pyright >/dev/null 2>&1; then
+    CMD="pyright"
+  elif [ -x "$PROJECT_DIR/node_modules/.bin/pyright" ]; then
+    CMD="$PROJECT_DIR/node_modules/.bin/pyright"
+  elif [ -x "$PROJECT_DIR/.venv/bin/pyright" ]; then
+    CMD="$PROJECT_DIR/.venv/bin/pyright"
+  else
+    CMD="$PROJECT_DIR/venv/bin/pyright"
+  fi
+  echo "CODE_INTELLIGENCE_AVAILABLE=true"
+  echo "CODE_INTELLIGENCE_LANGUAGE=python"
+  echo "CODE_INTELLIGENCE_PROVIDER=pyright-cli"
+  echo "CODE_INTELLIGENCE_COMMAND=$CMD"
+  echo "CODE_INTELLIGENCE_CAPABILITIES=diagnostics"
   exit 0
 fi
 

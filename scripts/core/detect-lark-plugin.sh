@@ -1,14 +1,18 @@
 #!/bin/bash
 # 阶段四：lark-cli 检测
 # 用途：检测系统是否安装 lark-cli 命令行工具
+#
+# 平台中立：Skill 搜索根覆盖 Claude Code / Codex / ZCode / 通用 .agents 四端。
 
 set -e
 
 has_skill() {
   local skill_name="$1"
+  # 覆盖三端 Agent 产品的 skill 根目录（Claude / Codex / ZCode / 通用 .agents）。
   [ -d "$HOME/.agents/skills/$skill_name" ] ||
     [ -d "$HOME/.codex/skills/$skill_name" ] ||
-    [ -d "$HOME/.claude/skills/$skill_name" ]
+    [ -d "$HOME/.claude/skills/$skill_name" ] ||
+    [ -d "$HOME/.zcode/skills/$skill_name" ]
 }
 
 LARK_CLI_PATH="$(command -v lark-cli 2>/dev/null || true)"
