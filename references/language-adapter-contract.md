@@ -70,6 +70,7 @@ SOURCE_SCOPE:excluded|node_modules/**
 - 项目获取、Git 分支与增量范围。
 - 结构化交互和最终确认。
 - 标准化 source manifest、批次状态和结果契约。
+- `review-input.json`、`review-rules.json`、`review-units.json` 与 `run-manifest.json` 的文件协议；共享内核只解释路径、状态、指纹和直接 import，不解释框架语义。
 - 批次选择、并发编排、恢复、等待和失败门禁。
 - 文件覆盖率、确定性去重和阶段性/完整报告判断。
 - Ignore 规则加载、报告持久化和飞书输出。

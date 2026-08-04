@@ -109,7 +109,16 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 - 15 个审查维度：正确性、代码质量、异常处理、数据访问、安全、性能、资源管理、并发、缓存、消息队列、API 设计、架构、配置、测试、技术债等
 - 技术栈感知：Spring Boot、MyBatis / MyBatis Plus、JPA/Hibernate、Redis、Kafka/RocketMQ、Spring Security 等
 - Maven 多模块大仓库：支持 `module-sequential` 和 `ai-planned` 分批，批次可恢复，合并报告区分阶段性/完整
+- Maven 大仓依赖图亲和分批（v1.6.0）：有依赖边的模块装箱时 cost 容差放宽 15%，相关模块优先同批
 - Java 覆盖率口径固定为 `src/main/java` 生产源码，测试源码只作为上下文
+
+### 发现清单自校验（v1.6.0）
+
+三个审查 agent（Java / Frontend / Python）在生成报告前执行两轮自校验，吸收阿里 OpenCodeReview 的反思两阶段思想：
+
+- **行号回抽校验（RE_LOCATION）**：对带 `file:line` 的发现，用 Read 回抽 ±3 行验证证据代码真实存在；漂移则修正，缺失则降级为待确认项
+- **证伪式过滤（REVIEW_FILTER）**：只删当前可见证据能直接证伪的误报，凡需 diff 外信息才能判定的评论一律放行
+- **fail-open**：自校验失败的问题保留原状，只会让结果变好或不变，绝不会让结果变没
 
 ### Frontend Family 审查
 
@@ -147,14 +156,32 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 ## 输出
 
 - 本地 Markdown 审查报告：`code-review-report-{PROJECT}-{YYYYMMDD-HHmmss}.md`
+- 不可变审查输入：`review-input.json` 固化 Git 基准、选中/排除文件、变更类型和内容指纹
+- 运行覆盖清单：`run-manifest.json` 固化每个计划文件的 completed / failed / leftover 状态；不从 Markdown 反推覆盖率
 - 本地 Markdown 修复报告：`fix-report-{PROJECT}-{YYYYMMDD-HHmmss}.md`
 - 可选飞书云文档：使用 Markdown 一级标题作为云文档标题
 - 可选飞书多维表格：按扫描/修复阶段字段契约写入和更新
 - 分批合并报告：支持 `[阶段性]` 与 `[合并阻塞]` 标题，明确已纳入批次、遗留批次和覆盖率
 
+## 项目级审查规则
+
+`.cc-code-reviewer/review-rules.yml` 用于为路径附加审查重点，不会像 ignore 规则一样隐藏发现。它以确定性 glob 匹配并写入本轮 `review-rules.json`，供当前批次 Agent 读取：
+
+```yaml
+version: 1
+rules:
+  - name: api-boundary
+    paths:
+      - "**/controller/**"
+    instruction: "核对鉴权、输入校验和错误契约"
+    merge_language_rule: true
+```
+
+关联文件分批只使用直接相对 import、Python 同包 import 与无歧义 Java class import；无法可靠识别关联时保留单文件单元，不猜测框架语义。
+
 ## 架构
 
-![cc-code-reviewer 1.5.0 架构总览](docs/assets/architecture-overview-v1.5.0.png)
+![cc-code-reviewer v1.6 架构总览](docs/assets/architecture-overview-v1.5.0.png)
 
 插件采用 skill-only 入口和专属子 agent，三端共享同一审查内核：
 

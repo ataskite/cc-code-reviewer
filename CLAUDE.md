@@ -149,6 +149,7 @@ scripts/
   │   ├── detect-lark-plugin.sh          # lark-cli detection
   │   ├── preview-recent-commits.sh      # Recent commit preview for incremental scope choices
   │   ├── prepare-incremental.sh         # Incremental review preparation
+  │   ├── prepare-review-input.sh        # Immutable review input snapshot
   │   ├── detect-fix-input.sh            # Local Markdown fix input path validation
   │   ├── detect-superpowers.sh          # Optional Superpowers capability detection
   │   ├── prepare-fix-workspace.sh       # Fix branch/worktree preparation
@@ -158,12 +159,15 @@ scripts/
   │   ├── validate-scope.sh              # Scope path boundary validation (reserved)
   │   ├── validate-plugin-manifests.sh   # Three-platform plugin manifest validator (v1.5.0)
   │   ├── plan-file-batches.sh           # Language-neutral file-token batch planner
+  │   ├── plan-review-units.sh           # Conservative cross-file review units
+  │   ├── resolve-review-rules.sh         # Project review-rule resolver
   │   ├── merge-batch-results.sh         # Batch result merge (dedup + coverage)
   │   └── show-batch-status.sh           # User-visible batch status and dynamic execution plan
   ├── languages/
   │   ├── java/                          # Java-specific scripts
   │   │   ├── project-scan.sh            # Java project structure scan (Maven/Gradle/stack)
   │   │   ├── detect-code-intelligence.sh # jdtls-lsp detection
+  │   │   ├── collect-source-files.sh     # Java production source manifest
   │   │   ├── plan-large-batches.sh      # Maven multi-module stock batch planner
   │   │   └── plan-file-batches.sh       # Java file-token batch planner (delegates to core/)
   │   └── frontend/                      # Frontend-specific scripts
@@ -199,10 +203,12 @@ The suite runs every `tests/test_*.sh` file and then `git diff --check`. It cove
 - `core/detect-lark-plugin.sh`: lark-cli detection output contract
 - `core/preview-recent-commits.sh`: recent commit preview for incremental INTERACT choices
 - `core/prepare-incremental.sh`: incremental diff ranges that include the root commit
+- `core/prepare-review-input.sh`: immutable selected/excluded input, Git refs and content fingerprints
 - `languages/java/detect-code-intelligence.sh`: jdtls-lsp availability and fallback messaging
-- `languages/java/plan-large-batches.sh`: scoped Maven module planning, concise `RUN_DIR`, semantic-cost and module-sequential strategies
-- `languages/java/plan-file-batches.sh`: deterministic file-token batching for Maven single-module, Gradle, and unknown Java projects
-- `core/merge-batch-results.sh`: current-run batch status gate, wait/blocked/staged/full report generation, batch status summary, and coverage accounting
+- `languages/java/plan-large-batches.sh`: scoped Maven module planning, concise `RUN_DIR`, semantic-cost and module-sequential strategies, immutable file input
+- `languages/java/collect-source-files.sh`: Java `src/main/java` manifest for full/scoped single-agent input
+- `core/plan-file-batches.sh`: deterministic file-token batching with conservative review units and resolved project rules
+- `core/merge-batch-results.sh`: current-run batch status gate, wait/blocked/staged/full report generation, batch status summary, and run-manifest coverage accounting
 - `core/show-batch-status.sh`: Markdown batch table, dynamic execution plans, and cost-based time estimates
 - `core/detect-fix-input.sh`: local Markdown path validation only; Feishu Doc/Base inputs are read through `lark-doc` / `lark-base`
 - `core/detect-superpowers.sh`: optional Superpowers route capability detection
@@ -276,6 +282,7 @@ Verify installation by triggering the skill with a Java review request such as `
 - `languages/java/plan-large-batches.sh` receives `PROJECT_DIR`, `REVIEW_MODE`, branch, `SEMANTIC_LEVEL`, `REVIEW_SCOPE`, and `STOCK_REVIEW_STRATEGY`. Its batch budget is fixed for 1M context (`CONTEXT_WINDOW_TOKENS=1000000`, `CONTEXT_SCALE=5`).
 - All supported models use fixed 1M-context batching. The shared file planner defaults to a 500000-token input budget and uses deterministic First-Fit Decreasing packing; `CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET` remains available for explicit file-batch tuning.
 - `STOCK_REVIEW_STRATEGY` is `module-sequential` for one batch per selected module or `ai-planned` for semantic-cost planning.
+- Maven large-repo dependency-graph affinity (v1.6.0): `plan-large-batches.sh` uses the already-collected `module_dependency_edges` during packing — modules connected by a dependency edge get a 15% cost-tolerance relaxation (equivalent to ~×0.87 discount) so related modules pack into the same batch; LOC hard limit is never discounted. `plan.json` declares `affinity_enabled: true`; `batch.json` `affinity_edges` outputs the in-batch hit edges (same source/value as `module_dependency_edges`) for agent reference. Every batch route must also retain `review-input.json` and make coverage traceable through `run-manifest.json`.
 - Maven multi-module stock batching must never fall back to `languages/java/plan-file-batches.sh`; that planner is only for Maven single-module, Gradle, or unknown Java projects.
 - Pre-scan, batch-planning, and batch-agent formal scan Java file/line counts must include only `src/main/java` production sources; `src/test/java` test sources must not contribute to review scale, file batch manifests, or formal batch findings.
 - Selected module paths must be relative paths inside `PROJECT_DIR`; absolute paths, `..` path traversal, and resolved paths outside the project root must be rejected before planning.

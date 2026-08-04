@@ -298,6 +298,7 @@ cat > "$RUN_DIR/summary.json.tmp" <<JSON
   "source_file_coverage_percent": $FILE_COVERAGE,
   "finding_count": $TOTAL_FINDINGS,
   "report_title": "$(json_escape "$REPORT_TITLE")",
+  "run_manifest_path": "$(json_escape "$RUN_DIR/run-manifest.json")",
   "final_report_path": "$(json_escape "$FINAL_REPORT")"
 }
 JSON
@@ -330,6 +331,54 @@ if [ "$LANGUAGE_ID" = "java" ]; then
     }
   ' "$RUN_DIR/summary.json" 2>/dev/null || true
 fi
+
+# P0: emit a machine-readable coverage ledger.  It is intentionally derived
+# from batch files and status files, never from Markdown findings, so consumers
+# can distinguish reviewed input from leftovers and failures.
+RUN_MANIFEST="$RUN_DIR/run-manifest.json"
+perl -MJSON::PP -e '
+  use strict; use warnings;
+  my ($run,$plan,$summary,$out)=@ARGV;
+  sub loadj { my $p=shift; open my $f,"<",$p or die "read $p: $!"; local $/; return decode_json(<$f>); }
+  my $p=loadj($plan); my $s=loadj($summary);
+  my %included=map { $_=>1 } @{$s->{included_batch_ids}||[]};
+  my %target=map { $_=>1 } @{$s->{target_batch_ids}||[]};
+  my @items;
+  my %root_coverage;
+  opendir my $bd, "$run/batches" or die "read $run/batches: $!";
+  my @batch_files=sort map { "$run/batches/$_" } grep { /^batch-.*\.json$/ && -f "$run/batches/$_" } readdir $bd;
+  closedir $bd;
+  for my $bp (@batch_files) {
+    my $b=loadj($bp); my $id=$b->{batch_id}; my $status_path="$run/results/$id.status.json";
+    my $status="pending"; if (-f $status_path) { $status=loadj($status_path)->{status}||"pending"; }
+    my $coverage = $included{$id} ? "completed" : (!$target{$id} ? "leftover" : ($status eq "failed" ? "failed" : "leftover"));
+    for my $root (@{$b->{scan_roots}||[]}) {
+      next unless defined $root && length $root;
+      $root_coverage{$root}={batch_id=>$id,status=>$coverage};
+    }
+    my $list=$b->{batch_file_list}||""; next unless $list && -f $list;
+    open my $lf,"<",$list or die "read $list: $!";
+    while (my $path=<$lf>) { chomp $path; next unless length $path; push @items,{path=>$path,batch_id=>$id,status=>$coverage}; }
+    close $lf;
+  }
+  my $input_path="$run/review-input.json";
+  my $input = -f $input_path ? loadj($input_path) : undef;
+  # Maven 大仓批次没有 batch_file_list。此时以冻结输入中的相对文件路径匹配
+  # scan_roots（最长前缀优先），仍产出逐文件 completed/failed/leftover 台账。
+  if (!@items && $input && ref($input->{items}) eq "ARRAY") {
+    for my $item (@{$input->{items}}) {
+      next unless ref($item) eq "HASH" && $item->{selected};
+      my $path=$item->{path} // next;
+      my ($root)=sort { length($b) <=> length($a) || $a cmp $b }
+        grep { $path eq $_ || index($path, "$_/") == 0 } keys %root_coverage;
+      my $mapped=$root ? $root_coverage{$root} : undef;
+      push @items,{path=>$path,batch_id=>($mapped ? $mapped->{batch_id} : ""),status=>($mapped ? $mapped->{status} : "leftover")};
+    }
+  }
+  my $d={schema_version=>1,run_id=>$p->{run_id},language_id=>$p->{language_id},review_input_path=>($input_path && -f $input_path ? $input_path : ""),review_input_sha256=>$p->{review_input_sha256}||"",coverage=>\@items,summary_path=>"$run/summary.json",final_report_path=>$s->{final_report_path}};
+  $d->{review_input}= $input if $input;
+  open my $of,">:encoding(UTF-8)",$out or die "write $out: $!"; print $of JSON::PP->new->canonical->pretty->encode($d);
+' "$RUN_DIR" "$PLAN_PATH" "$RUN_DIR/summary.json" "$RUN_MANIFEST"
 
 cat > "$FINAL_REPORT.tmp" <<MD
 # $REPORT_TITLE
@@ -422,6 +471,7 @@ mv "$FINAL_REPORT.tmp" "$FINAL_REPORT"
 rm -f "$COMPLETED_RESULTS" "$DEDUPED_RESULTS" "$CROSS_BATCH_LEADS" "$BATCH_STATUS_TABLE"
 
 echo "SUMMARY_PATH=$RUN_DIR/summary.json"
+echo "RUN_MANIFEST_PATH=$RUN_MANIFEST"
 echo "FINAL_REPORT_PATH=$FINAL_REPORT"
 if [ "$MERGE_BLOCKED" = true ]; then
   echo "MERGE_BLOCKED=true"

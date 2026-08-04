@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.6.0 — 吸收 OpenCodeReview 精华
+
+### 新增
+
+- **发现清单自校验（反思两阶段）**：三个审查 agent（Java / Frontend / Python）在生成报告前，新增"第四步：发现清单自校验"，吸收阿里 OpenCodeReview 的 RE_LOCATION + REVIEW_FILTER 思想：
+  - **行号回抽校验**：对带具体 `file:line` 的发现，用 Read 工具回抽 ±3 行验证证据代码真实存在；行号漂移则修正，证据缺失则降级为待确认项（不直接删除）。
+  - **证伪式过滤**：对每条发现执行"只证伪、不证实"复核——只有当可见代码证据直接构成反证时才移除，凡需 diff 外信息才能判定的评论一律放行。遵循"宁可放过，不可错杀"原则。
+  - **fail-open 哲学**：自校验失败的问题保留原状，自校验只会让结果变好或不变，绝不会让结果变没。
+- **Maven 大仓依赖图亲和分批**：`plan-large-batches.sh` 启用此前已采集但未参与装箱的 `module_dependency_edges`。有依赖边的模块在装箱时 cost 容差放宽 15%（等价约 ×0.87 折扣），LOC 硬上限不变。batch.json 的 `affinity_edges` 不再写死空数组，改为输出批次内实际命中的依赖边；plan.json 新增 `affinity_enabled: true` 标记。
+- **不可变审查协议**：新增 `prepare-review-input.sh` 与 `review-input.json`，冻结 Git 基准、selected/excluded 文件、变更类型、统计和内容指纹；文件级与 Maven 大仓批次都将其写入 `RUN_DIR`。合并新增 `run-manifest.json`，从计划文件和终态结果生成逐文件 completed / failed / leftover 覆盖账本，不从 Markdown 反推。
+- **项目级审查规则**：新增 `.cc-code-reviewer/review-rules.yml` 与确定性解析器。规则只为路径增加检查重点，绝不等同 ignore、绝不隐藏发现或改变严重级别门槛。
+- **保守关联文件单元**：文件级分批新增 `review-units.json`，只把直接相对 import、Python 同包 import、无歧义 Java class import 保持在同一批；无法可靠识别时保持单文件单元。
+- **Java 单 Agent 正式源码清单**：新增 `languages/java/collect-source-files.sh`，使小仓/指定模块存量审查也能在启动前冻结 `src/main/java` 文件边界。
+
+### 变更
+
+- **Agent 流程重编号为连续七步制**：原"第一步→第二步→第二步之后→第三步→第三步之后→第四步"重编为"第一步→第七步"连续编号，消除"第X步之后"半正式表述。新映射：ignore（原第二步之后）→第三步，生成报告（原第三步）→第五步，持久化（原第三步之后）→第六步，最终汇总（原第四步）→第七步，反思自校验插入为第四步。
+- **跨文件引用同步**：`references/report-format.md` 中"第三步（生成审查报告）"更新为"第五步"。
+
+### 不在本轮范围
+
+- 不新增独立反思脚本或独立 LLM 调用（反思嵌入同一 agent 同一上下文）。
+- 不接入 CI/PR/MR webhook 或多 SCM 自动触发；当前仍由显式 Skill 调用启动审查。
+
 ## 1.5.0 — 三端 Agent 插件兼容
 
 ### 新增

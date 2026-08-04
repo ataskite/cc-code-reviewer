@@ -63,6 +63,10 @@ review_cost() {
   printf '%s\n' $((loc + files * 25))
 }
 
+# 依赖图亲和度：有依赖边的模块装箱时 cost 容差放宽（等价于约 ×0.87 折扣，整数运算）。
+# v1.6.0 引入——此前 module_dependency_edges 已采集但装箱未使用。
+AFFINITY_COST_TOLERANCE_PERCENT=15
+
 extract_modules_from_pom() {
   local pom_path="$1"
   perl -0ne '
@@ -507,11 +511,35 @@ next_unassigned_unit() {
   done < "$SORTED_UNITS_TSV"
 }
 
+# 判断待选 unit 是否与 draft 已有的任一 unit 在依赖图上有边相连。
+# EDGES_TSV 格式：from_unit \t to_unit \t artifact_id。
+# 返回 0=有亲和关系，1=无亲和关系或无边数据。
+unit_has_affinity_with_draft() {
+  local unit="$1"
+  local draft_file="$2"
+  [ -s "$EDGES_TSV" ] || return 1
+  [ -s "$draft_file" ] || return 1
+  # draft 已有的 unit 集合
+  local draft_units
+  draft_units="$(awk -F '\t' '{print $1}' "$draft_file")"
+  [ -n "$draft_units" ] || return 1
+  # 查 EDGES_TSV：任一方向命中即视为有亲和
+  while IFS="$(printf '\t')" read -r from to _dep; do
+    [ -n "$from" ] || continue
+    if [ "$from" = "$unit" ]; then
+      if printf '%s\n' "$draft_units" | grep -qx "$to"; then return 0; fi
+    elif [ "$to" = "$unit" ]; then
+      if printf '%s\n' "$draft_units" | grep -qx "$from"; then return 0; fi
+    fi
+  done < "$EDGES_TSV"
+  return 1
+}
+
 try_fill_draft() {
   local draft_file="$1"
   local max_cost="$2"
   local changed=1
-  local current_loc current_cost unit loc cost
+  local current_loc current_cost unit loc cost effective_max_cost
   while [ "$changed" -eq 1 ]; do
     changed=0
     current_loc="$(batch_sum_field "$draft_file" loc)"
@@ -523,7 +551,14 @@ try_fill_draft() {
       fi
       loc="$(unit_field "$unit" loc)"
       cost="$(unit_field "$unit" cost)"
-      if [ $((current_loc + loc)) -le "$HARD_MAX_BATCH_LOC" ] && [ $((current_cost + cost)) -le "$max_cost" ]; then
+      # 依赖图亲和度：待选 unit 与 draft 已有 unit 有依赖边时，cost 容差放宽（v1.6.0）。
+      # LOC 是硬约束，不打折；只放宽 cost。
+      if unit_has_affinity_with_draft "$unit" "$draft_file"; then
+        effective_max_cost=$((max_cost + max_cost * AFFINITY_COST_TOLERANCE_PERCENT / 100))
+      else
+        effective_max_cost="$max_cost"
+      fi
+      if [ $((current_loc + loc)) -le "$HARD_MAX_BATCH_LOC" ] && [ $((current_cost + cost)) -le "$effective_max_cost" ]; then
         add_unit_to_draft "$unit" "$draft_file"
         changed=1
         break
@@ -721,7 +756,25 @@ write_batch() {
       printf '\n  '
     fi
     printf '],\n'
-    printf '  "affinity_edges": [],\n'
+    # v1.6.0：affinity_edges 不再写死空数组，复用批次内命中的依赖边。
+    # 与 module_dependency_edges 同源同值——依赖图亲和度现已参与装箱决策。
+    printf '  "affinity_edges": ['
+    first=1
+    while IFS="$(printf '\t')" read -r from to dep; do
+      [ -n "$from" ] || continue
+      if batch_has_unit "$batch_file" "$from" && batch_has_unit "$batch_file" "$to"; then
+        if [ "$first" -eq 0 ]; then
+          printf ','
+        fi
+        printf '\n    {"from": "%s", "to": "%s", "artifact_id": "%s"}' \
+          "$(json_escape "$from")" "$(json_escape "$to")" "$(json_escape "$dep")"
+        first=0
+      fi
+    done < "$EDGES_TSV"
+    if [ "$first" -eq 0 ]; then
+      printf '\n  '
+    fi
+    printf '],\n'
     printf '  "module_dependency_edges": ['
     first=1
     while IFS="$(printf '\t')" read -r from to dep; do
@@ -894,6 +947,38 @@ for draft_file in "$DRAFT_DIR"/draft-*.tsv; do
   write_batch "$batch_id" "$RUN_DIR/batches/$batch_id.json" "$draft_file"
 done
 
+# 大仓库也必须固化到文件粒度的正式输入。批次的 scan_roots 是模块/目录级的
+# 调度边界；这里从它们反查 src/main/java，避免 Agent 重新发现范围。
+SOURCE_MANIFEST="$RUN_DIR/source-manifest.txt"
+perl -MJSON::PP -e '
+  use strict; use warnings;
+  my $dir=shift;
+  opendir my $dh, $dir or die "read $dir: $!";
+  my @files=sort map { "$dir/$_" } grep { /^batch-.*\.json$/ && -f "$dir/$_" } readdir $dh;
+  closedir $dh;
+  my %seen;
+  for my $file (@files) {
+    open my $fh, "<", $file or die "read $file: $!";
+    local $/; my $batch=decode_json(<$fh>);
+    for my $root (@{$batch->{scan_roots}||[]}) { print "$root\n" if defined $root && length $root && !$seen{$root}++; }
+  }
+' "$RUN_DIR/batches" | while IFS= read -r scan_root; do
+  find "$PROJECT_DIR/$scan_root" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' -type f -print 2>/dev/null
+done | LC_ALL=C sort -u > "$SOURCE_MANIFEST"
+
+REVIEW_INPUT_PATH="$RUN_DIR/review-input.json"
+bash "$(dirname "$0")/../../core/prepare-review-input.sh" \
+  "$PROJECT_DIR" java full 0 "$SOURCE_MANIFEST" "$REVIEW_INPUT_PATH" >/dev/null
+REVIEW_RULES_RESOLVED_PATH="$RUN_DIR/review-rules.json"
+bash "$(dirname "$0")/../../core/resolve-review-rules.sh" \
+  "$PROJECT_DIR" "$SOURCE_MANIFEST" "$REVIEW_RULES_RESOLVED_PATH" \
+  "${CC_CODE_REVIEWER_REVIEW_RULES_PATH:-$PROJECT_DIR/.cc-code-reviewer/review-rules.yml}" >/dev/null
+if command -v shasum >/dev/null 2>&1; then
+  REVIEW_INPUT_SHA256="$(shasum -a 256 "$REVIEW_INPUT_PATH" | awk '{print $1}')"
+else
+  REVIEW_INPUT_SHA256="$(sha256sum "$REVIEW_INPUT_PATH" | awk '{print $1}')"
+fi
+
 CREATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cat > "$RUN_DIR/plan.json.tmp" <<JSON
 {
@@ -906,9 +991,13 @@ cat > "$RUN_DIR/plan.json.tmp" <<JSON
   "selected_modules": $(write_json_string_array "${SELECTED_MODULES[@]}"),
   "branch": "$(json_escape "$BRANCH_NAME")",
   "strategy": "$(json_escape "$PLAN_STRATEGY")",
+  "affinity_enabled": true,
   "semantic_level": "$(json_escape "$SEMANTIC_LEVEL")",
   "total_java_loc": $TOTAL_JAVA_LOC,
   "total_java_file_count": $TOTAL_JAVA_FILE_COUNT,
+  "review_input_path": "$(json_escape "$REVIEW_INPUT_PATH")",
+  "review_input_sha256": "$(json_escape "$REVIEW_INPUT_SHA256")",
+  "review_rules_resolved_path": "$(json_escape "$REVIEW_RULES_RESOLVED_PATH")",
   "batch_count": $BATCH_COUNT,
   "budget": {
     "target_batch_cost": $TARGET_BATCH_COST,

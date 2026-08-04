@@ -50,6 +50,18 @@ cat > "$RUN_DIR/batches/batch-002.json" <<'JSON'
 }
 JSON
 
+# Maven 大仓没有 batch_file_list；覆盖台账应基于冻结输入与 scan_roots 回填。
+cat > "$RUN_DIR/review-input.json" <<'JSON'
+{
+  "schema_version": 1,
+  "language_id": "java",
+  "items": [
+    {"path":"order-api/src/main/java/Demo.java","selected":true},
+    {"path":"payment/src/main/java/Payment.java","selected":true}
+  ]
+}
+JSON
+
 cat > "$RUN_DIR/results/batch-001.status.json" <<JSON
 {
   "batch_id": "batch-001",
@@ -95,7 +107,12 @@ FINAL_REPORT="$(printf '%s\n' "$OUTPUT" | sed -n 's/^FINAL_REPORT_PATH=//p')"
 
 test -f "$RUN_DIR/summary.json"
 test -f "$FINAL_REPORT"
+test -f "$RUN_DIR/run-manifest.json"
 validate_json_file "$RUN_DIR/summary.json"
+validate_json_file "$RUN_DIR/run-manifest.json"
+jq -e '.coverage | length == 2' "$RUN_DIR/run-manifest.json" >/dev/null
+jq -e '.coverage[] | select(.path == "order-api/src/main/java/Demo.java" and .batch_id == "batch-001" and .status == "completed")' "$RUN_DIR/run-manifest.json" >/dev/null
+jq -e '.coverage[] | select(.path == "payment/src/main/java/Payment.java" and .batch_id == "batch-002" and .status == "failed")' "$RUN_DIR/run-manifest.json" >/dev/null
 grep -q '"completed_batches": 1' "$RUN_DIR/summary.json"
 grep -q '"failed_batches": 1' "$RUN_DIR/summary.json"
 grep -q '"pending_batches": 0' "$RUN_DIR/summary.json"

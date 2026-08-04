@@ -89,6 +89,9 @@ test -f "$RUN_DIR/plan.json"
 test -f "$RUN_DIR/batches/batch-001.json"
 test -f "$RUN_DIR/results/batch-001.status.json"
 test -f "$RUN_DIR/progress.jsonl"
+test -f "$RUN_DIR/review-input.json"
+test -f "$RUN_DIR/source-manifest.txt"
+test -f "$RUN_DIR/review-rules.json"
 
 validate_json_file "$RUN_DIR/plan.json"
 for json_file in "$RUN_DIR"/batches/*.json "$RUN_DIR"/results/*.status.json; do
@@ -97,6 +100,9 @@ done
 
 jq -e '.strategy == "semantic-cost-batching"' "$RUN_DIR/plan.json" >/dev/null
 jq -e '.total_java_file_count == 6' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.review_input_path | endswith("/review-input.json")' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.review_rules_resolved_path | endswith("/review-rules.json")' "$RUN_DIR/plan.json" >/dev/null
+jq -e '.selected_item_count == 6' "$RUN_DIR/review-input.json" >/dev/null
 grep -q '"semantic_level": "jdtls-lsp"' "$RUN_DIR/plan.json"
 grep -q '"status": "pending"' "$RUN_DIR/results/batch-001.status.json"
 grep -q '"scan_roots"' "$RUN_DIR/batches/batch-001.json"
@@ -340,5 +346,22 @@ if printf '%s\n' "$MISSING_OUTPUT" | grep -q 'modules.risk.tsv'; then
   echo "planner leaked internal risk TSV error for empty module set" >&2
   exit 1
 fi
+
+# v1.6.0：依赖图亲和度——plan.json 声明 affinity_enabled，batch.json 的
+# affinity_edges 不再写死空数组，且 fixture（order-api → order-service → order-dao）
+# 至少有一批命中依赖边。module_dependency_edges 应与 affinity_edges 同源同值。
+jq -e '.affinity_enabled == true' "$RUN_DIR/plan.json" >/dev/null
+
+AFFINITY_HIT=0
+for bj in "$RUN_DIR"/batches/batch-*.json; do
+  edges_count="$(jq '.affinity_edges | length' "$bj")"
+  dep_edges_count="$(jq '.module_dependency_edges | length' "$bj")"
+  test "$edges_count" = "$dep_edges_count"   # 同源同值
+  [ "$edges_count" -gt 0 ] && AFFINITY_HIT=1
+done
+test "$AFFINITY_HIT" -eq 1 || {
+  echo "v1.6.0 affinity: no batch captured dependency edges despite order-api→order-service→order-dao fixture" >&2
+  exit 1
+}
 
 echo "PASS: phase11 large Maven batch planner"

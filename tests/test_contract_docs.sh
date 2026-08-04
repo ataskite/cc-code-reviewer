@@ -55,7 +55,7 @@ require_match() {
   done
 }
 
-grep -q "### 第三步之后：持久化报告文件" "$AGENT_FILE"
+grep -q "### 第六步：持久化报告文件" "$AGENT_FILE"
 grep -q "REPORT_FILENAME" "$AGENT_FILE"
 grep -q "所有上传和本地输出都必须复用同一个 Markdown 文件" "$AGENT_FILE"
 
