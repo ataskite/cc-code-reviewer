@@ -332,25 +332,27 @@ if [ "$LANGUAGE_ID" = "java" ]; then
   ' "$RUN_DIR/summary.json" 2>/dev/null || true
 fi
 
-# P0: emit a machine-readable coverage ledger.  It is intentionally derived
-# from batch files and status files, never from Markdown findings, so consumers
-# can distinguish reviewed input from leftovers and failures.
+# P0: emit a machine-readable coverage ledger. It is intentionally derived
+# from batch files and status files, never from Markdown findings. The legacy
+# flat coverage array is kept for compatibility; coverage_sets/terminal_state/
+# stable item_id fields provide the stronger OCR-inspired audit contract.
 RUN_MANIFEST="$RUN_DIR/run-manifest.json"
 perl -MJSON::PP -e '
-  use strict; use warnings;
+  use strict; use warnings; use Digest::SHA qw(sha256_hex);
   my ($run,$plan,$summary,$out)=@ARGV;
   sub loadj { my $p=shift; open my $f,"<",$p or die "read $p: $!"; local $/; return decode_json(<$f>); }
   my $p=loadj($plan); my $s=loadj($summary);
   my %included=map { $_=>1 } @{$s->{included_batch_ids}||[]};
   my %target=map { $_=>1 } @{$s->{target_batch_ids}||[]};
   my @items;
+  my %batch_errors;
   my %root_coverage;
   opendir my $bd, "$run/batches" or die "read $run/batches: $!";
   my @batch_files=sort map { "$run/batches/$_" } grep { /^batch-.*\.json$/ && -f "$run/batches/$_" } readdir $bd;
   closedir $bd;
   for my $bp (@batch_files) {
     my $b=loadj($bp); my $id=$b->{batch_id}; my $status_path="$run/results/$id.status.json";
-    my $status="pending"; if (-f $status_path) { $status=loadj($status_path)->{status}||"pending"; }
+    my $status="pending"; if (-f $status_path) { my $sr=loadj($status_path); $status=$sr->{status}||"pending"; $batch_errors{$id}=$sr->{error}||""; }
     my $coverage = $included{$id} ? "completed" : (!$target{$id} ? "leftover" : ($status eq "failed" ? "failed" : "leftover"));
     for my $root (@{$b->{scan_roots}||[]}) {
       next unless defined $root && length $root;
@@ -375,7 +377,55 @@ perl -MJSON::PP -e '
       push @items,{path=>$path,batch_id=>($mapped ? $mapped->{batch_id} : ""),status=>($mapped ? $mapped->{status} : "leftover")};
     }
   }
-  my $d={schema_version=>1,run_id=>$p->{run_id},language_id=>$p->{language_id},review_input_path=>($input_path && -f $input_path ? $input_path : ""),review_input_sha256=>$p->{review_input_sha256}||"",coverage=>\@items,summary_path=>"$run/summary.json",final_report_path=>$s->{final_report_path}};
+  @items=sort { ($a->{path}//"") cmp ($b->{path}//"") || ($a->{batch_id}//"") cmp ($b->{batch_id}//"") } @items;
+  sub item_id { sha256_hex(join("\0", "review", $p->{language_id}||"", $_[0]||"")); }
+  sub failure_class {
+    my $e=lc($_[0]||"");
+    return "timeout" if $e =~ /timeout|timed out/;
+    return "cancelled" if $e =~ /cancel/;
+    return "budget" if $e =~ /budget|token/;
+    return "configuration" if $e =~ /config/;
+    return "provider" if $e =~ /provider|llm|model/;
+    return "input" if $e =~ /input|manifest|path/;
+    return "unknown";
+  }
+  for my $i (@items) {
+    $i->{item_id}=item_id($i->{path});
+    if (($i->{status}||"") eq "failed") {
+      $i->{failure_class}=failure_class($batch_errors{$i->{batch_id}});
+      $i->{reason}=$batch_errors{$i->{batch_id}} if $batch_errors{$i->{batch_id}};
+    } elsif (($i->{status}||"") eq "leftover") {
+      $i->{reason}="not included in current merge";
+    }
+  }
+  sub coverage_item {
+    my $i=shift; my %v=(item_id=>$i->{item_id},path=>$i->{path});
+    $v{batch_id}=$i->{batch_id} if defined $i->{batch_id} && length $i->{batch_id};
+    $v{old_path}=$i->{old_path} if defined $i->{old_path} && length $i->{old_path};
+    $v{fingerprint}=$i->{fingerprint} if defined $i->{fingerprint} && length $i->{fingerprint};
+    $v{failure_class}=$i->{failure_class} if defined $i->{failure_class};
+    $v{reason}=$i->{reason} if defined $i->{reason} && length $i->{reason};
+    return \%v;
+  }
+  my @completed=grep { ($_->{status}||"") eq "completed" } @items;
+  my @failed=grep { ($_->{status}||"") eq "failed" } @items;
+  my @leftover=grep { ($_->{status}||"") eq "leftover" } @items;
+  my $terminal = $s->{merge_blocked} ? "failed" : (!@items ? "skipped" : (@completed == @items ? "complete" : (@completed ? "partial" : "failed")));
+  my $input_mode = "workspace";
+  if ($input && ($input->{selection_mode}||"") eq "incremental") { $input_mode="commit"; }
+  my $coverage_percent = @items ? int(@completed * 100 / @items) : 0;
+  my $coverage_sets={
+    selected=>[map { coverage_item($_) } @items],
+    completed=>[map { coverage_item($_) } @completed],
+    reused=>[],
+    failed=>[map { coverage_item($_) } @failed],
+    waived=>[],
+    leftover=>[map { coverage_item($_) } @leftover]
+  };
+  my $legacy_coverage=[];
+  for my $i (@items) { push @$legacy_coverage, { %$i }; }
+  my $d={schema_version=>1,contract_version=>"cc-code-reviewer.run-manifest/v1",run_id=>$p->{run_id},language_id=>$p->{language_id},terminal_state=>$terminal,repository_identity_sha256=>sha256_hex($p->{project_dir}||""),input=>{mode=>$input_mode,requested_scope=>$p->{review_scope}||"",resolved_base=>($input ? $input->{base_ref}||"" : ""),resolved_head=>($input ? $input->{head_ref}||"" : ""),source_artifact_sha256=>($p->{review_input_sha256}||"")},execution=>{review_mode=>$p->{review_mode}||"",batch_count=>0+($p->{batch_count}||0),included_batch_count=>0+($s->{included_batches}||0)},review_input_path=>($input_path && -f $input_path ? $input_path : ""),review_input_sha256=>$p->{review_input_sha256}||"",coverage=>\@$legacy_coverage,coverage_sets=>$coverage_sets,selected_item_count=>0+@items,completed_item_count=>0+@completed,failed_item_count=>0+@failed,leftover_item_count=>0+@leftover,coverage_percent=>$coverage_percent,summary_path=>"$run/summary.json",final_report_path=>$s->{final_report_path}};
+  if ($s->{merge_blocked}) { $d->{run_failure}={classification=>"unknown",reason=>"batch merge blocked"}; }
   $d->{review_input}= $input if $input;
   open my $of,">:encoding(UTF-8)",$out or die "write $out: $!"; print $of JSON::PP->new->canonical->pretty->encode($d);
 ' "$RUN_DIR" "$PLAN_PATH" "$RUN_DIR/summary.json" "$RUN_MANIFEST"

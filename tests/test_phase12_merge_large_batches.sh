@@ -113,6 +113,7 @@ validate_json_file "$RUN_DIR/run-manifest.json"
 jq -e '.coverage | length == 2' "$RUN_DIR/run-manifest.json" >/dev/null
 jq -e '.coverage[] | select(.path == "order-api/src/main/java/Demo.java" and .batch_id == "batch-001" and .status == "completed")' "$RUN_DIR/run-manifest.json" >/dev/null
 jq -e '.coverage[] | select(.path == "payment/src/main/java/Payment.java" and .batch_id == "batch-002" and .status == "failed")' "$RUN_DIR/run-manifest.json" >/dev/null
+jq -e '.terminal_state == "failed" and .coverage_sets.failed[0].failure_class == "unknown" and ((.coverage_sets.leftover | length) == 0)' "$RUN_DIR/run-manifest.json" >/dev/null
 grep -q '"completed_batches": 1' "$RUN_DIR/summary.json"
 grep -q '"failed_batches": 1' "$RUN_DIR/summary.json"
 grep -q '"pending_batches": 0' "$RUN_DIR/summary.json"

@@ -48,13 +48,17 @@ java_loc() {
   while IFS= read -r -d '' file; do
     lines="$(wc -l < "$file" | tr -d ' ')"
     total=$((total + lines))
-  done < <(find "$dir" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' -print0 2>/dev/null)
+  done < <(find "$dir" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' \
+    -not -path '*/__snapshots__/*' -not -path '*/testdata/*' -not -path '*/fixtures/*' \
+    -not -name '*.generated.*' -not -name '*.gen.java' -print0 2>/dev/null)
   printf '%s\n' "$total"
 }
 
 java_files() {
   local dir="$1"
-  find "$dir" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' -print0 2>/dev/null | tr '\0' '\n' | wc -l | tr -d ' '
+  find "$dir" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' \
+    -not -path '*/__snapshots__/*' -not -path '*/testdata/*' -not -path '*/fixtures/*' \
+    -not -name '*.generated.*' -not -name '*.gen.java' -print0 2>/dev/null | tr '\0' '\n' | wc -l | tr -d ' '
 }
 
 review_cost() {
@@ -963,7 +967,9 @@ perl -MJSON::PP -e '
     for my $root (@{$batch->{scan_roots}||[]}) { print "$root\n" if defined $root && length $root && !$seen{$root}++; }
   }
 ' "$RUN_DIR/batches" | while IFS= read -r scan_root; do
-  find "$PROJECT_DIR/$scan_root" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' -type f -print 2>/dev/null
+  find "$PROJECT_DIR/$scan_root" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' \
+    -not -path '*/__snapshots__/*' -not -path '*/testdata/*' -not -path '*/fixtures/*' \
+    -not -name '*.generated.*' -not -name '*.gen.java' -type f -print 2>/dev/null
 done | LC_ALL=C sort -u > "$SOURCE_MANIFEST"
 
 REVIEW_INPUT_PATH="$RUN_DIR/review-input.json"

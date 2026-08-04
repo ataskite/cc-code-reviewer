@@ -15,7 +15,9 @@ is_full_scope() {
 }
 
 collect_from_root() {
-  find "$1" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' -type f -print 2>/dev/null
+  find "$1" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' \
+    -not -path '*/__snapshots__/*' -not -path '*/testdata/*' -not -path '*/fixtures/*' \
+    -not -name '*.generated.*' -not -name '*.gen.java' -type f -print 2>/dev/null
 }
 
 if is_full_scope; then

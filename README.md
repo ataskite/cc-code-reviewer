@@ -157,7 +157,8 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 
 - 本地 Markdown 审查报告：`code-review-report-{PROJECT}-{YYYYMMDD-HHmmss}.md`
 - 不可变审查输入：`review-input.json` 固化 Git 基准、选中/排除文件、变更类型和内容指纹
-- 运行覆盖清单：`run-manifest.json` 固化每个计划文件的 completed / failed / leftover 状态；不从 Markdown 反推覆盖率
+- 运行覆盖清单：`run-manifest.json` 固化每个计划文件的 completed / failed / leftover 状态，并提供稳定 `item_id`、分组覆盖集合、失败分类、终态和输入模式；不从 Markdown 反推覆盖率
+- 默认源码排除：`__snapshots__`、`testdata`、`fixtures` 与常见生成文件不进入正式源码分母，Java 规划和清单保持同一口径
 - 本地 Markdown 修复报告：`fix-report-{PROJECT}-{YYYYMMDD-HHmmss}.md`
 - 可选飞书云文档：使用 Markdown 一级标题作为云文档标题
 - 可选飞书多维表格：按扫描/修复阶段字段契约写入和更新

@@ -5,10 +5,12 @@ ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/java-source-manifest.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-mkdir -p "$TMP_DIR/a/src/main/java/demo" "$TMP_DIR/a/src/test/java/demo" "$TMP_DIR/a/target/generated" "$TMP_DIR/b/src/main/java/demo"
+mkdir -p "$TMP_DIR/a/src/main/java/demo" "$TMP_DIR/a/src/main/java/demo/fixtures" "$TMP_DIR/a/src/test/java/demo" "$TMP_DIR/a/target/generated" "$TMP_DIR/b/src/main/java/demo"
 printf 'class A {}\n' > "$TMP_DIR/a/src/main/java/demo/A.java"
 printf 'class ATest {}\n' > "$TMP_DIR/a/src/test/java/demo/ATest.java"
 printf 'class Generated {}\n' > "$TMP_DIR/a/target/generated/Generated.java"
+printf 'class Generated {}\n' > "$TMP_DIR/a/src/main/java/demo/Generated.generated.java"
+printf 'class Fixture {}\n' > "$TMP_DIR/a/src/main/java/demo/fixtures/Fixture.java"
 printf 'class B {}\n' > "$TMP_DIR/b/src/main/java/demo/B.java"
 
 FULL="$(bash "$ROOT_DIR/scripts/languages/java/collect-source-files.sh" "$TMP_DIR")"

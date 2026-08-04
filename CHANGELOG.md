@@ -13,6 +13,8 @@
 - **项目级审查规则**：新增 `.cc-code-reviewer/review-rules.yml` 与确定性解析器。规则只为路径增加检查重点，绝不等同 ignore、绝不隐藏发现或改变严重级别门槛。
 - **保守关联文件单元**：文件级分批新增 `review-units.json`，只把直接相对 import、Python 同包 import、无歧义 Java class import 保持在同一批；无法可靠识别时保持单文件单元。
 - **Java 单 Agent 正式源码清单**：新增 `languages/java/collect-source-files.sh`，使小仓/指定模块存量审查也能在启动前冻结 `src/main/java` 文件边界。
+- **默认源码排除口径对齐**：Java / Frontend / Python 的正式源码清单默认排除 `__snapshots__`、`testdata`、`fixtures` 与常见生成文件；Java 规划统计与 manifest 使用同一过滤口径，避免分母和实际审查范围漂移。
+- **覆盖契约增强**：`run-manifest.json` 保留兼容的逐文件 `coverage`，新增稳定 `item_id`、`coverage_sets`（selected/completed/reused/failed/waived/leftover）、typed failure class、`terminal_state`、输入模式和覆盖比例，支持后续 resume/审计消费者稳定读取。
 
 ### 变更
 

@@ -5,10 +5,12 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 # ── 测试：collect-source-files 正确排除 tests/venv/__pycache__/migrations ──
-D="$TMP_DIR/myapp"; mkdir -p "$D/src/myapp" "$D/src/myapp/migrations" "$D/src/myapp/tests" "$D/tests" "$D/venv/lib"
+D="$TMP_DIR/myapp"; mkdir -p "$D/src/myapp" "$D/src/myapp/migrations" "$D/src/myapp/tests" "$D/src/myapp/fixtures" "$D/tests" "$D/venv/lib"
 echo "" > "$D/src/myapp/__init__.py"
 echo "print('main')" > "$D/src/myapp/main.py"
 echo "print('utils')" > "$D/src/myapp/utils.py"
+echo "print('generated')" > "$D/src/myapp/generated.generated.py"
+echo "print('fixture')" > "$D/src/myapp/fixtures/data.py"
 echo "# migration" > "$D/src/myapp/migrations/0001_initial.py"
 echo "class Factory: pass" > "$D/src/myapp/tests/factories.py"
 echo "def test_main(): pass" > "$D/tests/test_main.py"
@@ -28,6 +30,8 @@ echo "$OUT" | grep -vq '/tests/'
 echo "$OUT" | grep -vq '/migrations/'
 echo "$OUT" | grep -vq '/venv/'
 echo "$OUT" | grep -vq '/__pycache__/'
+echo "$OUT" | grep -vq 'generated.generated.py'
+echo "$OUT" | grep -vq '/fixtures/'
 
 # 必须正好 3 个文件
 COUNT="$(echo "$OUT" | grep -c .)"

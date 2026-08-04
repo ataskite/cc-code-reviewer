@@ -57,6 +57,7 @@ JSON
 printf '# Batch 001\n\n（无正式发现）\n' > "$RUN_DIR/results/batch-001.md"
 MERGE_WAIT_TIMEOUT_SECONDS=0 bash "$ROOT_DIR/scripts/core/merge-batch-results.sh" "$RUN_DIR" >/dev/null
 jq -e '(.coverage | length) == 2 and (.coverage | all(.status == "completed"))' "$RUN_DIR/run-manifest.json" >/dev/null
+jq -e '.contract_version == "cc-code-reviewer.run-manifest/v1" and .terminal_state == "complete" and .selected_item_count == 2 and (.coverage_sets.selected | length) == 2 and (.coverage_sets.completed | all(.item_id | length == 64))' "$RUN_DIR/run-manifest.json" >/dev/null
 jq -e '.run_manifest_path | endswith("run-manifest.json")' "$RUN_DIR/summary.json" >/dev/null
 
 echo "PASS: core review protocol (input, rules, units, coverage)"

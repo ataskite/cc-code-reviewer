@@ -5,7 +5,7 @@ TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/fe-collect.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 D="$TMP_DIR/build/app"
-mkdir -p "$D/src/components" "$D/src/test" "$D/src/types" "$D/dist" "$D/node_modules" "$D/scripts" "$D/tools"
+mkdir -p "$D/src/components" "$D/src/test" "$D/src/__snapshots__" "$D/src/fixtures" "$D/src/types" "$D/dist" "$D/node_modules" "$D/scripts" "$D/tools"
 D="$(cd "$D" && pwd -P)"
 cat > "$D/package.json" <<'JSON'
 {"dependencies":{"react":"^18.2.0"}}
@@ -15,6 +15,9 @@ JSON
 echo 'export const A: number = 1;' > "$D/src/a.ts"
 echo 'export function C(){return <div/>}' > "$D/src/components/C.tsx"
 echo 'export const B = 2;' > "$D/src/b.js"
+echo 'export const Generated = 1;' > "$D/src/Generated.generated.ts"
+echo 'export const Snapshot = 1;' > "$D/src/__snapshots__/snapshot.ts"
+echo 'export const Fixture = 1;' > "$D/src/fixtures/fixture.ts"
 
 # 必须排除：测试、产物、依赖、根级配置脚本、非 src 目录、.d.ts
 echo 'export const T = () => null;' > "$D/src/test/T.test.tsx"
@@ -49,6 +52,9 @@ grep -F "$D/src/b.js" <<< "$OUT"
 ! grep -F "tools/codegen.js" <<< "$OUT"
 # .d.ts 类型声明不得进入正式源码清单
 ! grep -F "global.d.ts" <<< "$OUT"
+! grep -F "Generated.generated.ts" <<< "$OUT"
+! grep -F "__snapshots__/snapshot.ts" <<< "$OUT"
+! grep -F "fixtures/fixture.ts" <<< "$OUT"
 
 echo "PASS: frontend collect-source-files"
 

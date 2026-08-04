@@ -41,41 +41,43 @@ source_root_has_production_files() {
   find "$1" -mindepth 1 \
     \( \
       -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \
+        -o -name '__snapshots__' -o -name 'testdata' -o -name 'fixtures' \
         -o -name '.git' -o -name '.next' -o -name '.nuxt' \) \
     \) -prune -o \
     -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.vue' -o -name '*.mjs' -o -name '*.cjs' \) \
     -not -name '*.d.ts' \
     -not -name '*.test.ts' -not -name '*.test.tsx' -not -name '*.test.js' -not -name '*.test.jsx' -not -name '*.test.vue' \
     -not -name '*.spec.ts' -not -name '*.spec.tsx' -not -name '*.spec.js' -not -name '*.spec.jsx' -not -name '*.spec.vue' \
-    -not -path '*/__tests__/*' -not -path '*/e2e/*' -not -path '*/cypress/*' \
+    -not -path '*/__tests__/*' -not -path '*/__snapshots__/*' -not -path '*/testdata/*' -not -path '*/fixtures/*' -not -path '*/e2e/*' -not -path '*/cypress/*' \
+    -not -name '*.generated.*' \
     -not -name '*.min.js' -not -name '*.bundle.js' \
     -print -quit 2>/dev/null | grep -q .
 }
 source_root_has_react_code() {
   [ -d "$1" ] || return 1
   find "$1" -mindepth 1 \
-    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \) \) -prune -o \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' -o -name '__snapshots__' -o -name 'testdata' -o -name 'fixtures' \) \) -prune -o \
     \( -name '*.tsx' -o -name '*.jsx' \) -type f -print -quit 2>/dev/null | grep -q . && return 0
   local f
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     grep -Eq "from ['\"]react['\"]|require\\(['\"]react['\"]\\)|React\\.createElement|createElement\\(" "$f" 2>/dev/null && return 0
   done < <(find "$1" -mindepth 1 \
-    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \) \) -prune -o \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' -o -name '__snapshots__' -o -name 'testdata' -o -name 'fixtures' \) \) -prune -o \
     \( -name '*.ts' -o -name '*.js' \) -type f -print 2>/dev/null)
   return 1
 }
 source_root_has_vue_code() {
   [ -d "$1" ] || return 1
   find "$1" -mindepth 1 \
-    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \) \) -prune -o \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' -o -name '__snapshots__' -o -name 'testdata' -o -name 'fixtures' \) \) -prune -o \
     -name '*.vue' -type f -print -quit 2>/dev/null | grep -q . && return 0
   local f
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     grep -Eq "from ['\"]vue['\"]|require\s*\(\s*['\"]vue['\"]|<script[[:space:]][^>]*setup" "$f" 2>/dev/null && return 0
   done < <(find "$1" -mindepth 1 \
-    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \) \) -prune -o \
+    \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' -o -name '__snapshots__' -o -name 'testdata' -o -name 'fixtures' \) \) -prune -o \
     \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.vue' \) -type f -print 2>/dev/null)
   return 1
 }
@@ -151,13 +153,15 @@ for root in "${SOURCE_ROOTS[@]}"; do
   find "$root" -mindepth 1 \
     \( \
       -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \
+        -o -name '__snapshots__' -o -name 'testdata' -o -name 'fixtures' \
         -o -name '.git' -o -name '.next' -o -name '.nuxt' \) \
     \) -prune -o \
     -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.vue' -o -name '*.mjs' -o -name '*.cjs' \) \
     -not -name '*.d.ts' \
     -not -name '*.test.ts' -not -name '*.test.tsx' -not -name '*.test.js' -not -name '*.test.jsx' -not -name '*.test.vue' \
     -not -name '*.spec.ts' -not -name '*.spec.tsx' -not -name '*.spec.js' -not -name '*.spec.jsx' -not -name '*.spec.vue' \
-    -not -path '*/__tests__/*' -not -path '*/e2e/*' -not -path '*/cypress/*' \
+    -not -path '*/__tests__/*' -not -path '*/__snapshots__/*' -not -path '*/testdata/*' -not -path '*/fixtures/*' -not -path '*/e2e/*' -not -path '*/cypress/*' \
+    -not -name '*.generated.*' \
     -not -name '*.min.js' -not -name '*.bundle.js' \
     -print 2>/dev/null
 done | sort

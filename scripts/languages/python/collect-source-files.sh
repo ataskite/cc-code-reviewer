@@ -8,7 +8,7 @@ PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd -P)"
 #   - src layout：src/ 下的 .py
 #   - flat layout：项目根下顶层目录（含 __init__.py 的常规包，或不含 __init__.py 但有生产 .py 的 namespace package）下的 .py
 #   - 根级单文件应用：项目根下的 app.py / main.py / wsgi.py / asgi.py / server.py / manage.py（Python 单文件应用常见入口形态）
-# 排除：tests/、test_*.py、*_test.py、conftest.py、setup.py、venv/、.venv/、__pycache__/、build/、dist/、migrations/（Django 生成代码，作只读上下文）、site-packages/、.git/。
+# 排除：tests/、test_*.py、*_test.py、conftest.py、setup.py、venv/、.venv/、__pycache__/、build/、dist/、migrations/（Django 生成代码，作只读上下文）、snapshots/testdata/fixtures、生成 Python 文件、site-packages/、.git/。
 #
 # 信号复用 detect-project.sh（避免两处框架信号漂移）：collect 仅需确认项目是 Python，不需要框架类型，
 # 但 source 同一 detect-project.sh 保证未来扩展时不漂移。
@@ -24,9 +24,10 @@ find_production_py() {
       -name venv -o -name .venv -o -name __pycache__ -o -name site-packages -o \
       -name node_modules -o -name .git -o -name build -o -name dist -o \
       -name .eggs -o -name .tox -o -name .pytest_cache -o -name .mypy_cache -o \
-      -name .ruff_cache -o -name tests -o -name test -o -name migrations \
+      -name .ruff_cache -o -name tests -o -name test -o -name migrations -o \
+      -name __snapshots__ -o -name testdata -o -name fixtures \
     \) -prune \) -o \
-    -type f -name '*.py' \
+    -type f -name '*.py' -not -name '*.generated.py' -not -name '*.gen.py' \
     -not -name 'test_*.py' -not -name '*_test.py' -not -name 'conftest.py' \
     -print 2>/dev/null
 }
@@ -50,7 +51,7 @@ dir_has_production_py() {
 # 判断目录是否为非源码目录（tests/venv/build 等）
 is_non_source_dir() {
   case "$(basename "$1")" in
-    tests|test|venv|.venv|__pycache__|build|dist|migrations|node_modules|.git|.tox|.eggs|.pytest_cache|.mypy_cache|.ruff_cache) return 0 ;;
+    tests|test|venv|.venv|__pycache__|build|dist|migrations|__snapshots__|testdata|fixtures|node_modules|.git|.tox|.eggs|.pytest_cache|.mypy_cache|.ruff_cache) return 0 ;;
     *) return 1 ;;
   esac
 }
