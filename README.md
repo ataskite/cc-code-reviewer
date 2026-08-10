@@ -122,7 +122,7 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 
 ### Frontend Family 审查
 
-- 11 个前端维度：正确性、类型安全、组件边界、框架规范、状态与数据请求、安全、性能、副作用与资源清理、可访问性、测试质量、API/错误处理
+- 12 个前端维度：正确性、类型安全、组件边界、框架规范、状态与数据请求、安全、性能、副作用与资源清理、可访问性、测试质量、API/错误处理、设计系统一致性（仅 deep）
 - React TS/JS 支持：可识别 `.tsx/.jsx`，也支持有 React import / `createElement` 证据的 `.ts/.js`
 - Vue 支持：识别 Vue 2.x / Vue 3.x 和 `.vue` SFC，信号覆盖 `vue@2/3`、`vue-template-compiler`、`@vue/cli-service`、`@vitejs/plugin-vue`、`pinia`、`vue-router@3/4`、`vue-loader` 版本、`vite-plugin-vue2` 等；无版本锁定时按 `createApp(` / `new Vue(` 等内容信号判版本；React/Vue 信号共存时按 Vue 优先；Vue2 legacy 重点检查 Options API、响应式限制、mixin 全局污染、filter 迁移债、Vuex 3、Vue Router 3、事件总线和生命周期清理
 - Node 支持：识别 `package.json` 的 `type`、`main`/`exports`、`engines.node`、Express/Koa/Fastify 等服务端信号
@@ -157,7 +157,7 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 
 - 本地 Markdown 审查报告：`code-review-report-{PROJECT}-{YYYYMMDD-HHmmss}.md`
 - 不可变审查输入：`review-input.json` 固化 Git 基准、选中/排除文件、变更类型和内容指纹
-- 运行覆盖清单：`run-manifest.json` 固化每个计划文件的 completed / failed / leftover 状态，并提供稳定 `item_id`、分组覆盖集合、失败分类、终态和输入模式；不从 Markdown 反推覆盖率
+- 运行覆盖清单：`run-manifest.json` 固化每个计划文件的 completed / failed / leftover 状态；文件路径统一为仓库相对路径，`item_id` 由稳定仓库身份、语言和相对路径生成，跨 clone/workspace 保持一致，同时提供分组覆盖集合、失败分类、终态和输入模式；不从 Markdown 反推覆盖率
 - 默认源码排除：`__snapshots__`、`testdata`、`fixtures` 与常见生成文件不进入正式源码分母，Java 规划和清单保持同一口径
 - 本地 Markdown 修复报告：`fix-report-{PROJECT}-{YYYYMMDD-HHmmss}.md`
 - 可选飞书云文档：使用 Markdown 一级标题作为云文档标题

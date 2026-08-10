@@ -272,7 +272,7 @@ Verify installation by triggering the skill with a Java review request such as `
 
 - Scan always runs the INTERACT flow after pre-scan.
 - fast 模式只输出满足全部 P0 硬门槛的问题；INTERACT 选项必须直观标注“仅输出 P0”，最终执行计划必须再次显示“输出级别：仅 P0”。
-- The flow confirms review mode, model, and report handling before review entry; then it confirms entry, scope, optional Maven stock strategy, optional batch execution count, optional concurrency, and final execution.
+- The flow confirms review mode and report handling before review entry; after entry, scope, and optional Maven stock strategy, it confirms the model before any batch decision, followed by optional batch execution count, optional concurrency, and final execution.
 - Module selection for large Maven projects must keep INTERACT payloads bounded: show module trees as normal text, keep fixed options small, and collect module paths through Other/free-form when needed.
 - Do not preserve command-line compatibility that bypasses interaction.
 
@@ -282,7 +282,7 @@ Verify installation by triggering the skill with a Java review request such as `
 - `languages/java/plan-large-batches.sh` receives `PROJECT_DIR`, `REVIEW_MODE`, branch, `SEMANTIC_LEVEL`, `REVIEW_SCOPE`, and `STOCK_REVIEW_STRATEGY`. Its batch budget is fixed for 1M context (`CONTEXT_WINDOW_TOKENS=1000000`, `CONTEXT_SCALE=5`).
 - All supported models use fixed 1M-context batching. The shared file planner defaults to a 500000-token input budget and uses deterministic First-Fit Decreasing packing; `CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET` remains available for explicit file-batch tuning.
 - `STOCK_REVIEW_STRATEGY` is `module-sequential` for one batch per selected module or `ai-planned` for semantic-cost planning.
-- Maven large-repo dependency-graph affinity (v1.6.0): `plan-large-batches.sh` uses the already-collected `module_dependency_edges` during packing — modules connected by a dependency edge get a 15% cost-tolerance relaxation (equivalent to ~×0.87 discount) so related modules pack into the same batch; LOC hard limit is never discounted. `plan.json` declares `affinity_enabled: true`; `batch.json` `affinity_edges` outputs the in-batch hit edges (same source/value as `module_dependency_edges`) for agent reference. Every batch route must also retain `review-input.json` and make coverage traceable through `run-manifest.json`.
+- Maven large-repo dependency-graph affinity (v1.6.0): `plan-large-batches.sh` uses the already-collected `module_dependency_edges` during packing — modules connected by a dependency edge get a 15% cost-tolerance relaxation (equivalent to ~×0.87 discount) so related modules pack into the same batch; neither the LOC hard limit nor `HARD_MAX_BATCH_COST=325000` may be exceeded. `plan.json` declares `affinity_enabled: true`; `batch.json` `affinity_edges` outputs the in-batch hit edges (same source/value as `module_dependency_edges`) for agent reference. Every batch route must also retain `review-input.json`; `run-manifest.json` coverage paths are repository-relative and stable `item_id` values must remain identical across clone/workspace roots.
 - Maven multi-module stock batching must never fall back to `languages/java/plan-file-batches.sh`; that planner is only for Maven single-module, Gradle, or unknown Java projects.
 - Pre-scan, batch-planning, and batch-agent formal scan Java file/line counts must include only `src/main/java` production sources; `src/test/java` test sources must not contribute to review scale, file batch manifests, or formal batch findings.
 - Selected module paths must be relative paths inside `PROJECT_DIR`; absolute paths, `..` path traversal, and resolved paths outside the project root must be rejected before planning.
@@ -313,6 +313,7 @@ Each interaction step must:
 
 Sub agent receives parameters via prompt injection, including:
 - Project path, type, scope, mode
+- Immutable `REVIEW_INPUT_PATH` and `REVIEW_RULES_RESOLVED_PATH` for every single-agent route; Java must not rediscover the formal range with Glob
 - Pre-scan results (project structure, modules)
 - Incremental data (git log, changed files, diff stats)
 - File batch parameters when `strategy=file-token-batching`: `BATCH_FILE_LIST_DIR`, per-batch file list, batch index, output mode

@@ -235,6 +235,7 @@ maxTurns: 50
 ⚠️  P1 问题：{N} 个
 💡 P2/P3 建议：{N} 个
 ❓ 待确认项：{N} 个
+🔍 自校验：行号修正 {SELF_LOCATION_FIXED_COUNT} 处、证伪移除 {SELF_FILTERED_COUNT} 条（仅当任一计数 > 0 时输出本行）
 📋 覆盖率：{COVERED_FILES}/{TOTAL_FILES}（{PERCENT}%）
 ```
 

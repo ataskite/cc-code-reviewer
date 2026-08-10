@@ -13,13 +13,22 @@ set -euo pipefail
 #       - "**/controller/**"
 #     instruction: "核对鉴权、输入校验和错误契约"
 #     merge_language_rule: true
+#
+# YAML subset: only the fixed shape above is supported — top-level `version`,
+# a `rules:` list whose entries each have `name`, `paths` (glob list),
+# `instruction` (single-line string) and optional `merge_language_rule`.
+# Block scalars, multi-line instructions, anchors, flow sequences and inline
+# `#` comments inside values are NOT supported; malformed input is rejected.
+# Keep instructions on one line; use `;` or `。` to separate points.
 
 PROJECT_DIR="${1:?请输入项目路径}"
-SOURCE_MANIFEST="${2:?请输入 source manifest 路径}"
+SOURCE_INPUT="${2:?请输入 source manifest 或 review-input.json 路径}"
 OUTPUT_PATH="${3:?请输入输出路径}"
 RULES_PATH="${4:-$PROJECT_DIR/.cc-code-reviewer/review-rules.yml}"
+INPUT_KIND="${5:-manifest}"
 [ -d "$PROJECT_DIR" ] || { echo "PROJECT_DIR_NOT_FOUND=$PROJECT_DIR" >&2; exit 1; }
-[ -r "$SOURCE_MANIFEST" ] || { echo "SOURCE_MANIFEST_NOT_READABLE=$SOURCE_MANIFEST" >&2; exit 1; }
+[ -r "$SOURCE_INPUT" ] || { echo "SOURCE_INPUT_NOT_READABLE=$SOURCE_INPUT" >&2; exit 1; }
+case "$INPUT_KIND" in manifest|review-input) ;; *) echo "RULE_INPUT_KIND_INVALID=$INPUT_KIND" >&2; exit 1 ;; esac
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd -P)"
 mkdir -p "$(dirname "$OUTPUT_PATH")"
 
@@ -31,23 +40,58 @@ fi
 
 perl -MJSON::PP -MCwd=abs_path -e '
   use strict; use warnings;
-  my ($project,$manifest,$rules,$out)=@ARGV;
+  my ($project,$input,$rules,$out,$input_kind)=@ARGV;
   open my $rf, "<", $rules or die "read rules: $!";
-  my @rules; my $cur; my $in_paths=0;
+  my @rules; my $cur; my $in_paths=0; my $seen_rules=0;
   while (my $line=<$rf>) {
     chomp $line; $line =~ s/\r$//;
     next if $line =~ /^\s*(?:#|$)/;
-    if ($line =~ /^\s*-\s+name:\s*(.+?)\s*$/) { push @rules,$cur if $cur; $cur={name=>unquote($1),paths=>[],instruction=>"",merge_language_rule=>JSON::PP::true}; $in_paths=0; next; }
-    next unless $cur;
+    if (!$cur && $line =~ /^\s*version:\s*1\s*$/) { next; }
+    if (!$cur && $line =~ /^\s*rules:\s*$/) { $seen_rules=1; next; }
+    if ($line =~ /^\s*-\s+name:\s*(.+?)\s*$/) {
+      die "rules header required\n" unless $seen_rules;
+      push @rules,$cur if $cur;
+      $cur={name=>unquote($1),paths=>[],instruction=>"",merge_language_rule=>JSON::PP::true};
+      $in_paths=0;
+      next;
+    }
+    die "unsupported YAML syntax: $line\n" unless $cur;
     if ($line =~ /^\s*paths:\s*$/) { $in_paths=1; next; }
-    if ($in_paths && $line =~ /^\s*-\s+(.+?)\s*$/) { push @{$cur->{paths}}, unquote($1); next; }
+    if ($line =~ /^\s*paths:\s*\[/) { die "flow sequences are not supported\n"; }
+    if ($in_paths && $line =~ /^\s*-\s+(.+?)\s*$/) {
+      my $raw=$1; my $path=unquote($raw);
+      die "anchors are not supported\n" if $raw =~ /^\s*[&*][A-Za-z_]/;
+      die "flow sequences are not supported\n" if $raw =~ /^\s*[\[\{]/;
+      die "inline comments are not supported\n" if $path =~ /#/;
+      push @{$cur->{paths}}, $path;
+      next;
+    }
     $in_paths=0;
-    if ($line =~ /^\s*instruction:\s*(.+?)\s*$/) { $cur->{instruction}=unquote($1); next; }
+    if ($line =~ /^\s*instruction:\s*(.+?)\s*$/) {
+      my $raw=$1; my $instruction=unquote($raw);
+      die "anchors are not supported\n" if $raw =~ /^\s*[&*][A-Za-z_]/;
+      die "block scalars are not supported\n" if $instruction eq "|" || $instruction eq ">";
+      die "inline comments are not supported\n" if $instruction =~ /#/;
+      $cur->{instruction}=$instruction;
+      next;
+    }
     if ($line =~ /^\s*merge_language_rule:\s*(true|false)\s*$/i) { $cur->{merge_language_rule}=lc($1) eq "true" ? JSON::PP::true : JSON::PP::false; next; }
+    die "unsupported YAML syntax: $line\n";
   }
   push @rules,$cur if $cur;
   for my $r (@rules) { die "rule name required\n" unless $r->{name}; die "rule $r->{name} needs paths\n" unless @{$r->{paths}}; die "rule $r->{name} needs instruction\n" unless $r->{instruction}; }
-  open my $mf,"<",$manifest or die "read manifest: $!"; my @files=grep { chomp; $_ ne "" } <$mf>; close $mf;
+  my @files;
+  if ($input_kind eq "review-input") {
+    open my $inf,"<",$input or die "read review input: $!"; local $/; my $d=decode_json(<$inf>); close $inf;
+    for my $item (@{$d->{items}||[]}) {
+      next unless ref($item) eq "HASH" && $item->{selected};
+      my $path=$item->{path}//next;
+      push @files, ($path =~ m!^/! ? $path : "$project/$path");
+    }
+  } else {
+    open my $mf,"<",$input or die "read manifest: $!";
+    @files=grep { chomp; s/\r$//; /\S/ } <$mf>; close $mf;
+  }
   my @mapped;
   for my $abs (@files) {
     my $real=abs_path($abs) || $abs; my $rel=$real; $rel =~ s/^\Q$project\E\/?//;
@@ -59,7 +103,7 @@ perl -MJSON::PP -MCwd=abs_path -e '
   print $of JSON::PP->new->canonical->pretty->encode({schema_version=>1,rules_path=>$rules,rule_count=>scalar(@rules),files=>\@mapped});
   sub unquote { my $x=shift; $x =~ s/^\s+|\s+$//g; $x =~ s/^(["\x27])|(["\x27])$//g; return $x; }
   sub glob_match { my ($p,$s)=@_; my $q=quotemeta($p); $q =~ s/\\\*\\\*/.*/g; $q =~ s/\\\*/[^\/]*/g; $q =~ s/\\\?/[^\/]/g; return $s =~ /^$q$/i; }
-' "$PROJECT_DIR" "$SOURCE_MANIFEST" "$RULES_PATH" "$OUTPUT_PATH"
+' "$PROJECT_DIR" "$SOURCE_INPUT" "$RULES_PATH" "$OUTPUT_PATH" "$INPUT_KIND"
 
 RULE_COUNT="$(perl -MJSON::PP -e 'local $/; print decode_json(<>)->{rule_count}' "$OUTPUT_PATH")"
 echo "REVIEW_RULES_PATH=$RULES_PATH"

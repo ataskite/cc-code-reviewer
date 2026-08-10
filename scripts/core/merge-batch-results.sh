@@ -337,7 +337,7 @@ fi
 # flat coverage array is kept for compatibility; coverage_sets/terminal_state/
 # stable item_id fields provide the stronger OCR-inspired audit contract.
 RUN_MANIFEST="$RUN_DIR/run-manifest.json"
-perl -MJSON::PP -e '
+perl -MJSON::PP -MFile::Spec -MCwd=abs_path -e '
   use strict; use warnings; use Digest::SHA qw(sha256_hex);
   my ($run,$plan,$summary,$out)=@ARGV;
   sub loadj { my $p=shift; open my $f,"<",$p or die "read $p: $!"; local $/; return decode_json(<$f>); }
@@ -347,6 +347,43 @@ perl -MJSON::PP -e '
   my @items;
   my %batch_errors;
   my %root_coverage;
+  my $project=$p->{project_dir}||"";
+  $project=(abs_path($project)||File::Spec->canonpath($project)) if length $project;
+  $project =~ s![/\\]+$!!;
+  sub normalized_item_path {
+    my $path=shift//"";
+    $path=(abs_path($path)||File::Spec->canonpath($path)) if File::Spec->file_name_is_absolute($path);
+    $path =~ s!\\!/!g;
+    my $root=$project; $root =~ s!\\!/!g;
+    if (length($root) && ($path eq $root || index($path,"$root/")==0)) {
+      $path=substr($path,length($root)); $path =~ s!^/!!;
+    }
+    $path =~ s!^\./!!;
+    return $path;
+  }
+  sub git_output {
+    my @cmd=@_; return () unless length($project) && -d $project && -e "$project/.git";
+    open my $fh,"-|",@cmd or return ();
+    my @lines=<$fh>; close $fh;
+    chomp @lines; return grep { defined $_ && length $_ } @lines;
+  }
+  sub repository_identity {
+    my ($remote)=git_output("git","-C",$project,"config","--get","remote.origin.url");
+    if (defined $remote && length $remote) {
+      $remote =~ s/^\s+|\s+$//g;
+      my ($host,$path);
+      if ($remote =~ m!^[^/@]+@([^:]+):(.+)$!) { ($host,$path)=($1,$2); }
+      elsif ($remote =~ m!^[a-z][a-z0-9+.-]*://(?:[^/@]+@)?([^/]+)/(.+)$!i) { ($host,$path)=($1,$2); }
+      if (defined $host && defined $path) {
+        $host=lc($host); $path =~ s![/\\]+$!!; $path =~ s!\.git$!!i;
+        return "remote\0$host/$path";
+      }
+    }
+    my @roots=sort(git_output("git","-C",$project,"rev-list","--max-parents=0","HEAD"));
+    return "roots\0".join("\0",@roots) if @roots;
+    return "project-name\0".($p->{project_name}||"");
+  }
+  my $repository_identity_sha256=sha256_hex(repository_identity());
   opendir my $bd, "$run/batches" or die "read $run/batches: $!";
   my @batch_files=sort map { "$run/batches/$_" } grep { /^batch-.*\.json$/ && -f "$run/batches/$_" } readdir $bd;
   closedir $bd;
@@ -360,7 +397,7 @@ perl -MJSON::PP -e '
     }
     my $list=$b->{batch_file_list}||""; next unless $list && -f $list;
     open my $lf,"<",$list or die "read $list: $!";
-    while (my $path=<$lf>) { chomp $path; next unless length $path; push @items,{path=>$path,batch_id=>$id,status=>$coverage}; }
+    while (my $path=<$lf>) { chomp $path; next unless length $path; push @items,{path=>normalized_item_path($path),batch_id=>$id,status=>$coverage}; }
     close $lf;
   }
   my $input_path="$run/review-input.json";
@@ -370,7 +407,7 @@ perl -MJSON::PP -e '
   if (!@items && $input && ref($input->{items}) eq "ARRAY") {
     for my $item (@{$input->{items}}) {
       next unless ref($item) eq "HASH" && $item->{selected};
-      my $path=$item->{path} // next;
+      my $path=normalized_item_path($item->{path} // next);
       my ($root)=sort { length($b) <=> length($a) || $a cmp $b }
         grep { $path eq $_ || index($path, "$_/") == 0 } keys %root_coverage;
       my $mapped=$root ? $root_coverage{$root} : undef;
@@ -378,7 +415,7 @@ perl -MJSON::PP -e '
     }
   }
   @items=sort { ($a->{path}//"") cmp ($b->{path}//"") || ($a->{batch_id}//"") cmp ($b->{batch_id}//"") } @items;
-  sub item_id { sha256_hex(join("\0", "review", $p->{language_id}||"", $_[0]||"")); }
+  sub item_id { sha256_hex(join("\0", "review", $repository_identity_sha256, $p->{language_id}||"", $_[0]||"")); }
   sub failure_class {
     my $e=lc($_[0]||"");
     return "timeout" if $e =~ /timeout|timed out/;
@@ -424,7 +461,7 @@ perl -MJSON::PP -e '
   };
   my $legacy_coverage=[];
   for my $i (@items) { push @$legacy_coverage, { %$i }; }
-  my $d={schema_version=>1,contract_version=>"cc-code-reviewer.run-manifest/v1",run_id=>$p->{run_id},language_id=>$p->{language_id},terminal_state=>$terminal,repository_identity_sha256=>sha256_hex($p->{project_dir}||""),input=>{mode=>$input_mode,requested_scope=>$p->{review_scope}||"",resolved_base=>($input ? $input->{base_ref}||"" : ""),resolved_head=>($input ? $input->{head_ref}||"" : ""),source_artifact_sha256=>($p->{review_input_sha256}||"")},execution=>{review_mode=>$p->{review_mode}||"",batch_count=>0+($p->{batch_count}||0),included_batch_count=>0+($s->{included_batches}||0)},review_input_path=>($input_path && -f $input_path ? $input_path : ""),review_input_sha256=>$p->{review_input_sha256}||"",coverage=>\@$legacy_coverage,coverage_sets=>$coverage_sets,selected_item_count=>0+@items,completed_item_count=>0+@completed,failed_item_count=>0+@failed,leftover_item_count=>0+@leftover,coverage_percent=>$coverage_percent,summary_path=>"$run/summary.json",final_report_path=>$s->{final_report_path}};
+  my $d={schema_version=>1,contract_version=>"cc-code-reviewer.run-manifest/v1",run_id=>$p->{run_id},language_id=>$p->{language_id},terminal_state=>$terminal,repository_identity_sha256=>$repository_identity_sha256,input=>{mode=>$input_mode,requested_scope=>$p->{review_scope}||"",resolved_base=>($input ? $input->{base_ref}||"" : ""),resolved_head=>($input ? $input->{head_ref}||"" : ""),source_artifact_sha256=>($p->{review_input_sha256}||"")},execution=>{review_mode=>$p->{review_mode}||"",batch_count=>0+($p->{batch_count}||0),included_batch_count=>0+($s->{included_batches}||0)},review_input_path=>($input_path && -f $input_path ? $input_path : ""),review_input_sha256=>$p->{review_input_sha256}||"",coverage=>\@$legacy_coverage,coverage_sets=>$coverage_sets,selected_item_count=>0+@items,completed_item_count=>0+@completed,failed_item_count=>0+@failed,leftover_item_count=>0+@leftover,coverage_percent=>$coverage_percent,summary_path=>"$run/summary.json",final_report_path=>$s->{final_report_path}};
   if ($s->{merge_blocked}) { $d->{run_failure}={classification=>"unknown",reason=>"batch merge blocked"}; }
   $d->{review_input}= $input if $input;
   open my $of,">:encoding(UTF-8)",$out or die "write $out: $!"; print $of JSON::PP->new->canonical->pretty->encode($d);

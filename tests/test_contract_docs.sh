@@ -104,6 +104,14 @@ grep -q "最近提交概览" "$SKILL_FILE"
 grep -q "prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据" "$SKILL_FILE"
 grep -q "| 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |" "$SKILL_FILE"
 grep -q "| 报告格式路径 | {REPORT_FORMAT_PATH} |" "$SKILL_FILE"
+require_literal "$SKILL_FILE" '| 审查输入清单 | {REVIEW_INPUT_PATH} |' "single-agent prompt must inject immutable review input"
+require_literal "$SKILL_FILE" '| 项目审查规则解析结果 | {REVIEW_RULES_RESOLVED_PATH} |' "single-agent prompt must inject resolved project rules"
+require_literal "$SKILL_FILE" 'scripts/core/resolve-review-rules.sh' "single-agent flow must resolve project review rules"
+require_literal "$SKILL_FILE" 'review-input >/dev/null' "single-agent rule resolution must consume selected files from immutable review input"
+if grep -q 'Java 单 agent 自行 Glob' "$SKILL_FILE"; then
+  echo "single-agent Java must consume immutable review input instead of rediscovering files" >&2
+  exit 1
+fi
 grep -q 'REVIEW_FRAMEWORK_PATH=.*references/languages/java/review-framework.md' "$SKILL_FILE"
 grep -q 'REPORT_FORMAT_PATH=.*references/report-format.md' "$SKILL_FILE"
 GLOBAL_REFERENCE_LINE="$(grep -n "### 第六步之前：准备审查参考文件路径" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
@@ -488,6 +496,7 @@ require_literal "$AGENT_FILE" '`src/test/java` 只能作为测试质量判断的
 
 require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "TARGET_BATCH_COST=260000" "planner must use fixed 1M target cost"
 require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "HARD_MAX_BATCH_COST=325000" "planner must use fixed 1M hard cost"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" 'effective_max_cost="$HARD_MAX_BATCH_COST"' "affinity relaxation must be clamped to the hard cost limit"
 require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "CONTEXT_WINDOW_TOKENS=1000000" "planner must emit fixed 1M context"
 require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "CONTEXT_SCALE=5" "planner must emit fixed context scale metadata"
 require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "review_cost" "planner must compute review cost"
@@ -517,6 +526,12 @@ require_literal "$AGENTS_FILE" "report_title" "AGENTS must document merged repor
 require_literal "$CLAUDE_FILE" "report_title" "CLAUDE must document merged report title contract"
 require_literal "$AGENTS_FILE" "Selected module paths must be relative paths inside" "AGENTS must document selected-module boundary"
 require_literal "$CLAUDE_FILE" "Selected module paths must be relative paths inside" "CLAUDE must document selected-module boundary"
+require_literal "$AGENTS_FILE" "HARD_MAX_BATCH_COST=325000" "AGENTS must document affinity hard-cost clamp"
+require_literal "$CLAUDE_FILE" "HARD_MAX_BATCH_COST=325000" "CLAUDE must document affinity hard-cost clamp"
+require_literal "$AGENTS_FILE" 'stable `item_id` values must remain identical across clone/workspace roots' "AGENTS must document stable coverage IDs"
+require_literal "$CLAUDE_FILE" 'stable `item_id` values must remain identical across clone/workspace roots' "CLAUDE must document stable coverage IDs"
+require_literal "$AGENTS_FILE" 'Immutable `REVIEW_INPUT_PATH` and `REVIEW_RULES_RESOLVED_PATH`' "AGENTS must document single-agent immutable input injection"
+require_literal "$CLAUDE_FILE" 'Immutable `REVIEW_INPUT_PATH` and `REVIEW_RULES_RESOLVED_PATH`' "CLAUDE must document single-agent immutable input injection"
 require_literal "$ROOT_DIR/references/report-format.md" "[合并阻塞]" "report format must document blocked merge reports"
 require_literal "$ROOT_DIR/references/report-format.md" "分批合并报告格式" "report format must document deterministic merge report shape"
 
@@ -583,6 +598,15 @@ grep -q "阶段 B.*跳过" "$AGENT_FILE"
 grep -q "BATCH_MODE" "$SKILL_FILE"
 grep -q "estimated_tokens" "$SKILL_FILE"
 grep -q "500000" "$SKILL_FILE"
+require_literal "$ROOT_DIR/README.md" "12 个前端维度" "README frontend dimension count must match the review framework"
+if grep -q "11 个前端维度" "$ROOT_DIR/README.md"; then
+  echo "README must not retain the old 11-dimension frontend contract" >&2
+  exit 1
+fi
+if grep -q "token > 100,000" "$EXAMPLES_FILE"; then
+  echo "examples must use the current 500000-token file-batch threshold" >&2
+  exit 1
+fi
 
 # Stock review entry must expose full and selected-module choices directly.
 require_literal "$SKILL_FILE" 'label: "增量审查"' "review entry must keep incremental review"

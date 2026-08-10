@@ -15,6 +15,10 @@ LINE_TOKEN_ESTIMATE=3
 FILE_TOKEN_OVERHEAD=500
 
 json_escape() { printf '%s' "$1" | perl -0pe 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g; s/\t/\\t/g; s/\r/\\r/g'; }
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else sha256sum "$1" | awk '{print $1}'; fi
+}
 branch_slug() {
   local s; s="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g; s/-\{2,\}/-/g; s/^-//; s/-$//' | cut -c1-40)"
   [ -n "$s" ] || s="no-branch"; printf '%s' "$s"
@@ -152,7 +156,7 @@ if [ -n "${CC_CODE_REVIEWER_REVIEW_INPUT_PATH:-}" ]; then
   if [ "$CC_CODE_REVIEWER_REVIEW_INPUT_PATH" != "$RUN_DIR/review-input.json" ]; then
     cp "$CC_CODE_REVIEWER_REVIEW_INPUT_PATH" "$RUN_DIR/review-input.json"
   fi
-  REVIEW_INPUT_SHA256="$(if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$RUN_DIR/review-input.json" | awk '{print $1}'; else sha256sum "$RUN_DIR/review-input.json" | awk '{print $1}'; fi)"
+  REVIEW_INPUT_SHA256="$(sha256_file "$RUN_DIR/review-input.json")"
 fi
 
 CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -181,6 +185,7 @@ JSON
 mv "$RUN_DIR/plan.json.tmp" "$RUN_DIR/plan.json"
 
 rm -f "$FILES_TSV" "$SORTED" "$BIN_ROWS" "$RUN_DIR"/batch-*.tsv "$UNIT_MEMBERS"
+rm -rf "$UNIT_FILES_DIR"
 
 echo "RUN_ID=$RUN_ID"
 echo "RUN_DIR=$RUN_DIR"

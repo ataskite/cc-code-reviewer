@@ -492,23 +492,30 @@ if [ "$REVIEW_TYPE" = "存量审查" ]; then
   [ "${REVIEW_SCOPE:-全量代码}" = "全量代码" ] || INPUT_MODE=scoped
   REVIEW_INPUT_PATH="$(bash "${PLUGIN_ROOT}/scripts/core/prepare-review-input.sh" \
     "$PROJECT_DIR" "$LANGUAGE_ID" "$INPUT_MODE" 0 "$MANIFEST" | sed -n 's/^REVIEW_INPUT_PATH=//p')"
-  test -r "$REVIEW_INPUT_PATH"
+else
+  REVIEW_INPUT_PATH="$(bash "${PLUGIN_ROOT}/scripts/core/prepare-review-input.sh" \
+    "$PROJECT_DIR" "$LANGUAGE_ID" incremental "$COMMIT_COUNT" "$MANIFEST" | sed -n 's/^REVIEW_INPUT_PATH=//p')"
 fi
+test -r "$REVIEW_INPUT_PATH"
 
-# manifest 收敛后必须覆盖 REVIEW_FILE_COUNT / REVIEW_LINE_COUNT。
-REVIEW_FILE_COUNT="$(grep -c . "$MANIFEST")"
-REVIEW_LINE_COUNT=0
-while IFS= read -r f; do
-  [ -n "$f" ] || continue
-  REVIEW_LINE_COUNT=$((REVIEW_LINE_COUNT + $(wc -l < "$f" | tr -d ' ')))
-done < "$MANIFEST"
+# 项目审查规则必须和冻结输入使用同一正式文件集合。resolver 的
+# review-input 模式只读取 selected=true，增量审查不会带入范围外文件。
+REVIEW_RULES_RESOLVED_PATH="${REVIEW_INPUT_PATH%.json}-review-rules.json"
+bash "${PLUGIN_ROOT}/scripts/core/resolve-review-rules.sh" \
+  "$PROJECT_DIR" "$REVIEW_INPUT_PATH" "$REVIEW_RULES_RESOLVED_PATH" \
+  "${CC_CODE_REVIEWER_REVIEW_RULES_PATH:-$PROJECT_DIR/.cc-code-reviewer/review-rules.yml}" review-input >/dev/null
+test -r "$REVIEW_RULES_RESOLVED_PATH"
+
+# 规模必须来自同一个冻结输入，不能在增量路径继续展示全量 manifest 规模。
+REVIEW_FILE_COUNT="$(perl -MJSON::PP -e 'local $/; print decode_json(<>)->{selected_item_count}+0' "$REVIEW_INPUT_PATH")"
+REVIEW_LINE_COUNT="$(perl -MJSON::PP -e 'local $/; print decode_json(<>)->{selected_line_count}+0' "$REVIEW_INPUT_PATH")"
 ```
 
 调用逻辑动作 `DISPATCH_AGENT` 启动子代理，`agent_prompt` 按 `LANGUAGE_ID` 选择：
 - `LANGUAGE_ID=java` -> `${PLUGIN_ROOT}/agents/cc-code-reviewer.md`，description: `"执行 Java 代码审查"`
 - `LANGUAGE_ID=frontend` -> `${PLUGIN_ROOT}/agents/cc-code-reviewer-frontend.md`，description: `"执行前端代码审查"`
 - `LANGUAGE_ID=python` -> `${PLUGIN_ROOT}/agents/cc-code-reviewer-python.md`，description: `"执行 Python 代码审查"`
-- prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据（frontend/python 额外注入 source manifest）
+- prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据（所有语言的存量/增量审查均注入 `REVIEW_INPUT_PATH`、`REVIEW_RULES_RESOLVED_PATH` 和 source manifest；正式范围只认 selected=true）
 - model_profile: {MODEL_PROFILE}
 
 详细参数注入格式见下方「子 agent 调用规范」章节。
@@ -644,7 +651,7 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 | 报告保存方式 | 不注入子 agent（飞书上传由主 skill 处理） | 不注入子 agent（飞书上传由主 skill 合并后处理） |
 | 批次编号 | 无 | BATCH_INDEX/BATCH_COUNT |
 | 审查输出模式 | 无（默认完整报告） | "仅发现清单" |
-| 文件列表来源 | Java：agent 自行 Glob；frontend/python：注入 source manifest | 外部注入（BATCH_FILE_LIST 或 scan_roots），agent 不扫描 |
+| 文件列表来源 | 所有语言：注入固化后的 `REVIEW_INPUT_PATH`（selected=true 为正式范围）；Java 由 collect-source-files.sh 收集，frontend/python 由各自 collect 收集 | 外部注入（BATCH_FILE_LIST 或 scan_roots），agent 不扫描 |
 | 增量数据 | 注入 GIT_LOG 等 | 不注入（分批仅支持存量审查） |
 
 **飞书保存**：batch agent 不执行飞书保存。飞书保存由主 skill 在合并完成后统一处理。
@@ -1353,7 +1360,9 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | 项目 ignore 是否启用 | {IGNORE_RULES_ENABLED} |
 | 项目 ignore 问题数量 | {IGNORE_RULE_COUNT} |
 | 语义增强 | {SEMANTIC_LEVEL} |
-| source manifest | {MANIFEST 绝对路径}（仅 LANGUAGE_ID=frontend 或 python；Java 单 agent 自行 Glob，不注入） |
+| 审查输入清单 | {REVIEW_INPUT_PATH} |
+| 项目审查规则解析结果 | {REVIEW_RULES_RESOLVED_PATH} |
+| source manifest | {MANIFEST 绝对路径}（所有语言均注入；正式范围以 REVIEW_INPUT_PATH 中 selected=true 为准） |
 | 本批审查文件列表 | {BATCH_FILE_LIST}（仅文件级分批模式，单 agent 模式不注入） |
 
 ### 项目概况（预扫描结果）
@@ -1408,18 +1417,11 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `CHANGED_FILES_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git diff --name-only` |
 | `DIFF_STATS_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git diff --stat` |
 | `REVIEW_INPUT_PATH` | core/prepare-review-input.sh 输出（所有入口） | 不可变输入、ref、选中/排除原因和内容指纹 |
+| `REVIEW_RULES_RESOLVED_PATH` | core/resolve-review-rules.sh 基于 REVIEW_INPUT_PATH 的 selected 文件解析 | 当前正式范围逐文件命中的项目审查规则；不作为 ignore |
 
 ### 增量审查预处理（仅增量审查时执行）
 
-在调用子 agent 之前，执行增量预处理脚本：`bash "${PLUGIN_ROOT}/scripts/core/prepare-incremental.sh" "$PROJECT_DIR" {N}`，随后必须冻结同一范围的机器可读输入：
-
-```bash
-REVIEW_INPUT_OUTPUT="$(bash "${PLUGIN_ROOT}/scripts/core/prepare-review-input.sh" \
-  "$PROJECT_DIR" "$LANGUAGE_ID" incremental {N} "${MANIFEST:-}" | sed -n 's/^REVIEW_INPUT_PATH=//p')"
-test -r "$REVIEW_INPUT_OUTPUT"
-```
-
-向单 Agent 注入 `REVIEW_INPUT_PATH=$REVIEW_INPUT_OUTPUT`；它是增量正式范围的唯一清单，Agent 不得另行扩展发现范围。文件级存量分批与 Maven 大仓模块分批都会生成 `RUN_DIR/review-input.json` 和 `RUN_DIR/review-rules.json`，并将路径注入每个 batch agent。
+在调用子 agent 之前，执行增量预处理脚本：`bash "${PLUGIN_ROOT}/scripts/core/prepare-incremental.sh" "$PROJECT_DIR" {N}`。随后由路径 A 的统一输入生成块，以 `COMMIT_COUNT={N}` 生成 `REVIEW_INPUT_PATH`，再从其中 `selected=true` 的文件解析 `REVIEW_RULES_RESOLVED_PATH`。两条路径都必须注入单 Agent；`REVIEW_INPUT_PATH` 是增量正式范围的唯一清单，Agent 不得另行扩展发现范围。文件级存量分批与 Maven 大仓模块分批都会生成 `RUN_DIR/review-input.json` 和 `RUN_DIR/review-rules.json`，并将路径注入每个 batch agent。
 
 脚本输出用 `# ===` 分隔为三部分：
 1. `# === 提交记录 ===` → GIT_LOG_OUTPUT

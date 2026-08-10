@@ -45,7 +45,7 @@
 - 项目 ignore 状态：未配置 / 已启用（命中 N 条规则，过滤 M 个同类问题）
 - 文件覆盖率
 - 审查输入清单：`review-input.json` 路径与 selected / excluded 数量（可用时）
-- 运行覆盖清单：`run-manifest.json` 路径；completed / failed / leftover 必须由该清单推导。v1.6 还必须保留稳定 `item_id`、`coverage_sets`、typed failure class、`terminal_state` 与输入模式；旧版逐文件 `coverage` 字段继续保留用于兼容读取。
+- 运行覆盖清单：`run-manifest.json` 路径；completed / failed / leftover 必须由该清单推导。v1.6 还必须把覆盖路径规范化为仓库相对路径，并基于稳定仓库身份、语言和相对路径生成跨 clone/workspace 一致的 `item_id`，同时保留 `coverage_sets`、typed failure class、`terminal_state` 与输入模式；旧版逐文件 `coverage` 字段继续保留用于兼容读取。
 
 ## 📊 审查范围说明
 - **项目类型**

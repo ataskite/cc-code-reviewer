@@ -23,12 +23,27 @@ perl -MJSON::PP -MFile::Basename=dirname,basename -MFile::Spec -MCwd=abs_path -e
   my (%idx,%parent,%bybase); for my $i (0..$#f) { $idx{$f[$i]}=$i; $parent{$i}=$i; push @{$bybase{basename($f[$i])}},$i; }
   sub root { my $x=shift; while ($parent{$x} != $x) { $x=$parent{$x}; } return $x; }
   sub joinset { my ($a,$b)=@_; $a=root($a); $b=root($b); $parent{$b}=$a if $a!=$b; }
-  sub candidate { my ($base,$stem)=@_; for my $ext (qw(.ts .tsx .js .jsx .vue .mjs .cjs .py .java)) { return "$base$ext" if exists $idx{"$base$ext"}; return "$base/index$ext" if exists $idx{"$base/index$ext"}; } return ""; }
+  sub candidate {
+    my ($base)=@_;
+    for my $suffix (qw(.ts .tsx .js .jsx .vue .mjs .cjs .py .java), map { "index$_" } qw(.ts .tsx .js .jsx .vue .mjs .cjs), "__init__.py") {
+      my $raw = $suffix =~ /^\./ ? "$base$suffix" : "$base/$suffix";
+      my $resolved=abs_path($raw);
+      return $resolved if defined $resolved && exists $idx{$resolved};
+    }
+    return "";
+  }
   for my $i (0..$#f) {
     open my $fh,"<",$f[$i] or next; my $content=""; $content .= $_ while <$fh>; close $fh;
     my $dir=dirname($f[$i]);
-    while ($content =~ /(?:from\s+|import\s*(?:[^;]*?\s+from\s+)?)[\x27"](\.{1,2}\/[^\x27"]+)[\x27"]/g) { my $c=candidate(File::Spec->canonpath("$dir/$1"),$1); joinset($i,$idx{$c}) if $c ne ""; }
-    if ($lang eq "python") { while ($content =~ /^\s*from\s+\.(\w+(?:\.\w+)*)\s+import/mg) { my $c="$dir/" . ($1 =~ s!\.!/!gr) . ".py"; joinset($i,$idx{$c}) if exists $idx{$c}; } }
+    while ($content =~ /(?:from\s+|import\s*(?:[^;]*?\s+from\s+)?)[\x27"](\.{1,2}\/[^\x27"]+)[\x27"]/g) { my $c=candidate("$dir/$1"); joinset($i,$idx{$c}) if $c ne ""; }
+    if ($lang eq "python") {
+      while ($content =~ /^\s*from\s+(\.+)(\w+(?:\.\w+)*)\s+import/mg) {
+        my ($dots,$module)=($1,$2); my $base=$dir;
+        $base=dirname($base) for 2..length($dots);
+        $module =~ s!\.!/!g;
+        my $c=candidate("$base/$module"); joinset($i,$idx{$c}) if $c ne "";
+      }
+    }
     if ($lang eq "java") { while ($content =~ /^\s*import\s+([\w.]+)\s*;/mg) { my $b=$1; $b =~ s!.*\.!!; my $arr=$bybase{"$b.java"}; joinset($i,$arr->[0]) if $arr && @$arr == 1; } }
   }
   my %groups; push @{$groups{root($_)}}, $_ for 0..$#f;

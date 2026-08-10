@@ -60,7 +60,10 @@ manifest_has_path() {
   local candidate="$1" entry
   [ -n "$SOURCE_MANIFEST" ] || return 0
   while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
+    # Remove only the CR from CRLF manifests.  Leading/trailing spaces can be
+    # part of a valid POSIX filename and must not be rewritten.
+    entry="${entry%$'\r'}"
+    [ -n "${entry//[[:space:]]/}" ] || continue
     [ "$(relative_path "$entry")" = "$candidate" ] && return 0
   done < "$SOURCE_MANIFEST"
   return 1
@@ -121,7 +124,9 @@ if [ "$MODE" = incremental ]; then
 else
   [ -n "$SOURCE_MANIFEST" ] || { echo "SOURCE_MANIFEST_REQUIRED_FOR_$MODE=true" >&2; exit 1; }
   while IFS= read -r absolute; do
-    [ -n "$absolute" ] || continue
+    # Keep the manifest path byte-for-byte intact apart from CRLF cleanup.
+    absolute="${absolute%$'\r'}"
+    [ -n "${absolute//[[:space:]]/}" ] || continue
     rel="$(relative_path "$absolute")"
     append_item "$rel" "existing" ""
   done < "$SOURCE_MANIFEST"
@@ -130,6 +135,13 @@ fi
 sort -t "$(printf '\036')" -k1,1 -u "$ITEMS_TSV" > "$ITEMS_TSV.sorted"
 ITEM_COUNT="$(awk 'END{print NR+0}' "$ITEMS_TSV.sorted")"
 SELECTED_COUNT="$(awk -F "$(printf '\036')" '$4 == "true" {n++} END{print n+0}' "$ITEMS_TSV.sorted")"
+SELECTED_LINE_COUNT=0
+while IFS="$(printf '\036')" read -r path _change _old_path selected _reason _ins _del _fingerprint; do
+  [ "$selected" = true ] || continue
+  candidate="$path"; case "$candidate" in /*) ;; *) candidate="$PROJECT_DIR/$candidate" ;; esac
+  [ -f "$candidate" ] || continue
+  SELECTED_LINE_COUNT=$((SELECTED_LINE_COUNT + $(wc -l < "$candidate" | tr -d ' ')))
+done < "$ITEMS_TSV.sorted"
 CREATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 {
@@ -141,7 +153,7 @@ CREATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf '  "base_ref": "%s",\n' "$(json_escape "$BASE_REF")"
   printf '  "head_ref": "%s",\n' "$(json_escape "$HEAD_REF")"
   printf '  "source_manifest": "%s",\n' "$(json_escape "$SOURCE_MANIFEST")"
-  printf '  "item_count": %s,\n  "selected_item_count": %s,\n' "$ITEM_COUNT" "$SELECTED_COUNT"
+  printf '  "item_count": %s,\n  "selected_item_count": %s,\n  "selected_line_count": %s,\n' "$ITEM_COUNT" "$SELECTED_COUNT" "$SELECTED_LINE_COUNT"
   printf '  "created_at": "%s",\n  "items": [' "$CREATED_AT"
   first=1
   while IFS="$(printf '\036')" read -r path change old_path selected reason ins del fingerprint; do
@@ -158,3 +170,4 @@ mv "$OUTPUT_PATH.tmp" "$OUTPUT_PATH"
 echo "REVIEW_INPUT_PATH=$OUTPUT_PATH"
 echo "REVIEW_INPUT_ITEM_COUNT=$ITEM_COUNT"
 echo "REVIEW_INPUT_SELECTED_COUNT=$SELECTED_COUNT"
+echo "REVIEW_INPUT_SELECTED_LINE_COUNT=$SELECTED_LINE_COUNT"

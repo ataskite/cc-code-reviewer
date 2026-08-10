@@ -32,6 +32,11 @@ json_escape() {
   printf '%s' "$1" | perl -0pe 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g; s/\t/\\t/g; s/\r/\\r/g'
 }
 
+sha256_file() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else sha256sum "$1" | awk '{print $1}'; fi
+}
+
 branch_slug() {
   local slug
   slug="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g; s/-\{2,\}/-/g; s/^-//; s/-$//' | cut -c1-40)"
@@ -485,6 +490,25 @@ batch_has_unit() {
   awk -F '\t' -v unit="$unit" '$1 == unit {found=1} END {exit found ? 0 : 1}' "$batch_file"
 }
 
+# 输出 EDGES_TSV 中两端都在本批次内的依赖边，作为 JSON 数组。
+# affinity_edges 与 module_dependency_edges 同源同值，共用此实现（v1.6.0 消重）。
+emit_batch_edges_array() {
+  local batch_file="$1"
+  local first=1 from to dep
+  printf '['
+  while IFS="$(printf '\t')" read -r from to dep; do
+    [ -n "$from" ] || continue
+    if batch_has_unit "$batch_file" "$from" && batch_has_unit "$batch_file" "$to"; then
+      if [ "$first" -eq 0 ]; then printf ','; fi
+      printf '\n    {"from": "%s", "to": "%s", "artifact_id": "%s"}' \
+        "$(json_escape "$from")" "$(json_escape "$to")" "$(json_escape "$dep")"
+      first=0
+    fi
+  done < "$EDGES_TSV"
+  if [ "$first" -eq 0 ]; then printf '\n  '; fi
+  printf ']'
+}
+
 batch_sum_field() {
   local batch_file="$1"
   local field="$2"
@@ -531,9 +555,9 @@ unit_has_affinity_with_draft() {
   while IFS="$(printf '\t')" read -r from to _dep; do
     [ -n "$from" ] || continue
     if [ "$from" = "$unit" ]; then
-      if printf '%s\n' "$draft_units" | grep -qx "$to"; then return 0; fi
+      if printf '%s\n' "$draft_units" | grep -qxFx "$to"; then return 0; fi
     elif [ "$to" = "$unit" ]; then
-      if printf '%s\n' "$draft_units" | grep -qx "$from"; then return 0; fi
+      if printf '%s\n' "$draft_units" | grep -qxFx "$from"; then return 0; fi
     fi
   done < "$EDGES_TSV"
   return 1
@@ -561,6 +585,10 @@ try_fill_draft() {
         effective_max_cost=$((max_cost + max_cost * AFFINITY_COST_TOLERANCE_PERCENT / 100))
       else
         effective_max_cost="$max_cost"
+      fi
+      # 亲和性只能放宽软预算，绝不能突破公开的硬成本上限。
+      if [ "$effective_max_cost" -gt "$HARD_MAX_BATCH_COST" ]; then
+        effective_max_cost="$HARD_MAX_BATCH_COST"
       fi
       if [ $((current_loc + loc)) -le "$HARD_MAX_BATCH_LOC" ] && [ $((current_cost + cost)) -le "$effective_max_cost" ]; then
         add_unit_to_draft "$unit" "$draft_file"
@@ -760,42 +788,9 @@ write_batch() {
       printf '\n  '
     fi
     printf '],\n'
-    # v1.6.0：affinity_edges 不再写死空数组，复用批次内命中的依赖边。
-    # 与 module_dependency_edges 同源同值——依赖图亲和度现已参与装箱决策。
-    printf '  "affinity_edges": ['
-    first=1
-    while IFS="$(printf '\t')" read -r from to dep; do
-      [ -n "$from" ] || continue
-      if batch_has_unit "$batch_file" "$from" && batch_has_unit "$batch_file" "$to"; then
-        if [ "$first" -eq 0 ]; then
-          printf ','
-        fi
-        printf '\n    {"from": "%s", "to": "%s", "artifact_id": "%s"}' \
-          "$(json_escape "$from")" "$(json_escape "$to")" "$(json_escape "$dep")"
-        first=0
-      fi
-    done < "$EDGES_TSV"
-    if [ "$first" -eq 0 ]; then
-      printf '\n  '
-    fi
-    printf '],\n'
-    printf '  "module_dependency_edges": ['
-    first=1
-    while IFS="$(printf '\t')" read -r from to dep; do
-      [ -n "$from" ] || continue
-      if batch_has_unit "$batch_file" "$from" && batch_has_unit "$batch_file" "$to"; then
-        if [ "$first" -eq 0 ]; then
-          printf ','
-        fi
-        printf '\n    {"from": "%s", "to": "%s", "artifact_id": "%s"}' \
-          "$(json_escape "$from")" "$(json_escape "$to")" "$(json_escape "$dep")"
-        first=0
-      fi
-    done < "$EDGES_TSV"
-    if [ "$first" -eq 0 ]; then
-      printf '\n  '
-    fi
-    printf '],\n'
+    # v1.6.0：affinity_edges 与 module_dependency_edges 同源同值（批次内命中的依赖边）。
+    printf '  "affinity_edges": '; emit_batch_edges_array "$batch_file"; printf ',\n'
+    printf '  "module_dependency_edges": '; emit_batch_edges_array "$batch_file"; printf ',\n'
     printf '  "semantic_lookup": {'
     first=1
     while IFS="$(printf '\t')" read -r unit_id name path kind artifact loc files cost split_reason; do
@@ -979,11 +974,7 @@ REVIEW_RULES_RESOLVED_PATH="$RUN_DIR/review-rules.json"
 bash "$(dirname "$0")/../../core/resolve-review-rules.sh" \
   "$PROJECT_DIR" "$SOURCE_MANIFEST" "$REVIEW_RULES_RESOLVED_PATH" \
   "${CC_CODE_REVIEWER_REVIEW_RULES_PATH:-$PROJECT_DIR/.cc-code-reviewer/review-rules.yml}" >/dev/null
-if command -v shasum >/dev/null 2>&1; then
-  REVIEW_INPUT_SHA256="$(shasum -a 256 "$REVIEW_INPUT_PATH" | awk '{print $1}')"
-else
-  REVIEW_INPUT_SHA256="$(sha256sum "$REVIEW_INPUT_PATH" | awk '{print $1}')"
-fi
+REVIEW_INPUT_SHA256="$(sha256_file "$REVIEW_INPUT_PATH")"
 
 CREATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cat > "$RUN_DIR/plan.json.tmp" <<JSON
