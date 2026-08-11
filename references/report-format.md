@@ -242,7 +242,7 @@
 - 3 个关键行动项
 
 **审查人**: cc-code-reviewer Agent
-**报告版本**: 5.4
+**报告版本**: 5.5
 **审查模式**: [fast / standard / deep / security]
 **模型档位**: [inherit / economy / balanced / maximum]
 

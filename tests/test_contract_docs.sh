@@ -19,6 +19,9 @@ IGNORE_SKILL_FILE="$ROOT_DIR/skills/cc-code-ignore/SKILL.md"
 IGNORE_WORKFLOW_FILE="$ROOT_DIR/references/ignore-workflow.md"
 ARCHITECTURE_PNG="$ROOT_DIR/docs/assets/architecture-overview.png"
 ARCHITECTURE_SVG="$ROOT_DIR/docs/assets/architecture-overview.svg"
+PLUGIN_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
+VERSIONED_ARCHITECTURE_RELATIVE_PATH="docs/assets/architecture-overview-v${PLUGIN_VERSION}.png"
+VERSIONED_ARCHITECTURE_PNG="$ROOT_DIR/$VERSIONED_ARCHITECTURE_RELATIVE_PATH"
 MARKETPLACE_FILE="$ROOT_DIR/.claude-plugin/marketplace.json"
 PLUGIN_FILE="$ROOT_DIR/.claude-plugin/plugin.json"
 DD="--"
@@ -211,9 +214,31 @@ for performance_contract_file in \
   require_literal "$performance_contract_file" "怀疑很严重但缺少生产路径、调用频率、运行配置、表结构、索引或执行计划证据：待确认" "unproven severe performance risks must map to pending confirmation"
 done
 
+for security_contract_file in \
+  "$ROOT_DIR/references/languages/java/review-framework.md" \
+  "$AGENT_FILE"; do
+  require_literal "$security_contract_file" "安全问题分级边界" "security findings must have explicit severity boundaries"
+  require_literal "$security_contract_file" "安全问题必须先逐项核验 P0 五项硬门槛" "security findings must preserve the shared five-gate P0 contract"
+  require_literal "$security_contract_file" "公网/内网、匿名/已认证" "network location and authentication prerequisites must be treated as evidence"
+  require_literal "$security_contract_file" "不得单独决定级别上限" "security prerequisites must not impose an automatic severity ceiling"
+  require_literal "$security_contract_file" "网络位置或登录前置条件不自动降级" "authenticated or internal critical vulnerabilities must not be automatically downgraded"
+  require_literal "$security_contract_file" "仅“位于内网”或“需要登录”本身不足以判定为 P1" "internal or authenticated reachability alone must not force P1"
+  require_literal "$security_contract_file" "泛化安全加固建议、缺少可达路径证据或仅依赖代码形态推测：P2/P3" "general security hardening must map to P2/P3"
+  require_literal "$security_contract_file" "怀疑是高危但缺少生产可达性、调用链或运行配置证据：待确认" "unproven severe security risks must map to pending confirmation"
+done
+
+require_literal "$ROOT_DIR/references/languages/java/review-framework.md" 'credentialed request 与 `Access-Control-Allow-Origin: *` 的组合会被浏览器 CORS 校验拒绝' "wildcard ACAO with credentials must be classified as a rejected CORS configuration"
+require_literal "$ROOT_DIR/references/languages/java/review-framework.md" '反射任意 `Origin`' "credentialed arbitrary-origin reflection must remain the actionable CORS risk"
+require_literal "$ROOT_DIR/references/languages/java/review-framework.md" "个人信息（PII，Personally Identifiable Information" "personal-data review rules must use the standard PII term"
+
 grep -q "collect-fix-metadata" "$FIX_SKILL_FILE" "$FIX_WORKFLOW_FILE" "$FIX_REPORT_FILE"
 if [ ! -f "$ARCHITECTURE_PNG" ]; then
   echo "架构总览图缺失: $ARCHITECTURE_PNG" >&2
+  exit 1
+fi
+require_literal "$ROOT_DIR/README.md" "($VERSIONED_ARCHITECTURE_RELATIVE_PATH)" "README must reference the architecture image matching VERSION"
+if [ ! -f "$VERSIONED_ARCHITECTURE_PNG" ]; then
+  echo "README 引用的版本化架构总览图缺失: $VERSIONED_ARCHITECTURE_PNG" >&2
   exit 1
 fi
 if [ -f "$ARCHITECTURE_SVG" ]; then
@@ -471,7 +496,7 @@ grep -q "core/show-batch-status.sh" "$SKILL_FILE"
 grep -q "Maven 多模块" "$SKILL_FILE"
 grep -q "存量审查" "$SKILL_FILE"
 grep -q "全量代码" "$SKILL_FILE"
-grep -q "TOTAL_JAVA_LOC >= 120000" "$SKILL_FILE"
+grep -q "REVIEW_LINE_COUNT >= 120000" "$SKILL_FILE"
 
 grep -q "TARGET_BATCH_LOC = 250000" "$SKILL_FILE"
 grep -q "SOFT_MIN_BATCH_LOC = 150000" "$SKILL_FILE"
@@ -615,7 +640,13 @@ require_literal "$SKILL_FILE" 'label: "指定模块"' "review entry must expose 
 require_literal "$SKILL_FILE" "STOCK_REVIEW_STRATEGY" "stock review flow must capture the selected batching strategy"
 require_literal "$SKILL_FILE" "module-sequential" "stock review flow must support per-module sequential batching"
 require_literal "$SKILL_FILE" "ai-planned" "stock review flow must support AI planned batching"
+require_literal "$SKILL_FILE" "STOCK_REVIEW_STRATEGY=single-agent" "stock review strategy must default to single-agent"
+require_literal "$SKILL_FILE" "scripts/core/decide-batch-mode.sh" "batch decision must use the deterministic current-scope gate"
+require_literal "$SKILL_FILE" '只有 `STEP_4B_REQUIRED=true` 才执行步骤 4B' "step 4B must only appear after the current-scope size gate"
+require_literal "$SKILL_FILE" "小型 Maven 多模块项目即使是全量存量审查" "small Maven multi-module full reviews must remain single-agent"
+require_literal "$SKILL_FILE" "按全部模块依次启动" "full review strategy must describe all modules"
 require_literal "$SKILL_FILE" "按所选模块依次启动" "stock review strategy must describe per-module execution"
+require_literal "$SKILL_FILE" "禁止把全量审查称为“所选模块”" "full review must not claim that modules were selected"
 require_literal "$SKILL_FILE" "AI 智能规划分批" "stock review strategy must describe smart batching"
 require_literal "$SKILL_FILE" "不得把每个模块都作为 INTERACT option" "module selection must avoid oversized INTERACT payloads"
 require_literal "$SKILL_FILE" "最多 3 个固定选项" "module selection INTERACT must stay bounded"

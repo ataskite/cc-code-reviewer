@@ -155,6 +155,7 @@ scripts/
   │   ├── prepare-fix-workspace.sh       # Fix branch/worktree preparation
   │   ├── collect-fix-metadata.sh        # Fix completion time, branch, and git user
   │   ├── detect-language.sh             # Language detection dispatcher
+  │   ├── decide-batch-mode.sh            # Current-scope batch/step-4B gate
   │   ├── estimate-review-minutes.sh     # Deterministic review time estimation
   │   ├── validate-scope.sh              # Scope path boundary validation (reserved)
   │   ├── validate-plugin-manifests.sh   # Three-platform plugin manifest validator (v1.5.0)
@@ -204,6 +205,7 @@ The suite runs every `tests/test_*.sh` file and then `git diff --check`. It cove
 - `core/preview-recent-commits.sh`: recent commit preview for incremental INTERACT choices
 - `core/prepare-incremental.sh`: incremental diff ranges that include the root commit
 - `core/prepare-review-input.sh`: immutable selected/excluded input, Git refs and content fingerprints
+- `core/decide-batch-mode.sh`: current-scope size gate; small Maven multi-module reviews skip step 4B and remain single-agent
 - `languages/java/detect-code-intelligence.sh`: jdtls-lsp availability and fallback messaging
 - `languages/java/plan-large-batches.sh`: scoped Maven module planning, concise `RUN_DIR`, semantic-cost and module-sequential strategies, immutable file input
 - `languages/java/collect-source-files.sh`: Java `src/main/java` manifest for full/scoped single-agent input
@@ -273,15 +275,16 @@ Verify installation by triggering the skill with a Java review request such as `
 - Scan always runs the INTERACT flow after pre-scan.
 - fast 模式只输出满足全部 P0 硬门槛的问题；INTERACT 选项必须直观标注“仅输出 P0”，最终执行计划必须再次显示“输出级别：仅 P0”。
 - The flow confirms review mode and report handling before review entry; after entry, scope, and optional Maven stock strategy, it confirms the model before any batch decision, followed by optional batch execution count, optional concurrency, and final execution.
+- After scope selection, the Skill must recalculate file/line counts from the current-scope manifest and call `core/decide-batch-mode.sh`. Small Maven multi-module stock reviews stay single-agent and skip step 4B; full reviews must say "all modules", never "selected modules".
 - Module selection for large Maven projects must keep INTERACT payloads bounded: show module trees as normal text, keep fixed options small, and collect module paths through Other/free-form when needed.
 - Do not preserve command-line compatibility that bypasses interaction.
 
 ### Batch Planning Contract
 
-- Maven multi-module stock batching always uses `languages/java/plan-large-batches.sh`, including selected-module reviews and single selected-module reviews.
+- Maven multi-module stock batching uses `languages/java/plan-large-batches.sh` only after the current review scope exceeds `estimated_tokens > 500000` or `REVIEW_LINE_COUNT >= 120000` and step 4B selects a batching strategy. Small Maven multi-module repositories remain single-agent.
 - `languages/java/plan-large-batches.sh` receives `PROJECT_DIR`, `REVIEW_MODE`, branch, `SEMANTIC_LEVEL`, `REVIEW_SCOPE`, and `STOCK_REVIEW_STRATEGY`. Its batch budget is fixed for 1M context (`CONTEXT_WINDOW_TOKENS=1000000`, `CONTEXT_SCALE=5`).
 - All supported models use fixed 1M-context batching. The shared file planner defaults to a 500000-token input budget and uses deterministic First-Fit Decreasing packing; `CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET` remains available for explicit file-batch tuning.
-- `STOCK_REVIEW_STRATEGY` is `module-sequential` for one batch per selected module or `ai-planned` for semantic-cost planning.
+- `STOCK_REVIEW_STRATEGY` defaults to `single-agent`; after the current scope reaches the Maven large-repo gate, step 4B may set `module-sequential` for one batch per current-scope module or `ai-planned` for semantic-cost planning.
 - Maven large-repo dependency-graph affinity (v1.6.0): `plan-large-batches.sh` uses the already-collected `module_dependency_edges` during packing — modules connected by a dependency edge get a 15% cost-tolerance relaxation (equivalent to ~×0.87 discount) so related modules pack into the same batch; neither the LOC hard limit nor `HARD_MAX_BATCH_COST=325000` may be exceeded. `plan.json` declares `affinity_enabled: true`; `batch.json` `affinity_edges` outputs the in-batch hit edges (same source/value as `module_dependency_edges`) for agent reference. Every batch route must also retain `review-input.json`; `run-manifest.json` coverage paths are repository-relative and stable `item_id` values must remain identical across clone/workspace roots.
 - Maven multi-module stock batching must never fall back to `languages/java/plan-file-batches.sh`; that planner is only for Maven single-module, Gradle, or unknown Java projects.
 - Pre-scan, batch-planning, and batch-agent formal scan Java file/line counts must include only `src/main/java` production sources; `src/test/java` test sources must not contribute to review scale, file batch manifests, or formal batch findings.

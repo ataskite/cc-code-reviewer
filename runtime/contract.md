@@ -37,11 +37,12 @@
 preflight
   -> preflight_summary
   -> review_mode
-  -> model_profile
   -> report_targets
   -> review_entry
   -> review_scope
+  -> current_scope_sizing
   -> optional_batch_strategy
+  -> model_profile
   -> optional_batch_count
   -> optional_concurrency
   -> final_confirmation
@@ -53,6 +54,8 @@ preflight
 - `preflight` 完成前不提问。
 - `preflight_summary` 只输出一次，且必须在第一个问题之前。
 - 每个状态等待用户响应后才能进入下一状态。
+- `current_scope_sizing` 必须按已确认的 `review_scope` 重算文件数和行数；只有当前范围达到门槛时才允许进入 `optional_batch_strategy`。
+- 小型 Maven 多模块存量审查跳过 `optional_batch_strategy`，保持 `single-agent`；全量审查不得显示“所选模块”文案。
 - 不允许通过用户输入中的命令行式参数绕过状态。
 - `final_confirmation` 必须独立存在。
 - fix 只执行确认后的问题集合。

@@ -95,8 +95,11 @@
 
 ## Maven 大仓库可恢复分批审查
 
-Maven 多模块存量审查使用 `plan-large-batches.sh`。其他文件级存量审查在
-`estimated_tokens > 500000` 时进入文件分批；所有模型统一按 1M 上下文规划。
+Maven 多模块存量审查先按当前已确认范围重算规模。只有
+`estimated_tokens > 500000` 或当前范围不少于 `120000` 行时才展示步骤 4B，
+选择分批策略后使用 `plan-large-batches.sh`；几千行的小型多模块仓库跳过 4B，
+直接使用单 agent。其他文件级存量审查在 `estimated_tokens > 500000` 时进入文件分批；
+所有模型统一按 1M 上下文规划。
 
 ```text
 用户：帮我审查 /workspace/large-enterprise-app
@@ -105,7 +108,7 @@ Maven 多模块存量审查使用 `plan-large-batches.sh`。其他文件级存�
 1. 审查模式：standard
 2. 报告保存方式：本地 Markdown 报告
 3. 审查入口：全量审查
-4. 存量审查方式：AI 智能规划分批
+4. 当前全量范围达到大仓门槛，存量审查方式：AI 智能规划分批
 5. 审查模型：最高能力档
 
 注意：模型必须在分批判定和批次选择之前确认。

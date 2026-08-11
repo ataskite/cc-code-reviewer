@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.6.1 — Java 外网漏洞审查补强 + 小仓跳过分批
+
+### 新增
+
+- **Java 安全审查维度补强（维度 5）**：针对外网应用高频漏洞新增专项检查与分级边界，确保外网可达的高危漏洞能被扫出并定级为 P0。
+  - **5.8 外网暴露面与常见 Web 漏洞**：新增子维度，覆盖 8 项外网高频漏洞——XSS（服务端拼接）、CSRF、开放重定向、CORS 配置错误、HTTP 安全响应头、认证爆破与用户枚举、**Default Deny / Fail-Closed（默认拒绝）**、业务逻辑竞态（安全视角）。
+  - **5.3 数据保护脱敏分层**：强化「数据保护与敏感信息」子维度，新增 FII（First-Party Identifiable Information）分层脱敏要求，覆盖存储脱敏、传输脱敏、日志脱敏、第三方外传脱敏四层，要求 DTO 序列化用统一序列化器而非逐处手写。
+  - **安全问题分级边界**：新增五段式分级（P0/P1/P2/P3/待确认），明确外网可达且证据完整的 RCE（反序列化、命令注入、SSRF 打云元数据）、认证绕过、水平越权、SQL 注入、存储型 XSS = P0；内网可达或需前置条件 = P1。同步到 `agents/cc-code-reviewer.md`，对齐性能分级边界的双份模式。
+  - **契约测试加固**：`tests/test_contract_docs.sh` 新增 5 条断言，保护「安全问题分级边界」及其分级条目，对称于性能分级边界的契约保护。
+- **Maven 多模块小仓库跳过分批**：新增 `scripts/core/decide-batch-mode.sh`，在步骤 4 确认 `REVIEW_SCOPE` 后按当前范围重算规模。只有 `estimated_tokens > 500000` 或 `REVIEW_LINE_COUNT >= 120000` 时才进入步骤 4B 选择分批策略；几千行的小型多模块仓库直接使用单 agent，不再强制分批。
+  - 交互状态机新增 `current_scope_sizing` 状态（`runtime/contract.md`），位于 `review_scope` 之后、`optional_batch_strategy` 之前。
+  - `STOCK_REVIEW_STRATEGY` 默认为 `single-agent`，只有当前范围达到大仓门槛后步骤 4B 才可能设为 `module-sequential` 或 `ai-planned`。
+  - 全量审查必须显示「全部模块」，不得显示「所选模块」。
+
+### 修复
+
+- 修正 FastAPI CORS 规则表述：`allow_origins=["*"]` + `allow_credentials=True` 会被浏览器拒绝 credentialed CORS，通常属于配置/功能错误；真正的安全风险是反射任意 Origin 或过宽 Origin 白名单同时允许 credentials。
+- 架构图引用更新为 `architecture-overview-v1.6.0.png`。
+
+### 变更
+
+- **交互状态机顺序调整**：`model_profile` 后移至 `current_scope_sizing` 与 `optional_batch_strategy` 之后、`optional_batch_count` 之前——模型选择必须在分批判定之后，但小仓跳过 4B 时模型仍先于批次规划。
+- **Java 审查框架版本**：`references/languages/java/review-framework.md` 5.4 → 5.5；`references/report-format.md` 报告版本同步 5.4 → 5.5。
+
+### 升级方式
+
+三端插件已指向 1.6.1。Claude Code / Codex / ZCode 用户重新加载插件即可（`/reload-plugins` 或对应入口）。
+
 ## 1.6.0 — 吸收 OpenCodeReview 精华
 
 ### 新增

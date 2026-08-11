@@ -55,7 +55,7 @@
 - `Depends(get_current_user)` 缺失：路由未保护
 - OAuth2/JWT：`python-jose`/`PyJWT` 算法未显式指定（`algorithms=["HS256"]`），`none` 算法攻击
 - OAuth2 scopes：`Security(scopes=["admin"])` 未校验，仅文档层
-- CORS：`CORSMiddleware` 的 `allow_origins=["*"]` + `allow_credentials=True` 非法且危险
+- CORS：`CORSMiddleware` 的 `allow_origins=["*"]` + `allow_credentials=True` 会被浏览器拒绝 credentialed CORS，通常属于配置/功能错误；真正的安全风险是反射任意 Origin 或过宽 Origin 白名单同时允许 credentials
 
 ### 输入校验
 - `Path`/`Query` 参数：未限定类型与范围（`Path(..., ge=1)`/`Query(..., max_length=100)`）

@@ -267,9 +267,35 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 - 识别证据超过 80 字可截断，但不得截断技术栈名称、建议维度和专项规则
 - 摘要表最多展示 12 个技术栈；超过 12 个时追加 `另有 {N} 个技术栈未在摘要表中展示，完整结果已注入子 agent。`
 
+### 第五步之后：按当前审查范围固化规模与分批门槛
+
+**时机**：步骤 4 确定 `REVIEW_SCOPE` 后、步骤 4B 和模型选择之前执行。分批判定只能使用当前已确认范围，禁止继续沿用全仓预扫描规模。
+
+- 进入步骤 3 的存量审查分支时先设置 `STOCK_REVIEW_STRATEGY=single-agent`，避免复用上一轮或上一入口的分批状态。
+- `LANGUAGE_ID=java`：调用 `languages/java/collect-source-files.sh "$PROJECT_DIR" "$REVIEW_SCOPE"` 固化当前范围；全量审查传入 `全量代码`，指定模块传入已校验的模块路径列表。
+- `LANGUAGE_ID=frontend|python`：调用对应 `collect-source-files.sh`；`REVIEW_SCOPE!=全量代码` 时再调用对应 `filter-source-manifest.sh` 收敛当前范围。
+- 从收敛后的 manifest 重新计算 `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT`。即使预扫描显示整个仓库很大，只要用户选择的当前范围未达到门槛，也不得进入分批。
+- 增量审查固定不分批，后续仍由 `prepare-review-input.sh` 给出最终增量规模。
+
+随后先以默认的 `single-agent` 调用确定性判定脚本：
+
+```bash
+BATCH_DECISION="$(bash "${PLUGIN_ROOT}/scripts/core/decide-batch-mode.sh" \
+  "$PROJECT_TYPE" "$REVIEW_TYPE" "$REVIEW_FILE_COUNT" "$REVIEW_LINE_COUNT" \
+  "$STOCK_REVIEW_STRATEGY")"
+ESTIMATED_TOKENS="$(printf '%s\n' "$BATCH_DECISION" | sed -n 's/^ESTIMATED_TOKENS=//p')"
+STEP_4B_REQUIRED="$(printf '%s\n' "$BATCH_DECISION" | sed -n 's/^STEP_4B_REQUIRED=//p')"
+STOCK_REVIEW_STRATEGY="$(printf '%s\n' "$BATCH_DECISION" | sed -n 's/^STOCK_REVIEW_STRATEGY=//p')"
+BATCH_MODE="$(printf '%s\n' "$BATCH_DECISION" | sed -n 's/^BATCH_MODE=//p')"
+MAVEN_LARGE_REPO_MODE="$(printf '%s\n' "$BATCH_DECISION" | sed -n 's/^MAVEN_LARGE_REPO_MODE=//p')"
+# 其他固定键可按同样方式解析。不得 eval 脚本输出。
+```
+
+脚本输出 `ESTIMATED_TOKENS`、`STEP_4B_REQUIRED`、`STOCK_REVIEW_STRATEGY`、`BATCH_MODE` 和 `MAVEN_LARGE_REPO_MODE`。只有 `STEP_4B_REQUIRED=true` 才执行步骤 4B；用户选择分批策略后，必须用新策略再次调用该脚本，最终结果是后续路径分支的唯一依据。禁止由主 Skill 口头估算或仅凭 `PROJECT_TYPE=maven-multi` 设置 `BATCH_MODE=true`。
+
 ### 第五步之后：选择审查模型 + 固定 1M 上下文
 
-**时机**：在步骤 4B（选择存量审查方式）之后、分批判定之前执行。
+**时机**：在当前范围规模固化与可选步骤 4B 之后、批次规划之前执行。
 
 不再读取底层模型映射或侦测上下文窗口。模型选择前直接设置固定分批常量：
 
@@ -309,23 +335,23 @@ CONTEXT_TIER=large
 
 **时机**：在模型选择 + 固定 1M 常量设置完成后、步骤 5 前执行判定。
 
-**公式**（固定 1M 上下文）：
+**确定性判定**（固定 1M 上下文）：
 ```
 estimated_tokens = REVIEW_FILE_COUNT × 500 + REVIEW_LINE_COUNT × 3
-BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
-  estimated_tokens > 500000
-  OR STOCK_REVIEW_STRATEGY=module-sequential
-  OR STOCK_REVIEW_STRATEGY=ai-planned
-)
+非 Maven 多模块：BATCH_MODE = 存量审查 AND estimated_tokens > 500000
+Maven 多模块：只有当前范围达到 estimated_tokens > 500000 或 REVIEW_LINE_COUNT >= 120000，
+               且用户在步骤 4B 选择 module-sequential / ai-planned，BATCH_MODE 才为 true
 ```
+
+以上规则必须由 `scripts/core/decide-batch-mode.sh` 执行。小型 Maven 多模块项目即使是全量存量审查，也保持 `STOCK_REVIEW_STRATEGY=single-agent`、`BATCH_MODE=false`；不得展示步骤 4B，不得生成批次计划。
 
 **前提**：分批模式仅对存量审查生效。增量审查的变更文件数通常远低于阈值；即使超过阈值，batch agent 缺少增量上下文（GIT_LOG/CHANGED_FILES），无法判断问题是变更引入还是存量，因此不进入分批。
 
 **参数来源**：
 - `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 的来源按语言分支：
-  - `LANGUAGE_ID=java`：从 languages/java/project-scan.sh 输出中解析（`Java文件总数` 和 `代码总行数`），口径仅包含 `src/main/java` 生产源码
-  - `LANGUAGE_ID=frontend`：从前端 `scan-project.sh` 输出的 PROFILE_SCHEMA 行解析（`SOURCE_FILE_COUNT` 和 `SOURCE_LINE_COUNT`），口径仅包含 `src/` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`
-  - `LANGUAGE_ID=python`：从 Python `scan-project.sh` 输出的 PROFILE_SCHEMA 行解析（`SOURCE_FILE_COUNT` 和 `SOURCE_LINE_COUNT`），口径仅包含 `src/` 或顶层包下生产 `.py`
+  - `LANGUAGE_ID=java`：从步骤 4 后 `collect-source-files.sh` 固化的当前范围 manifest 统计，口径仅包含 `src/main/java` 生产源码
+  - `LANGUAGE_ID=frontend`：从步骤 4 后收集并按需过滤的当前范围 manifest 统计，口径仅包含 `src/` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`
+  - `LANGUAGE_ID=python`：从步骤 4 后收集并按需过滤的当前范围 manifest 统计，口径仅包含 `src/` 或顶层包下生产 `.py`
 - `500`：每个文件的工具调用 + agent 评估开销（token）
 - `3`：每行代码平均 token 数
 - `500000`：1M 上下文中留给文件内容的固定上限，其余空间留给系统提示、工具调用、跨文件分析和报告输出
@@ -338,18 +364,17 @@ BATCH_MODE = REVIEW_TYPE = 存量审查 AND (
 
 ### Maven 大仓库模式判定
 
-仅当以下条件全部满足时进入 Maven 大仓库模式：
+仅当确定性脚本输出 `MAVEN_LARGE_REPO_MODE=true` 时进入 Maven 大仓库模式。其前提全部成立：
 - `PROJECT_TYPE=maven-multi`（Maven 多模块）
 - `REVIEW_TYPE=存量审查`
-- `REVIEW_SCOPE=全量代码` 或 指定模块路径列表
-- `STOCK_REVIEW_STRATEGY=ai-planned` 或 `module-sequential`
-- `TOTAL_JAVA_LOC >= 120000`，或用户已在存量审查方式中明确选择分批策略
+- 当前 `REVIEW_SCOPE` 固化后的 `estimated_tokens > 500000` 或 `REVIEW_LINE_COUNT >= 120000`
+- 用户已在步骤 4B 选择 `STOCK_REVIEW_STRATEGY=ai-planned` 或 `module-sequential`
 
-只要 `PROJECT_TYPE=maven-multi` 且用户已经选择 `STOCK_REVIEW_STRATEGY=ai-planned` 或 `module-sequential`，就必须进入 Maven 大仓库模式。即使只选择一个模块、即使所选模块低于 `TOTAL_JAVA_LOC >= 120000` 自动阈值，也必须调用 `languages/java/plan-large-batches.sh`，并把 `REVIEW_SCOPE` 原样作为第 5 个参数传入。Maven 多模块存量分批绝不调用 `languages/java/plan-file-batches.sh`；该文件级 planner 只服务 Maven 单模块、Gradle 或未知 Java 项目。
+进入 Maven 多模块存量分批后必须调用 `languages/java/plan-large-batches.sh`，并把 `REVIEW_SCOPE` 原样作为第 5 个参数传入。即使只选择一个模块，只要当前范围已达到门槛并选定分批策略，也不得改走文件级 planner。Maven 多模块存量分批绝不调用 `languages/java/plan-file-batches.sh`；该文件级 planner 只服务 Maven 单模块、Gradle 或未知 Java 项目。
 
 固定 1M 上下文下的判定与批次上限：
 ```text
-TOTAL_JAVA_LOC >= 120000
+REVIEW_LINE_COUNT >= 120000
 TARGET_BATCH_LOC = 250000
 SOFT_MIN_BATCH_LOC = 150000
 SOFT_MAX_BATCH_LOC = 250000
@@ -371,7 +396,7 @@ Maven 大仓库规划使用 semantic-cost batching：
 - tiny tail batches 必须合并、转为 context，或写明无法合法合并的原因
 - `context_roots` 只用于理解，受 context cost 上限约束，不计入 Java 文件覆盖率
 
-Maven 大仓库模式仍然只对存量审查生效。增量审查、Gradle 项目、单模块项目继续走现有流程。指定模块审查可以进入 Maven 大仓库模式：`ai-planned` 使用 semantic-cost batching 在所选模块内智能拆分，`module-sequential` 按所选模块依次启动批次；模块过大时必须提醒用户但不阻断。
+Maven 大仓库模式仍然只对达到当前范围门槛的存量审查生效。增量审查、未达门槛的 Maven 多模块项目、Gradle 小项目和单模块小项目继续走单 agent 流程。指定模块审查达到门槛后可以进入 Maven 大仓库模式：`ai-planned` 使用 semantic-cost batching 在所选模块内智能拆分，`module-sequential` 按所选模块依次启动批次；模块过大时必须提醒用户但不阻断。
 
 Maven 大仓库模式必须在步骤 1 确定 `REVIEW_MODE` 且步骤 3/4 确定审查入口与范围后、步骤 5 选择本轮执行批次前完成规划；规划完成后必须立即展示分批表格和推荐计划，再进入 INTERACT。
 
@@ -683,10 +708,11 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 8. 设置固定 1M 上下文常量（`CONTEXT_WINDOW_TOKENS=1000000`、`CONTEXT_SCALE=5`）
 9. 读 ignore 规则 → 输出预扫描摘要
 10. INTERACT 交互（模式/报告/入口/范围…）
-11. [分批] `languages/java/plan-large-batches.sh` 或 `plan-file-batches.sh`
-12. [分批] `core/show-batch-status.sh` → 展示批次状态
-13. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
-14. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
+11. `core/decide-batch-mode.sh` → 按当前范围决定是否展示步骤 4B / 是否分批
+12. [分批] `languages/java/plan-large-batches.sh` 或 `plan-file-batches.sh`
+13. [分批] `core/show-batch-status.sh` → 展示批次状态
+14. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
+15. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
 
 ### 前端扫描流程
 
@@ -700,10 +726,11 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 8. 设置固定 1M 上下文常量（`CONTEXT_WINDOW_TOKENS=1000000`、`CONTEXT_SCALE=5`）
 9. 读 ignore 规则 → 输出预扫描摘要
 10. INTERACT 交互（模式/报告/入口/范围…）
-11. [分批] `core/plan-file-batches.sh` → 前端文件级分批
-12. [分批] `core/show-batch-status.sh` → 展示批次状态
-13. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
-14. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
+11. `core/decide-batch-mode.sh` → 按当前范围确定单 agent / 文件级分批
+12. [分批] `core/plan-file-batches.sh` → 前端文件级分批
+13. [分批] `core/show-batch-status.sh` → 展示批次状态
+14. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
+15. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
 
 
 ### Python 扫描流程
@@ -718,10 +745,11 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 8. 设置固定 1M 上下文常量（`CONTEXT_WINDOW_TOKENS=1000000`、`CONTEXT_SCALE=5`）
 9. 读 ignore 规则 -> 输出预扫描摘要
 10. INTERACT 交互（模式/报告/入口/范围…）
-11. [分批] `core/plan-file-batches.sh` -> Python 文件级分批
-12. [分批] `core/show-batch-status.sh` -> 展示批次状态
-13. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
-14. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
+11. `core/decide-batch-mode.sh` -> 按当前范围确定单 agent / 文件级分批
+12. [分批] `core/plan-file-batches.sh` -> Python 文件级分批
+13. [分批] `core/show-batch-status.sh` -> 展示批次状态
+14. [分批] 启动 agent → `core/merge-batch-results.sh` 合并
+15. [增量] `core/preview-recent-commits.sh` + `core/prepare-incremental.sh`
 
 ---
 
@@ -798,9 +826,9 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 - multiSelect: false
 
 **变量赋值**：
-- 增量审查 → REVIEW_ENTRY=增量审查，REVIEW_TYPE=增量审查
-- 全量审查 → REVIEW_ENTRY=全量审查，REVIEW_TYPE=存量审查，REVIEW_SCOPE=全量代码
-- 指定模块 → REVIEW_ENTRY=指定模块，REVIEW_TYPE=存量审查
+- 增量审查 → REVIEW_ENTRY=增量审查，REVIEW_TYPE=增量审查，STOCK_REVIEW_STRATEGY=single-agent
+- 全量审查 → REVIEW_ENTRY=全量审查，REVIEW_TYPE=存量审查，REVIEW_SCOPE=全量代码，STOCK_REVIEW_STRATEGY=single-agent
+- 指定模块 → REVIEW_ENTRY=指定模块，REVIEW_TYPE=存量审查，STOCK_REVIEW_STRATEGY=single-agent
 
 ### 步骤 4：选择审查范围（条件步骤）
 
@@ -986,24 +1014,32 @@ Python 可选分区由 `scan-project.sh` 基于最终 source manifest 输出的 
 ### 步骤 4B：选择存量审查方式（条件步骤）
 
 **触发条件**：
-- REVIEW_TYPE=存量审查
-- PROJECT_TYPE=maven-multi
+- 当前范围已完成 manifest 固化和规模重算
+- `scripts/core/decide-batch-mode.sh` 输出 `STEP_4B_REQUIRED=true`
+
+也就是说，只有 `REVIEW_TYPE=存量审查`、`PROJECT_TYPE=maven-multi`，且**当前审查范围**满足 `ESTIMATED_TOKENS > 500000` 或 `REVIEW_LINE_COUNT >= 120000` 时才展示本步骤。几千行的小型 Maven 多模块仓库必须跳过本步骤并保持 `STOCK_REVIEW_STRATEGY=single-agent`、`BATCH_MODE=false`。
 
 **必须调用 INTERACT 工具，参数如下**：
 - question: "请选择存量审查方式"
 - header: "审查方式"
-- options:
-  - label: "按所选模块依次启动"
-    description: "每个所选模块对应一个批次；模块过大时提醒但不阻断，适合按业务域推进"
+- options（第一项必须根据 `REVIEW_SCOPE` 动态生成，禁止把全量审查称为“所选模块”）：
+  - `REVIEW_SCOPE=全量代码` 时：
+    - label: "按全部模块依次启动"
+    - description: "当前全量范围内每个模块对应一个批次；模块过大时提醒但不阻断"
+  - `REVIEW_SCOPE!=全量代码` 时：
+    - label: "按所选模块依次启动"
+    - description: "当前已选模块各对应一个批次；模块过大时提醒但不阻断"
   - label: "AI 智能规划分批"
     description: "按语义单元和 review cost 自动拆分，适合超大模块或希望批次更均衡时使用"
 - multiSelect: false
 
 **变量赋值**：
-- 按所选模块依次启动 → STOCK_REVIEW_STRATEGY=module-sequential
+- 按全部模块依次启动 / 按所选模块依次启动 → STOCK_REVIEW_STRATEGY=module-sequential
 - AI 智能规划分批 → STOCK_REVIEW_STRATEGY=ai-planned
 
-当用户选择 `module-sequential` 且任一所选模块超过 `HARD_MAX_BATCH_LOC` 或 `HARD_MAX_BATCH_COST` 时，必须在确认计划前提示该模块为大批次，可能耗时更长或消耗更多 token，但不得阻断执行。
+赋值后必须再次调用 `scripts/core/decide-batch-mode.sh`，并以其输出覆盖 `BATCH_MODE` 和 `MAVEN_LARGE_REPO_MODE`。不得直接因为用户看到步骤 4B 就自行设置分批状态。
+
+当用户选择 `module-sequential` 且当前范围内任一模块超过 `HARD_MAX_BATCH_LOC` 或 `HARD_MAX_BATCH_COST` 时，必须在确认计划前提示该模块为大批次，可能耗时更长或消耗更多 token，但不得阻断执行。
 
 ### 步骤 5：选择本轮执行批次（Maven 大仓库模式）
 
@@ -1058,7 +1094,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 **触发条件**：BATCH_MODE=true。不满足时跳过此步骤。
 
 **前置计算**：触发此步骤前，必须先完成分批计算（见「分批计算」章节），得到 BATCH_COUNT。
-- 若 `PROJECT_TYPE=maven-multi` 且 `STOCK_REVIEW_STRATEGY=module-sequential|ai-planned`，必须先完成 Maven 大仓库模式的步骤 5 批次表展示和本轮执行批次选择；不得改走文件级 planner。
+- 若 `MAVEN_LARGE_REPO_MODE=true`，必须先完成 Maven 大仓库模式的步骤 5 批次表展示和本轮执行批次选择；不得改走文件级 planner。
 - 若 `LANGUAGE_ID=java` 且不满足 Maven 大仓库模式，但 `BATCH_MODE=true`（Maven 单模块、Gradle 或未知 Java 项目），必须先调用 `languages/java/plan-file-batches.sh` 生成文件级批次，并把脚本输出的 `简要分批计划` 原样展示到控制台；不得只输出总批次数后直接询问并发数。
 - 若 `LANGUAGE_ID=frontend` 且 `BATCH_MODE=true`，必须先调用 `scripts/core/plan-file-batches.sh` 生成前端文件级批次，并确认 `plan.json budget.context_scale=5`、`budget.context_window_tokens=1000000`。
 - 若 `LANGUAGE_ID=python` 且 `BATCH_MODE=true`，必须先调用 `scripts/core/plan-file-batches.sh` 生成 Python 文件级批次，并确认 `plan.json budget.context_scale=5`、`budget.context_window_tokens=1000000`。
@@ -1187,9 +1223,9 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 
 **固定预算门禁**：任何新生成的 `plan.json` 都必须写入 `budget.context_scale=5` 和 `budget.context_window_tokens=1000000`。文件级计划在未显式设置 `CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET` 时还必须写入 `budget.batch_token_budget=500000`；不满足时必须重新运行对应 planner，不得展示或执行旧的小窗口计划。
 
-### Maven 多模块分批
+### Maven 多模块大仓分批
 
-Maven 多模块项目不得使用内联 Bash 数组分批，必须统一调用 `languages/java/plan-large-batches.sh`：
+`MAVEN_LARGE_REPO_MODE=true` 后，Maven 多模块项目不得使用内联 Bash 数组分批，必须统一调用 `languages/java/plan-large-batches.sh`。未达到当前范围门槛的 Maven 多模块项目不得进入本节：
 
 ```bash
 SEMANTIC_LEVEL="maven-static"
@@ -1399,12 +1435,12 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `REVIEW_ENTRY` | 交互步骤3 | `增量审查` / `全量审查` / `指定模块` |
 | `REVIEW_TYPE` | 交互步骤3 | `增量审查` / `存量审查` |
 | `REVIEW_SCOPE` | 交互步骤4 | `最近5次提交` / `全量代码` / `yudao-module-mes,yudao-framework` |
-| `STOCK_REVIEW_STRATEGY` | 交互步骤4B（仅 Maven 多模块存量） | `module-sequential` / `ai-planned` |
+| `STOCK_REVIEW_STRATEGY` | 步骤3默认 `single-agent`；仅达到当前范围门槛时由步骤4B覆盖 | `single-agent` / `module-sequential` / `ai-planned` |
 | `PROJECT_SCAN_RESULT` | languages/java/project-scan.sh 完整输出 | 项目概况、模块结构 |
 | `SEMANTIC_LEVEL` | Java：`detect-code-intelligence.sh` 输出转换（`CODE_INTELLIGENCE_AVAILABLE=true` → `jdtls-lsp`，否则 `maven-static`）；前端：`CODE_INTELLIGENCE_PROVIDER=typescript-lsp` → `typescript-lsp`，否则 `none`；Python：`CODE_INTELLIGENCE_PROVIDER=pyright|pylsp|jedi` → 同名 LSP，`pyright-cli` → `pyright-cli`（仅 diagnostics），否则 `none` | `jdtls-lsp` / `typescript-lsp` / `pyright` / `pyright-cli` |
 | `DETECTED_TECH_STACK` | 从 `PROJECT_SCAN_RESULT` 的 `TECH_STACK:` 行解析，来源为各语言依赖指纹 | `Spring Boot, MyBatis, Redis/Cache` |
-| `REVIEW_FILE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `76` |
-| `REVIEW_LINE_COUNT` | 从 `PROJECT_SCAN_RESULT` 解析 | `16637` |
+| `REVIEW_FILE_COUNT` | 步骤4后从当前范围 manifest 重算；增量执行时再由 `REVIEW_INPUT_PATH.selected_item_count` 覆盖 | `76` |
+| `REVIEW_LINE_COUNT` | 步骤4后从当前范围 manifest 重算；增量执行时再由 `REVIEW_INPUT_PATH.selected_line_count` 覆盖 | `16637` |
 | `REVIEW_FRAMEWORK_PATH` | 按 `LANGUAGE_ID` 分支：`java` → `references/languages/java/review-framework.md`；`frontend` → `references/languages/frontend/review-framework.md`；`python` → `references/languages/python/review-framework.md`。启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/java/review-framework.md` |
 | `REACT_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/react-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/react-rules.md` |
 | `VUE_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/vue-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/vue-rules.md` |

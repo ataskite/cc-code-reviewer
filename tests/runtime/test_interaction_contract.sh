@@ -43,6 +43,8 @@ grep -q 'fix 只执行确认后的问题集合' "$FIX_SKILL" \
 # 5. runtime/contract.md 必须定义交互状态机与降级语义
 grep -q '人工确认状态机' "$CONTRACT" || fail "contract.md 必须定义人工确认状态机"
 grep -q 'preflight_summary' "$CONTRACT" || fail "contract.md 必须定义摘要先于问题"
+grep -q 'current_scope_sizing' "$CONTRACT" || fail "contract.md 必须在分批策略前定义当前范围规模重算"
+grep -q '小型 Maven 多模块存量审查跳过' "$CONTRACT" || fail "contract.md 必须声明小型 Maven 多模块跳过分批策略"
 grep -q 'final_confirmation' "$CONTRACT" || fail "contract.md 必须定义最终确认独立状态"
 grep -q 'sequential-text' "$CONTRACT" || fail "contract.md 必须定义逐轮单问降级模式"
 
