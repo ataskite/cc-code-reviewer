@@ -1107,6 +1107,18 @@ grep -q 'python)   LOC_LABEL="Python 行数"' "$ROOT_DIR/scripts/core/show-batch
 # Python 框架版本页脚
 grep -q 'Python 1.1' "$PY_FRAMEWORK" || { echo "FAIL: Python 框架必须标注版本 Python 1.1" >&2; exit 1; }
 
+# Java / 前端框架版本页脚
+grep -q '本手册版本：5.7' "$ROOT_DIR/references/languages/java/review-framework.md" || { echo "FAIL: Java 框架必须标注版本 5.7" >&2; exit 1; }
+grep -q '本手册版本：前端 2.4' "$FE_FRAMEWORK" || { echo "FAIL: 前端框架必须标注版本 前端 2.4" >&2; exit 1; }
+
+# 报告版本必须与 Java 框架版本同步（1.6.1 起的同步惯例，防止再次脱钩）
+JAVA_FW_VERSION="$(sed -n 's/.*本手册版本：\([0-9][0-9.]*\)\*.*/\1/p' "$ROOT_DIR/references/languages/java/review-framework.md" | head -1)"
+REPORT_VERSION="$(sed -n 's/^\*\*报告版本\*\*: \([0-9][0-9.]*\)/\1/p' "$REPORT_FORMAT_FILE" | head -1)"
+if [ -z "$JAVA_FW_VERSION" ] || [ "$JAVA_FW_VERSION" != "$REPORT_VERSION" ]; then
+  echo "FAIL: report-format 报告版本($REPORT_VERSION) 必须与 Java 框架版本($JAVA_FW_VERSION) 同步" >&2
+  exit 1
+fi
+
 # === 脚本目录重构断言 ===
 # SKILL.md 必须含「脚本调用顺序」编排段（执行顺序归文档，不编码进文件名）
 grep -q "脚本调用顺序" "$SKILL_FILE" || { echo "FAIL: cc-code-reviewer SKILL.md 缺「脚本调用顺序」段" >&2; exit 1; }

@@ -183,7 +183,7 @@ rules:
 
 ## 架构
 
-![cc-code-reviewer v1.6 架构总览](docs/assets/architecture-overview-v1.6.2.png)
+![cc-code-reviewer v1.6.2 架构总览](docs/assets/architecture-overview-v1.6.2.png)
 
 插件采用 skill-only 入口和专属子 agent，三端共享同一审查内核：
 
