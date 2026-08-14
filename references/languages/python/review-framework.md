@@ -99,13 +99,16 @@
 - **批量操作**：循环 `save()` 而非 `bulk_create`/`bulk_update`、`delete()` 级联未评估
 
 ### 6. 安全
-- **反序列化 RCE**：`pickle.loads`/`pickle.load`（CWE-502，可执行任意代码）、`marshal.loads`、`yaml.load` 未指定 `SafeLoader`（CWE-502）
+- **反序列化 RCE**：`pickle.loads`/`pickle.load`（CWE-502，可执行任意代码）、`marshal.loads`、`yaml.load` 未指定 `SafeLoader`（CWE-502）、`shelve.open`（内部用 pickle）、`jsonpickle.decode`、`dill`、含 `__reduce__` 的对象被反序列化
 - **eval/exec**：`eval()`/`exec()` 处理用户输入、`ast.literal_eval` 应替代 `eval` 的场景误用
 - **subprocess 注入**：`subprocess.run(shell=True)` + 用户输入（CWE-78）、`os.system`/`os.popen`
 - **SQL 注入**：见维度 5
+- **认证与授权缺失**：视图/路由/DRF viewset 缺鉴权装饰器或权限类、`@action` 未设 `permission_classes`、依赖全局配置但新接口未继承
+- **对象级越权（IDOR）**：`Model.objects.get(id=...)`/`get_object_or_404` 未带 owner 过滤、queryset 未按当前用户/归属字段过滤、DRF 未重写 `get_queryset` 限定范围
+- **多租户隔离**：queryset/写入未按租户/组织标识过滤、租户字段可被前端伪造、跨租户读写
 - **secrets 硬编码**：API key/token/密码直接写在源码、`.env` 提交到版本库、secret 写入日志
 - **路径穿越**：用户输入拼路径未规范化（`os.path.join` + `..`）、`open(user_path)` 未校验根目录
-- **SSRF**：`requests.get(user_url)`/`httpx.get(user_url)` 未校验内网地址
+- **SSRF**：用户可控 URL（经任意 HTTP 客户端：`requests`/`httpx`/`aiohttp`/`urllib` 或自封装 client）访问内网/云元数据地址，未做协议与域名白名单；URL 可控性需跨文件追溯，不得仅凭变量名判断
 - **XSS（Django 模板）**：`mark_safe`/`|safe` 过滤器渲染用户输入、Jinja2 `autoescape` 关闭
 - **依赖漏洞（OWASP 2025 A03）**：lockfile 未提交、未运行 `pip-audit`/`safety`、`postinstall` 等价物（`setup.py` 的恶意钩子）、provenance 缺失
 - **CSP**：Django CSP 头未配置、`X-Content-Type-Options`/`X-Frame-Options` 缺失
@@ -145,7 +148,7 @@
 - **自定义异常**：业务异常未定义专用类、异常继承层级混乱（应继承 `Exception` 而非 `BaseException`）
 - **全局错误处理**：Django middleware `process_exception`/FastAPI `exception_handler` 缺失、未统一错误响应格式
 - **日志规范**：`print` 代替 `logging`、日志级别误用（`info` 打详细 trace）、日志格式无结构化字段
-- **敏感信息**：日志/异常信息泄露 token/PII/密码、`DEBUG=True` 生产配置、Django `ADMINS` 邮件泄露堆栈
+- **敏感信息**：日志/异常信息泄露 token/PII/密码、`DEBUG=True` 生产配置、Django `ADMINS` 邮件泄露堆栈；**间接泄露**：模型 `__str__`/`__repr__` 返回含 PII 被日志间接打印、DRF/Pydantic serializer 未对敏感字段设 `write_only=True`/`extra=kwargs`、`logger.error(repr(obj))` 把整对象（含敏感字段）序列化进日志
 - **监控接入**：关键路径无 metrics、异常未上报 Sentry/Datadog、trace 缺失
 
 ### 11. 测试质量
@@ -181,5 +184,5 @@
 
 ---
 
-*本手册版本：Python 1.0（Django + FastAPI + 通用 Python，12 维度独立集）*
-*最后更新：2026-07-21*
+*本手册版本：Python 1.1（Django + FastAPI + 通用 Python，12 维度独立集）*
+*最后更新：2026-08-14*

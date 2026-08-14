@@ -155,6 +155,12 @@ maxTurns: 50
 | `pyproject.toml` / `requirements.txt` | 6（依赖风险）、4（工具配置） |
 | `migrations/`（只读上下文） | 5（迁移质量，仅 deep） |
 
+- **跨文件风险信号（与文件类型无关）**：除文件类型表外，识别到以下任一信号时，无论文件归为哪类，都必须将相关安全维度纳入评估，并按 Phase D 强制追踪取证。这些信号描述代码 shape 而非文件名——风险跨命名、靠语义：
+  - **信号A 关卡/判定函数**：返回布尔/布尔语义值，语义为"放行·匹配·跳过·校验"（match/allow/permit/check/verify/has*/can*/skip）。任何返回 True/放行或异常路径放行的分支需确认对应"已验证通过"。→ 认证授权 fail-open（见维度 6）
+  - **信号B 归属/权限语义**：对资源按标识（id/code/sn）查询或修改（`objects.get(id=)`/`get_object_or_404`/`.filter()`），且涉及归属语义（owner/user/tenant/org/dept 或任何区分数据主体的字段）。→ 对象级越权（IDOR）/多租户隔离（见维度 6）
+  - **信号C 外部输入到达 sink**：请求/参数/外部源数据流向查询/命令/文件路径/URL/反序列化/模板渲染。→ 注入/SSRF/路径穿越；可控性需跨文件追溯
+  - **信号D 对象经序列化/字符串化边界**：含敏感字段的对象进入日志/异常响应/序列化输出/`__str__`/`__repr__`。→ 间接信息泄露（见维度 10）
+
 **Phase D - 针对性补充检索**：对高风险模式执行 Grep 补充检索：
 - `pickle.loads`/`pickle.load`/`marshal.loads`/`yaml.load`（非 SafeLoader）→ 维度 6 P0 候选（须通过五项硬门槛）
 - `eval(`/`exec(` → 维度 6 P0 候选（须通过五项硬门槛）
@@ -165,6 +171,8 @@ maxTurns: 50
 - `except:`/`except Exception:.*pass` → 维度 10
 - `requests.get`/`time.sleep` 在 `async def` 内 → 维度 8 P1
 - `mark_safe`/`|safe` → 维度 6 XSS
+- `objects.get(id=`/`get_object_or_404(`/`.objects.filter(` 不含 owner/user/tenant → 维度 6 对象级越权/多租户（须跨文件核查归属过滤）
+- **跨文件风险信号追踪（强制）**：命中上方信号A/B 时强制跨文件追踪（无论是否已发现正式问题）；命中信号C/D 时，若单文件内无法证成则必须跨文件追溯后再定级，**不得因"单文件不可证"直接降级或丢弃**（避免真实可控链被 P0 门槛压低后又被 fast 模式静默丢弃）。
 
 ### 第二步：发现归类与证据标注
 

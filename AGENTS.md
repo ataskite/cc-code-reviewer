@@ -68,8 +68,8 @@ flowchart TD
 - Pre-scan: project detection → branch detection → project scan → jdtls/code-intelligence detection → lark-cli detection
 - Reads `.cc-code-reviewer/ignore/issues.yml` after pre-scan and injects AI-readable skip rules into the scan agent
 - Interactive mode: Collect user config via INTERACT after pre-scan: review mode → model → report handling → review entry → scope → optional stock strategy → optional batch selection/concurrency → final confirmation
-- Batch mode: Auto-triggered for large stock reviews or when a Maven multi-module stock strategy is selected; uses deterministic planner scripts, dispatches parallel sub-agents, gates merge on current-run batch status, and reports included/leftover batches
-- Maven large-repo mode: for Maven multi-module stock full-code or selected-module reviews using `module-sequential` or `ai-planned`, creates `.cc-code-reviewer/runs/{RUN_ID}` with atomic module/directory batches, status files, resumable execution, and staged/full merge reports
+- Batch mode: Auto-triggered only when the confirmed stock-review scope has `estimated_tokens > 1000000`; uses deterministic planner scripts, dispatches parallel sub-agents, gates merge on current-run batch status, and reports included/leftover batches
+- Maven large-repo mode: after the confirmed Maven multi-module scope exceeds 1M estimated tokens and the user selects `module-sequential` or `ai-planned`, creates `.cc-code-reviewer/runs/{RUN_ID}` with atomic module/directory batches, status files, resumable execution, and staged/full merge reports
 - File batch mode: for Maven single-module, Gradle, or unknown Java projects when `BATCH_MODE=true`, uses `languages/java/plan-file-batches.sh` and `file-token-batching`
 - Feishu upload: after the review sub-agent returns the local report file (single-agent mode) or after batch merge (batch mode), the main skill performs all Feishu cloud-doc / bitable uploads per `FEISHU_UPLOAD_OPTION`; sub-agents never upload to Feishu
 - **Never** execute code review itself
@@ -275,13 +275,13 @@ Verify installation by triggering the skill with a Java review request such as `
 - Scan always runs the INTERACT flow after pre-scan.
 - fast 模式只输出满足全部 P0 硬门槛的问题；INTERACT 选项必须直观标注“仅输出 P0”，最终执行计划必须再次显示“输出级别：仅 P0”。
 - The flow confirms review mode and report handling before review entry; after entry, scope, and optional Maven stock strategy, it confirms the model before any batch decision, followed by optional batch execution count, optional concurrency, and final execution.
-- After scope selection, the Skill must recalculate file/line counts from the current-scope manifest and call `core/decide-batch-mode.sh`. Small Maven multi-module stock reviews stay single-agent and skip step 4B; full reviews must say "all modules", never "selected modules".
+- After scope selection, the Skill must recalculate file/line counts from the current-scope manifest and call `core/decide-batch-mode.sh`. Reviews with `estimated_tokens <= 1000000` stay single-agent; Maven multi-module reviews in that range skip step 4B. Full reviews must say "all modules", never "selected modules".
 - Module selection for large Maven projects must keep INTERACT payloads bounded: show module trees as normal text, keep fixed options small, and collect module paths through Other/free-form when needed.
 - Do not preserve command-line compatibility that bypasses interaction.
 
 ### Batch Planning Contract
 
-- Maven multi-module stock batching uses `languages/java/plan-large-batches.sh` only after the current review scope exceeds `estimated_tokens > 500000` or `REVIEW_LINE_COUNT >= 120000` and step 4B selects a batching strategy. Small Maven multi-module repositories remain single-agent.
+- Maven multi-module stock batching uses `languages/java/plan-large-batches.sh` only after the current review scope satisfies `estimated_tokens > 1000000` and step 4B selects a batching strategy. At or below 1M estimated tokens, Maven multi-module repositories remain single-agent.
 - `languages/java/plan-large-batches.sh` receives `PROJECT_DIR`, `REVIEW_MODE`, branch, `SEMANTIC_LEVEL`, `REVIEW_SCOPE`, and `STOCK_REVIEW_STRATEGY`. Its batch budget is fixed for 1M context (`CONTEXT_WINDOW_TOKENS=1000000`, `CONTEXT_SCALE=5`).
 - All supported models use fixed 1M-context batching. The shared file planner defaults to a 500000-token input budget and uses deterministic First-Fit Decreasing packing; `CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET` remains available for explicit file-batch tuning.
 - `STOCK_REVIEW_STRATEGY` defaults to `single-agent`; after the current scope reaches the Maven large-repo gate, step 4B may set `module-sequential` for one batch per current-scope module or `ai-planned` for semantic-cost planning.

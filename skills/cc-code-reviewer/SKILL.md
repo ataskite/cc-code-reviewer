@@ -338,8 +338,8 @@ CONTEXT_TIER=large
 **确定性判定**（固定 1M 上下文）：
 ```
 estimated_tokens = REVIEW_FILE_COUNT × 500 + REVIEW_LINE_COUNT × 3
-非 Maven 多模块：BATCH_MODE = 存量审查 AND estimated_tokens > 500000
-Maven 多模块：只有当前范围达到 estimated_tokens > 500000 或 REVIEW_LINE_COUNT >= 120000，
+非 Maven 多模块：BATCH_MODE = 存量审查 AND estimated_tokens > 1000000
+Maven 多模块：只有当前范围达到 estimated_tokens > 1000000，
                且用户在步骤 4B 选择 module-sequential / ai-planned，BATCH_MODE 才为 true
 ```
 
@@ -354,7 +354,9 @@ Maven 多模块：只有当前范围达到 estimated_tokens > 500000 或 REVIEW_
   - `LANGUAGE_ID=python`：从步骤 4 后收集并按需过滤的当前范围 manifest 统计，口径仅包含 `src/` 或顶层包下生产 `.py`
 - `500`：每个文件的工具调用 + agent 评估开销（token）
 - `3`：每行代码平均 token 数
-- `500000`：1M 上下文中留给文件内容的固定上限，其余空间留给系统提示、工具调用、跨文件分析和报告输出
+- `1000000`：自动开启分批的严格触发阈值；`estimated_tokens=1000000` 时仍走单 agent，只有大于该值才分批
+
+> 自动触发阈值与单批预算是两个概念：是否分批看 `estimated_tokens > 1000000`；进入文件级分批后，planner 的默认单批输入预算仍为 `500000`，用于给系统提示、工具调用、跨文件分析和报告输出留出空间。
 
 **判定结果**：
 - `BATCH_MODE=false` → 走现有单 agent 流程，不做任何改动
@@ -367,14 +369,14 @@ Maven 多模块：只有当前范围达到 estimated_tokens > 500000 或 REVIEW_
 仅当确定性脚本输出 `MAVEN_LARGE_REPO_MODE=true` 时进入 Maven 大仓库模式。其前提全部成立：
 - `PROJECT_TYPE=maven-multi`（Maven 多模块）
 - `REVIEW_TYPE=存量审查`
-- 当前 `REVIEW_SCOPE` 固化后的 `estimated_tokens > 500000` 或 `REVIEW_LINE_COUNT >= 120000`
+- 当前 `REVIEW_SCOPE` 固化后的 `estimated_tokens > 1000000`
 - 用户已在步骤 4B 选择 `STOCK_REVIEW_STRATEGY=ai-planned` 或 `module-sequential`
 
 进入 Maven 多模块存量分批后必须调用 `languages/java/plan-large-batches.sh`，并把 `REVIEW_SCOPE` 原样作为第 5 个参数传入。即使只选择一个模块，只要当前范围已达到门槛并选定分批策略，也不得改走文件级 planner。Maven 多模块存量分批绝不调用 `languages/java/plan-file-batches.sh`；该文件级 planner 只服务 Maven 单模块、Gradle 或未知 Java 项目。
 
 固定 1M 上下文下的判定与批次上限：
 ```text
-REVIEW_LINE_COUNT >= 120000
+estimated_tokens > 1000000
 TARGET_BATCH_LOC = 250000
 SOFT_MIN_BATCH_LOC = 150000
 SOFT_MAX_BATCH_LOC = 250000
@@ -761,7 +763,7 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 > - 不允许在一次回复中包含多个交互步骤的动作
 > - 用户响应后，处理结果、设置变量，然后才能进入下一步
 
-> **注意**：分支选择已在第二步（项目识别与分支检测）完成，本步骤从选择审查模式开始；审查模式和报告保存方式必须在审查入口前确认。审查模型已前移到分批判定之前选择。
+> **注意**：分支选择已在第二步（项目识别与分支检测）完成，本步骤从选择审查模式开始；审查模式和报告保存方式必须在审查入口前确认。
 
 ### 步骤 1：选择审查模式
 
@@ -1017,7 +1019,7 @@ Python 可选分区由 `scan-project.sh` 基于最终 source manifest 输出的 
 - 当前范围已完成 manifest 固化和规模重算
 - `scripts/core/decide-batch-mode.sh` 输出 `STEP_4B_REQUIRED=true`
 
-也就是说，只有 `REVIEW_TYPE=存量审查`、`PROJECT_TYPE=maven-multi`，且**当前审查范围**满足 `ESTIMATED_TOKENS > 500000` 或 `REVIEW_LINE_COUNT >= 120000` 时才展示本步骤。几千行的小型 Maven 多模块仓库必须跳过本步骤并保持 `STOCK_REVIEW_STRATEGY=single-agent`、`BATCH_MODE=false`。
+也就是说，只有 `REVIEW_TYPE=存量审查`、`PROJECT_TYPE=maven-multi`，且**当前审查范围**满足 `ESTIMATED_TOKENS > 1000000` 时才展示本步骤。`ESTIMATED_TOKENS <= 1000000` 的 Maven 多模块仓库必须跳过本步骤并保持 `STOCK_REVIEW_STRATEGY=single-agent`、`BATCH_MODE=false`。
 
 **必须调用 INTERACT 工具，参数如下**：
 - question: "请选择存量审查方式"
@@ -1147,12 +1149,6 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 - 2 路并发 → CONCURRENCY=2
 - 3 路并发 → CONCURRENCY=3
 - 并发数仅允许 `1..min(3, RUN_BATCH_COUNT)`，默认 `1`
-
-### 步骤 5C：（已前移）
-
-审查模型选择已前移到「第五步之后：选择审查模型 + 固定 1M 上下文」段（在分批判定之前执行）。此处不再重复询问。
-
-执行计划展示中的「审查模型」行直接引用前移步骤确定的 `MODEL_PROFILE`。
 
 ### 步骤 6：确认执行计划
 
@@ -1428,7 +1424,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `PROJECT_NAME` | `basename "$PROJECT_DIR"` | `spring-ai-agent-utils` |
 | `PROJECT_TYPE` | languages/java/project-scan.sh 脚本输出 | `maven-single` 等 |
 | `REVIEW_MODE` | 交互步骤1 | `fast` / `standard` 等 |
-| `MODEL_PROFILE` | 第五步之后（模型选择已前移至分批前） | `inherit` / `economy` / `balanced` / `maximum` |
+| `MODEL_PROFILE` | 第五步之后（分批判定之前） | `inherit` / `economy` / `balanced` / `maximum` |
 | `CONTEXT_SCALE` | 固定 1M 分批常量 | `5` |
 | `CONTEXT_WINDOW_TOKENS` | 固定 1M 分批常量 | `1000000` |
 | `FEISHU_UPLOAD_OPTION` | 交互步骤2 | `本地 Markdown 报告` 或 `飞书云文档, 飞书多维表格` 等 |

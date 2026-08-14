@@ -1,6 +1,6 @@
 {
   "name": "cc-code-reviewer",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "Java、前端族群（React/Vue2/Vue3/Node/TS/JS）与 Python（Django/FastAPI/通用 Python）代码审查与 report-driven fixing 报告驱动修复插件 for ZCode（Beta）",
   "author": { "name": "ataskite" },
   "license": "MIT",

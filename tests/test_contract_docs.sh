@@ -496,7 +496,7 @@ grep -q "core/show-batch-status.sh" "$SKILL_FILE"
 grep -q "Maven 多模块" "$SKILL_FILE"
 grep -q "存量审查" "$SKILL_FILE"
 grep -q "全量代码" "$SKILL_FILE"
-grep -q "REVIEW_LINE_COUNT >= 120000" "$SKILL_FILE"
+require_literal "$SKILL_FILE" "estimated_tokens > 1000000" "batch trigger must require more than 1M estimated tokens"
 
 grep -q "TARGET_BATCH_LOC = 250000" "$SKILL_FILE"
 grep -q "SOFT_MIN_BATCH_LOC = 150000" "$SKILL_FILE"
@@ -619,19 +619,25 @@ grep -q "review-batch-" "$AGENT_FILE"
 grep -q "阶段 A.*跳过" "$AGENT_FILE"
 grep -q "阶段 B.*跳过" "$AGENT_FILE"
 
-# Skill must have batch trigger formula
+# Skill must distinguish the 1M auto-trigger threshold from the 500k per-batch budget.
 grep -q "BATCH_MODE" "$SKILL_FILE"
 grep -q "estimated_tokens" "$SKILL_FILE"
-grep -q "500000" "$SKILL_FILE"
+require_literal "$SKILL_FILE" "estimated_tokens > 1000000" "batch trigger formula must use the 1M threshold"
+require_literal "$SKILL_FILE" 'planner 的默认单批输入预算仍为 `500000`' "file-batch budget must remain distinct from the trigger threshold"
+if grep -qE 'estimated_tokens > 500000|ESTIMATED_TOKENS > 500000|REVIEW_LINE_COUNT >= 120000' "$SKILL_FILE"; then
+  echo "batch trigger must not retain the old 500k-token or 120k-line gates" >&2
+  exit 1
+fi
 require_literal "$ROOT_DIR/README.md" "12 个前端维度" "README frontend dimension count must match the review framework"
 if grep -q "11 个前端维度" "$ROOT_DIR/README.md"; then
   echo "README must not retain the old 11-dimension frontend contract" >&2
   exit 1
 fi
-if grep -q "token > 100,000" "$EXAMPLES_FILE"; then
-  echo "examples must use the current 500000-token file-batch threshold" >&2
+if grep -qE 'token > 100,000|estimated_tokens > 500000|不少于 `120000` 行' "$EXAMPLES_FILE"; then
+  echo "examples must use the strict 1M-token batch trigger" >&2
   exit 1
 fi
+require_literal "$EXAMPLES_FILE" 'estimated_tokens > 1000000' "examples must document the strict 1M-token batch trigger"
 
 # Stock review entry must expose full and selected-module choices directly.
 require_literal "$SKILL_FILE" 'label: "增量审查"' "review entry must keep incremental review"
@@ -1099,7 +1105,7 @@ grep -q "emit python" "$ROOT_DIR/scripts/core/detect-language.sh" || { echo "FAI
 grep -q 'python)   COVERAGE_LABEL="Python 文件覆盖率"' "$ROOT_DIR/scripts/core/merge-batch-results.sh" || { echo "FAIL: merge-batch-results 必须含 python 覆盖率标签" >&2; exit 1; }
 grep -q 'python)   LOC_LABEL="Python 行数"' "$ROOT_DIR/scripts/core/show-batch-status.sh" || { echo "FAIL: show-batch-status 必须含 python 标签" >&2; exit 1; }
 # Python 框架版本页脚
-grep -q 'Python 1.0' "$PY_FRAMEWORK" || { echo "FAIL: Python 框架必须标注版本 Python 1.0" >&2; exit 1; }
+grep -q 'Python 1.1' "$PY_FRAMEWORK" || { echo "FAIL: Python 框架必须标注版本 Python 1.1" >&2; exit 1; }
 
 # === 脚本目录重构断言 ===
 # SKILL.md 必须含「脚本调用顺序」编排段（执行顺序归文档，不编码进文件名）

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.2 — 跨文件风险信号机制（三语言）+ 分批门槛统一 1M + 大仓分支检测修复
+
+### 变更
+
+- **跨文件风险信号机制三语言统一 + Python 越权检查点补缺**：把上版"default-deny 专用信号"泛化为通用「跨文件风险信号」（A 关卡/判定函数、B 归属/权限语义、C 外部输入达 sink、D 序列化/字符串化边界），Java/前端/Python 三个 agent 统一落地——阶段 C 命中信号即激活安全维度（不依赖文件类型/类名），阶段 D 命中 A/B 强制跨文件追踪、C/D 追溯后定级且不得直接丢弃。修复 OWASP A01 服务端越权/IDOR/多租户在 Python 框架的**完全缺失**（补 dim6 检查点 + Phase D 越权 grep）；Java/前端/Python 多处检查点去名词化（SSRF 去客户端 API 名绑定、敏感字段去固定字段名清单、认证爆破去 URL 关键词、业务竞态去场景列举、XSS 补间接 sink、env 泄露去前缀绑定、反序列化补 shelve/jsonpickle/dill）；三语言补间接信息泄露（`toString`/`__str__`/序列化边界）。框架版本：Java 5.7、前端 2.4、Python 1.1。
+- **Java default-deny 检测改为语义信号驱动（维度 5.8）**：将 default-deny / fail-open 的识别从「按类名（`*Filter`/`*Security`）识别鉴权中间件」重构为「按代码语义信号识别」。新增 S1–S4 四个与命名无关的代码信号（准入判定函数 / null→放行 / 语义重载 / 编排无兜底），命中即激活检查。修复名为 Service/Strategy/Handler 的鉴权链节点 fail-open 漏检（如 `RouteDealServiceImpl` 这类实现鉴权编排接口、却以 Service 命名的类）。`agents/cc-code-reviewer.md` 阶段 C 新增「语义信号维度升级」规则、阶段 D 新增 S3/S4 命中时强制跨文件追踪，打破「单文件内看不出问题→不追踪→永远拿不到跨文件证据」的死循环。审查框架版本 5.5 → 5.6。
+- **自动分批门槛提升到 100 万估算 token**：所有存量审查仅在 `estimated_tokens > 1000000` 时开启 batch；等于 100 万仍走单 agent。Maven 多模块不再使用 `REVIEW_LINE_COUNT >= 120000` 作为独立触发条件。文件级 planner 的单批输入预算仍保持 `500000`，与自动触发阈值分离。
+- **大仓分支检测 SIGPIPE 修复**：`scripts/core/detect-branches.sh` 不再用 `git for-each-ref | head -5`——大仓分支输出超过管道缓冲（64KB）时，`head` 提前关闭管道会让 git 收到 SIGPIPE(141)，在 `set -e` 下导致检测脚本异常退出（Linux 大仓复现）。改用 `--count=5` 在 git 层面限量，并对 `branch --show-current` 加 `|| true` 兜底分离头指针/老版本 git 的非 0 退出。`tests/test_phase2_git_branches.sh` 补充 >5 分支的回归测试。
+
 ## 1.6.1 — Java 外网漏洞审查补强 + 小仓跳过分批
 
 ### 新增

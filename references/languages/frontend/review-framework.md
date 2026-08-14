@@ -79,9 +79,9 @@
 - **乐观更新**：回滚与一致性
 
 ### 6. 安全
-- **XSS**：dangerouslySetInnerHTML、Vue `v-html`、用户输入直接渲染
+- **XSS**：`dangerouslySetInnerHTML`、Vue `v-html`、用户输入直接渲染；**间接 sink 同样需查**：`el.innerHTML =`（含 ref 操作）、第三方富文本组件（Quill/TinyMCE setContent）、模板字符串/`format()` 拼 HTML 字符串——不得只盯 `dangerouslySetInnerHTML`/`v-html` 两个 API 名
 - **前端凭据**：token 写 localStorage、公共代码硬编码
-- **客户端打包泄露**：`NEXT_PUBLIC_*` / `VITE_*` / `REACT_APP_*` 前缀 env 会被打进浏览器包——BFF token、第三方 API key、服务端 secret 误用这些命名空间即等于公开；source map 上线到 CDN 也会泄露原始代码
+- **客户端打包泄露**：任何会被打进浏览器包的客户端可见变量都可能泄露——典型是 `NEXT_PUBLIC_*`/`VITE_*`/`REACT_APP_*` 前缀 env，但也包括自定义 define 插件注入、`webpack.DefinePlugin`、无列举前缀的变量（如 `GATEWAY_KEY`/`DB_DSN`）误注入客户端 bundle；BFF token、第三方 API key、服务端 secret 误入即等于公开；source map 上线到 CDN 也会泄露原始代码。**不得仅凭"无列举前缀"判定安全**
 - **开放重定向**：用户可控 URL 跳转
 - **权限前置误判**：按钮隐藏、菜单过滤、路由 meta 只属于前端展示控制，不得当作后端授权证据
 - **BFF/Node 鉴权透传**：接口鉴权、token 透传、401/403 处理、租户隔离
@@ -158,5 +158,5 @@
 
 ---
 
-*本手册版本：前端 2.3（React + Vue2/Vue3 + Node，12 维度独立集；维度 12 仅 deep 启用）*
-*最后更新：2026-07-21*
+*本手册版本：前端 2.4（React + Vue2/Vue3 + Node，12 维度独立集；维度 12 仅 deep 启用）*
+*最后更新：2026-08-14*

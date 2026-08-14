@@ -109,7 +109,7 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 - 15 个审查维度：正确性、代码质量、异常处理、数据访问、安全、性能、资源管理、并发、缓存、消息队列、API 设计、架构、配置、测试、技术债等
 - 技术栈感知：Spring Boot、MyBatis / MyBatis Plus、JPA/Hibernate、Redis、Kafka/RocketMQ、Spring Security 等
 - Maven 多模块大仓库：支持 `module-sequential` 和 `ai-planned` 分批，批次可恢复，合并报告区分阶段性/完整
-- Maven 多模块小仓库：按当前审查范围计算规模；未达到 `500000` 估算 token 且低于 `120000` 行时跳过分批方式选择，直接使用单 agent
+- Maven 多模块小仓库：按当前审查范围计算规模；`estimated_tokens <= 1000000` 时跳过分批方式选择，只有严格大于 100 万才开启分批
 - Maven 大仓依赖图亲和分批（v1.6.0）：有依赖边的模块装箱时 cost 容差放宽 15%，相关模块优先同批
 - Java 覆盖率口径固定为 `src/main/java` 生产源码，测试源码只作为上下文
 
@@ -183,7 +183,7 @@ rules:
 
 ## 架构
 
-![cc-code-reviewer v1.6 架构总览](docs/assets/architecture-overview-v1.6.1.png)
+![cc-code-reviewer v1.6 架构总览](docs/assets/architecture-overview-v1.6.2.png)
 
 插件采用 skill-only 入口和专属子 agent，三端共享同一审查内核：
 
