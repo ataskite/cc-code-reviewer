@@ -1109,7 +1109,14 @@ grep -q 'Python 1.1' "$PY_FRAMEWORK" || { echo "FAIL: Python 框架必须标注�
 
 # Java / 前端框架版本页脚
 grep -q '本手册版本：5.7' "$ROOT_DIR/references/languages/java/review-framework.md" || { echo "FAIL: Java 框架必须标注版本 5.7" >&2; exit 1; }
-grep -q '本手册版本：前端 2.4' "$FE_FRAMEWORK" || { echo "FAIL: 前端框架必须标注版本 前端 2.4" >&2; exit 1; }
+grep -q '本手册版本：前端 2.5' "$FE_FRAMEWORK" || { echo "FAIL: 前端框架必须标注版本 前端 2.5" >&2; exit 1; }
+
+# LICENSE 契约：仓库声明 MIT 的三端 manifest 必须有对应 LICENSE 文件
+if [ ! -f "$ROOT_DIR/LICENSE" ]; then
+  echo "FAIL: 三端 manifest 声明 MIT 但缺少 LICENSE 文件" >&2
+  exit 1
+fi
+grep -q "MIT License" "$ROOT_DIR/LICENSE" || { echo "FAIL: LICENSE 必须是标准 MIT 文本" >&2; exit 1; }
 
 # 报告版本必须与 Java 框架版本同步（1.6.1 起的同步惯例，防止再次脱钩）
 JAVA_FW_VERSION="$(sed -n 's/.*本手册版本：\([0-9][0-9.]*\)\*.*/\1/p' "$ROOT_DIR/references/languages/java/review-framework.md" | head -1)"

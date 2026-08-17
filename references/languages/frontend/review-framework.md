@@ -114,7 +114,7 @@
 - **异步错误**：effect/handler 中的异步错误是否 try/catch；未处理 promise rejection 是否有全局兜底并接观测性
 - **三态完整性**：异步 UI 的 loading/error/empty 三态是否齐全（中后台表格最常缺 empty 和 error 态，只画了 loading）
 - **网络失败 UX**：失败是否提供重试、乐观更新回滚、SWR/Query 的 stale-data fallback；表单提交是否区分 field-level 和 form-level 错误
-- **观测性**：关键错误是否上报到 Sentry 等平台且 source map 已上传；全局错误是否泄露 token/PII
+- **观测性**：关键错误是否上报到 Sentry 等平台且 source map 已上传；全局错误是否泄露 token/PII；**间接泄露**：含敏感字段（token/PII/表单值）的对象进入 `console.log`/`console.error`（生产构建未剥离）、错误上报把整个 error/state 对象塞进 Sentry `extra`/`contexts`、埋点 payload 携带含 token 的 URL query 或整页 state——不得只查显式打印 token 的语句，任何日志/上报/埋点边界消费含敏感字段的对象都算（与 Java 5.3、Python 维度 10 的间接泄露检查点对齐）
 
 ### 10. 测试质量
 - **standard** 仅检查：核心逻辑是否有对应测试、关键路径（鉴权/异步/错误边界）测试是否缺失
@@ -158,5 +158,5 @@
 
 ---
 
-*本手册版本：前端 2.4（React + Vue2/Vue3 + Node，12 维度独立集；维度 12 仅 deep 启用）*
-*最后更新：2026-08-14*
+*本手册版本：前端 2.5（React + Vue2/Vue3 + Node，12 维度独立集；维度 12 仅 deep 启用）*
+*最后更新：2026-08-15*
