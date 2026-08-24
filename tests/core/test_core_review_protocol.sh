@@ -23,6 +23,31 @@ bash "$ROOT_DIR/scripts/languages/java/collect-source-files.sh" "$REPO" module-a
 bash "$ROOT_DIR/scripts/core/prepare-review-input.sh" "$REPO" java scoped 0 "$TMP_DIR/java.manifest" "$TMP_DIR/java-review-input.json" >/dev/null
 jq -e '.selected_item_count == 1 and .selected_line_count == 1 and .items[0].path == "module-a/src/main/java/demo/Demo.java"' "$TMP_DIR/java-review-input.json" >/dev/null
 
+# Single-agent review context must be derived from the same frozen input. The
+# grouping is structural (imports), not based on security-sensitive names.
+mkdir -p "$REPO/module-a/src/main/java/neutral"
+cat > "$REPO/module-a/src/main/java/neutral/Alpha.java" <<'JAVA'
+package neutral;
+public interface Alpha { boolean x(Object value); }
+JAVA
+cat > "$REPO/module-a/src/main/java/neutral/Beta.java" <<'JAVA'
+package neutral;
+public final class Beta implements Alpha { public boolean x(Object value) { return value == null; } }
+JAVA
+cat > "$REPO/module-a/src/main/java/neutral/Gamma.java" <<'JAVA'
+package neutral;
+public final class Gamma { private Alpha dependency; public void y(Object value) { if (dependency.x(value)) { value.toString(); } } }
+JAVA
+printf '%s\n' \
+  "$REPO/module-a/src/main/java/neutral/Alpha.java" \
+  "$REPO/module-a/src/main/java/neutral/Beta.java" \
+  "$REPO/module-a/src/main/java/neutral/Gamma.java" > "$TMP_DIR/neutral-java.manifest"
+bash "$ROOT_DIR/scripts/core/prepare-review-input.sh" "$REPO" java full 0 "$TMP_DIR/neutral-java.manifest" "$TMP_DIR/neutral-review-input.json" >/dev/null
+CONTEXT_OUT="$(bash "$ROOT_DIR/scripts/core/prepare-review-context.sh" \
+  "$REPO" java "$TMP_DIR/neutral-review-input.json" "$TMP_DIR/neutral-review-units.json")"
+grep -q '^REVIEW_UNIT_COUNT=1$' <<< "$CONTEXT_OUT"
+jq -e '(.units | length) == 1 and (.units[0].files | length) == 3' "$TMP_DIR/neutral-review-units.json" >/dev/null
+
 # Manifest paths are opaque file names: a valid trailing-space file must not be
 # rewritten as a different path while CRLF and whitespace-only lines are ignored.
 TRAILING_SPACE_FILE="$REPO/src/trailing.py "

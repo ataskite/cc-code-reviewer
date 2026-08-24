@@ -54,6 +54,7 @@
 
 我：🚀 启动单 Agent 审查
 - 注入 REVIEW_INPUT_PATH（selected=true 是唯一正式范围）
+- 注入 REVIEW_UNITS_PATH（只按结构关联组织阅读顺序，不预判安全问题）
 - 注入 REVIEW_RULES_RESOLVED_PATH
 - Agent 只落盘 Markdown，主 Skill 负责后续飞书保存
 

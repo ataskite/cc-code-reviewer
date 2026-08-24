@@ -11,7 +11,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PRUNE_PATHS=(
   -type d \( -name 'node_modules' -o -name 'target' -o -name 'build' -o -name 'dist' \
     -o -name '.git' -o -name 'venv' -o -name '.venv' -o -name '__pycache__' \
-    -o -name 'site-packages' \)
+    -o -name 'site-packages' -o -path "$PROJECT_DIR/tests" -o -path "$PROJECT_DIR/test" \)
 )
 
 has_java() {

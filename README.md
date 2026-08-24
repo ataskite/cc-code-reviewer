@@ -112,6 +112,7 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 - Maven 多模块小仓库：按当前审查范围计算规模；`estimated_tokens <= 1000000` 时跳过分批方式选择，只有严格大于 100 万才开启分批
 - Maven 大仓依赖图亲和分批（v1.6.0）：有依赖边的模块装箱时 cost 容差放宽 15%，相关模块优先同批
 - Java 覆盖率口径固定为 `src/main/java` 生产源码，测试源码只作为上下文
+- 安全设计不变量审查：脚本只按 import/直接依赖组织关联代码，大模型从代码行为识别受保护动作、授权证据、完整状态空间和默认路径，不依赖预置类名、方法名或字段名词表
 
 ### 发现清单自校验（v1.6.0）
 
@@ -152,6 +153,8 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 
 范围选择会在分批、覆盖率、报告和子 agent 参数中保持一致。前端指定目录通过不可变 source manifest 收敛，不会误扫测试文件或构建产物。
 
+单 Agent 与分批 Agent 都接收同一冻结输入派生的关联审查单元。关联单元只保持跨文件语义上下文，不预判风险，也不改变正式扫描边界。
+
 所有受支持模型统一按 1M 上下文分批。文件级 planner 默认使用 500k token 输入预算，并通过 First-Fit Decreasing 回填已有批次；可用 `CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET` 显式调整文件批次预算。
 
 ## 输出
@@ -183,7 +186,7 @@ rules:
 
 ## 架构
 
-![cc-code-reviewer v1.6.2 架构总览](docs/assets/architecture-overview-v1.6.2.png)
+![cc-code-reviewer v1.6.3 架构总览](docs/assets/architecture-overview-v1.6.3.png)
 
 插件采用 skill-only 入口和专属子 agent，三端共享同一审查内核：
 

@@ -150,6 +150,7 @@ scripts/
   │   ├── preview-recent-commits.sh      # Recent commit preview for incremental scope choices
   │   ├── prepare-incremental.sh         # Incremental review preparation
   │   ├── prepare-review-input.sh        # Immutable review input snapshot
+  │   ├── prepare-review-context.sh      # Structural review units from immutable selected input
   │   ├── detect-fix-input.sh            # Local Markdown fix input path validation
   │   ├── detect-superpowers.sh          # Optional Superpowers capability detection
   │   ├── prepare-fix-workspace.sh       # Fix branch/worktree preparation
@@ -205,6 +206,7 @@ The suite runs every `tests/test_*.sh` file and then `git diff --check`. It cove
 - `core/preview-recent-commits.sh`: recent commit preview for incremental INTERACT choices
 - `core/prepare-incremental.sh`: incremental diff ranges that include the root commit
 - `core/prepare-review-input.sh`: immutable selected/excluded input, Git refs and content fingerprints
+- `core/prepare-review-context.sh`: derives name-independent structural review units from the same immutable selected input; it never classifies security findings
 - `core/decide-batch-mode.sh`: current-scope size gate; small Maven multi-module reviews skip step 4B and remain single-agent
 - `languages/java/detect-code-intelligence.sh`: jdtls-lsp availability and fallback messaging
 - `languages/java/plan-large-batches.sh`: scoped Maven module planning, concise `RUN_DIR`, semantic-cost and module-sequential strategies, immutable file input

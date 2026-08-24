@@ -65,6 +65,7 @@ maxTurns: 50
 | 本批审查文件列表 | {BATCH_FILE_LIST}（仅文件级分批模式） |
 | source manifest | {不可变源码清单绝对路径} |
 | 审查输入清单 | {REVIEW_INPUT_PATH} |
+| 关联审查单元 | {REVIEW_UNITS_PATH} |
 | 项目审查规则解析结果 | {REVIEW_RULES_RESOLVED_PATH} |
 ```
 
@@ -82,6 +83,7 @@ maxTurns: 50
 - **审查范围**（`REVIEW_SCOPE`）：`全量代码`，或用户选定的 `src` 子目录/包目录相对路径列表（逗号分隔，如 `src/api,src/models`）。范围已由主 agent 收敛到 `source manifest`（单 agent）或 `BATCH_FILE_LIST`（分批）；本子 agent 直接使用注入清单，**不得再次按目录过滤，也不得外扩到未选目录**
 - **source manifest**：不可变生产源码清单（绝对路径，每行一个）。单 agent 模式下从该清单确定文件集合；文件级分批模式从 `BATCH_FILE_LIST` 确定本批源码，不得改用 `scan_roots`
 - **审查输入清单**（`REVIEW_INPUT_PATH`）：存在时是增量 selected / excluded 的审计依据；不得重新运行 git diff 扩展正式范围。
+- **关联审查单元**（`REVIEW_UNITS_PATH`）：存在时必须读取。它只按 import/直接依赖组织相关生产文件，用于保持跨文件语义上下文；它不标注风险、不定义安全候选，也不改变 source manifest / `BATCH_FILE_LIST` 的正式边界。
 - **项目审查规则解析结果**（`REVIEW_RULES_RESOLVED_PATH`）：只为本批正式文件附加检查重点，不屏蔽发现、不覆盖 Python 专项规则。
 
 **参考文件读取规则**：
@@ -132,6 +134,7 @@ maxTurns: 50
 - **正式配置定位**：从 `PROJECT_SCAN_RESULT` 的 `FORMAL_CONFIG_FILE:` 行读取配置文件（`pyproject.toml`/`requirements*.txt`/`Pipfile`/`uv.lock`/`poetry.lock`/`Pipfile.lock`/`setup.py`/`setup.cfg`/`tox.ini`/`ruff`/`mypy`/`pytest` 配置）。这些文件可产生正式配置问题，但不计入 Python 源码覆盖率；分批模式仅 `batch-001` 审查，其他批次跳过
 - **增量约束**：增量审查中，正式配置只有出现在注入的 `CHANGED_FILES_OUTPUT` 时才能产生本次正式问题；未变更配置仅作关联上下文
 - **只读上下文定位**：测试目录与迁移目录从 `PROJECT_SCAN_RESULT` 的 `CONTEXT_ROOT:` 行读取，**不得重复执行 find 统计**。上下文可用于测试质量/迁移质量判断，但不得成为正式问题位置
+- 若注入了 `REVIEW_UNITS_PATH`，优先按其中的结构单元安排读取顺序，使直接关联的入口、状态、权限和下游实现处于同一推理窗口。结构单元只提供阅读邻接关系，不代表其中存在问题。
 
 **Phase B - 风险优先级排序**：按以下优先级排序文件，确保高风险文件优先审查：
 - P0 热点（优先级 0）：`settings.py`、`urls.py`、`wsgi.py`/`asgi.py`、`models.py`、`views.py`/`controllers`、`serializers.py`/`schemas.py`、`middleware.py`、`permissions.py`、`auth.py`/`authentication.py`、`tasks.py`（Celery）、`pyproject.toml`、`requirements.txt`、`manage.py`、含 `eval`/`exec`/`pickle`/`subprocess`/`os.system` 的文件
@@ -155,11 +158,9 @@ maxTurns: 50
 | `pyproject.toml` / `requirements.txt` | 6（依赖风险）、4（工具配置） |
 | `migrations/`（只读上下文） | 5（迁移质量，仅 deep） |
 
-- **跨文件风险信号（与文件类型无关）**：除文件类型表外，识别到以下任一信号时，无论文件归为哪类，都必须将相关安全维度纳入评估，并按 Phase D 强制追踪取证。这些信号描述代码 shape 而非文件名——风险跨命名、靠语义：
-  - **信号A 关卡/判定函数**：返回布尔/布尔语义值，语义为"放行·匹配·跳过·校验"（match/allow/permit/check/verify/has*/can*/skip）。任何返回 True/放行或异常路径放行的分支需确认对应"已验证通过"。→ 认证授权 fail-open（见维度 6）
-  - **信号B 归属/权限语义**：对资源按标识（id/code/sn）查询或修改（`objects.get(id=)`/`get_object_or_404`/`.filter()`），且涉及归属语义（owner/user/tenant/org/dept 或任何区分数据主体的字段）。→ 对象级越权（IDOR）/多租户隔离（见维度 6）
-  - **信号C 外部输入到达 sink**：请求/参数/外部源数据流向查询/命令/文件路径/URL/反序列化/模板渲染。→ 注入/SSRF/路径穿越；可控性需跨文件追溯
-  - **信号D 对象经序列化/字符串化边界**：含敏感字段的对象进入日志/异常响应/序列化输出/`__str__`/`__repr__`。→ 间接信息泄露（见维度 10）
+- **安全设计不变量（与命名、框架和返回类型无关）**：安全维度启用时，完成一个关联审查单元的读取后，必须根据代码真实行为建立内部安全契约：识别受保护动作；识别允许执行该动作所依赖的授权证据；从赋值、分支、异常和组合逻辑归纳全部可达状态；分别追踪每种状态的最终效果；核查主体—资源绑定、外部数据到敏感效果以及敏感数据跨输出边界的传播。不得通过预置函数名、字段名、装饰器名或框架角色词表代替这一步语义判断。
+- 对每个安全契约主动构造反例：**是否存在尚未获得明确授权证据，却仍能到达受保护动作的可达路径？** 同时核查多段处理全部未作出决定时的实际默认行为。模型必须先从现场代码识别参与决策的符号，再使用这些符号查询引用、赋值和下游效果；契约假设只触发取证，不直接决定级别。
+- **安全契约检查点**：安全维度启用时，每个关联审查单元完成后都在 `/tmp/review-checkpoint-{PROJECT_NAME}.md` 追加一行结论。没有受保护动作时记录“无受保护动作”；存在时记录“受保护动作 / 授权证据 / 非确定状态 / 默认行为 / 反例是否成立”。该记录只证明语义复核已执行，不直接进入正式问题清单。
 
 **Phase D - 针对性补充检索**：对高风险模式执行 Grep 补充检索：
 - `pickle.loads`/`pickle.load`/`marshal.loads`/`yaml.load`（非 SafeLoader）→ 维度 6 P0 候选（须通过五项硬门槛）
@@ -172,7 +173,7 @@ maxTurns: 50
 - `requests.get`/`time.sleep` 在 `async def` 内 → 维度 8 P1
 - `mark_safe`/`|safe` → 维度 6 XSS
 - `objects.get(id=`/`get_object_or_404(`/`.objects.filter(` 不含 owner/user/tenant → 维度 6 对象级越权/多租户（须跨文件核查归属过滤）
-- **跨文件风险信号追踪（强制）**：命中上方信号A/B 时强制跨文件追踪（无论是否已发现正式问题）；命中信号C/D 时，若单文件内无法证成则必须跨文件追溯后再定级，**不得因"单文件不可证"直接降级或丢弃**（避免真实可控链被 P0 门槛压低后又被 fast 模式静默丢弃）。
+- **安全设计不变量反例追踪（强制）**：关联单元出现受保护动作、授权证据、主体—资源关系、外部数据传播或敏感数据边界时，即使单文件尚未产生正式问题，也必须完成安全契约并寻找未明确授权状态到受保护动作的路径。检索目标只能来自已读取代码中的现场符号；追踪后再按证据定级，不得因跨文件才成立而静默丢弃，也不得仅凭不变量假设升级。
 
 ### 第二步：发现归类与证据标注
 

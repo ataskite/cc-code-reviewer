@@ -1111,6 +1111,25 @@ grep -q 'Python 1.1' "$PY_FRAMEWORK" || { echo "FAIL: Python 框架必须标注�
 grep -q '本手册版本：5.7' "$ROOT_DIR/references/languages/java/review-framework.md" || { echo "FAIL: Java 框架必须标注版本 5.7" >&2; exit 1; }
 grep -q '本手册版本：前端 2.5' "$FE_FRAMEWORK" || { echo "FAIL: 前端框架必须标注版本 前端 2.5" >&2; exit 1; }
 
+# 安全设计审查必须由模型基于关联代码推理不变量；脚本只提供结构上下文，
+# 不得把方法名/字段名词表伪装成 Default Deny 识别能力。
+require_literal "$SKILL_FILE" "scripts/core/prepare-review-context.sh" "单 agent 必须从冻结输入生成关联审查单元"
+require_literal "$SKILL_FILE" "REVIEW_UNITS_PATH" "主 Skill 必须向审查 agent 注入关联审查单元"
+for invariant_agent in "$AGENT_FILE" "$FRONTEND_AGENT_FILE" "$PY_AGENT_FILE"; do
+  require_literal "$invariant_agent" "安全设计不变量" "agent 必须执行与命名无关的安全设计不变量推理"
+  require_literal "$invariant_agent" "受保护动作" "agent 必须先识别受保护动作"
+  require_literal "$invariant_agent" "未获得明确授权证据" "agent 必须主动寻找未授权到达受保护动作的反例路径"
+  require_literal "$invariant_agent" "安全契约检查点" "agent 必须逐关联单元记录安全不变量复核结论"
+done
+if grep -Eq 'match[[:space:]]*/[[:space:]]*shouldFilter[[:space:]]*/[[:space:]]*allow' "$ROOT_DIR/references/languages/java/review-framework.md"; then
+  echo "FAIL: Java Default Deny 识别不得依赖预置方法名清单" >&2
+  exit 1
+fi
+if grep -Eq '信号A.*\((match|allow|permit|check|verify|has\*|can\*|skip)' "$AGENT_FILE" "$FRONTEND_AGENT_FILE" "$PY_AGENT_FILE"; then
+  echo "FAIL: 跨文件安全信号不得使用方法名词表定义语义" >&2
+  exit 1
+fi
+
 # LICENSE 契约：仓库声明 MIT 的三端 manifest 必须有对应 LICENSE 文件
 if [ ! -f "$ROOT_DIR/LICENSE" ]; then
   echo "FAIL: 三端 manifest 声明 MIT 但缺少 LICENSE 文件" >&2

@@ -44,7 +44,25 @@ perl -MJSON::PP -MFile::Basename=dirname,basename -MFile::Spec -MCwd=abs_path -e
         my $c=candidate("$base/$module"); joinset($i,$idx{$c}) if $c ne "";
       }
     }
-    if ($lang eq "java") { while ($content =~ /^\s*import\s+([\w.]+)\s*;/mg) { my $b=$1; $b =~ s!.*\.!!; my $arr=$bybase{"$b.java"}; joinset($i,$arr->[0]) if $arr && @$arr == 1; } }
+    if ($lang eq "java") {
+      while ($content =~ /^\s*import\s+([\w.]+)\s*;/mg) {
+        my $b=$1; $b =~ s!.*\.!!; my $arr=$bybase{"$b.java"};
+        joinset($i,$arr->[0]) if $arr && @$arr == 1;
+      }
+      # Same-package Java references do not require import statements. Link
+      # unambiguous local type identifiers after removing comments and string
+      # literals. This is structural association only; no domain vocabulary or
+      # security semantics are inferred here.
+      my $java=$content;
+      $java =~ s!/\*.*?\*/!!gs;
+      $java =~ s!//[^\n]*!!g;
+      $java =~ s!"(?:\\.|[^"\\])*"!!g;
+      $java =~ s!\x27(?:\\.|[^\x27\\])*\x27!!g;
+      while ($java =~ /\b([A-Z][A-Za-z0-9_\$]*)\b/g) {
+        my $arr=$bybase{"$1.java"};
+        joinset($i,$arr->[0]) if $arr && @$arr == 1 && $arr->[0] != $i;
+      }
+    }
   }
   my %groups; push @{$groups{root($_)}}, $_ for 0..$#f;
   my @units; my $n=0; for my $r (sort { $f[$groups{$a}[0]] cmp $f[$groups{$b}[0]] } keys %groups) { $n++; my @members=sort map {$f[$_]} @{$groups{$r}}; push @units,{unit_id=>sprintf("unit-%03d",$n),files=>\@members}; }

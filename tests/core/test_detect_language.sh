@@ -82,4 +82,11 @@ mkdir -p "$TMP_DIR/empty"
 EOUT="$(bash "$ROOT_DIR/scripts/core/detect-language.sh" "$TMP_DIR/empty")"
 grep -q "CANDIDATE_LANGUAGE:none" <<< "$EOUT"
 
+# 只有测试/评估夹具中的 Java 文件，不得把非 Java 工程路由为 Java。
+mkdir -p "$TMP_DIR/eval_only/tests/evals/case/src/main/java/demo"
+echo 'package demo; class Fixture {}' > "$TMP_DIR/eval_only/tests/evals/case/src/main/java/demo/Fixture.java"
+EVAL_OUT="$(bash "$ROOT_DIR/scripts/core/detect-language.sh" "$TMP_DIR/eval_only")"
+grep -q "CANDIDATE_LANGUAGE:none" <<< "$EVAL_OUT"
+! grep -q "CANDIDATE_LANGUAGE:java" <<< "$EVAL_OUT"
+
 echo "PASS: detect-language"

@@ -525,6 +525,13 @@ else
 fi
 test -r "$REVIEW_INPUT_PATH"
 
+# 关联审查单元与正式输入使用同一 selected=true 文件集合。该脚本只按
+# import/直接依赖组织结构上下文，不识别安全语义，也不生成候选问题。
+REVIEW_UNITS_PATH="${REVIEW_INPUT_PATH%.json}-review-units.json"
+bash "${PLUGIN_ROOT}/scripts/core/prepare-review-context.sh" \
+  "$PROJECT_DIR" "$LANGUAGE_ID" "$REVIEW_INPUT_PATH" "$REVIEW_UNITS_PATH" >/dev/null
+test -r "$REVIEW_UNITS_PATH"
+
 # 项目审查规则必须和冻结输入使用同一正式文件集合。resolver 的
 # review-input 模式只读取 selected=true，增量审查不会带入范围外文件。
 REVIEW_RULES_RESOLVED_PATH="${REVIEW_INPUT_PATH%.json}-review-rules.json"
@@ -542,7 +549,7 @@ REVIEW_LINE_COUNT="$(perl -MJSON::PP -e 'local $/; print decode_json(<>)->{selec
 - `LANGUAGE_ID=java` -> `${PLUGIN_ROOT}/agents/cc-code-reviewer.md`，description: `"执行 Java 代码审查"`
 - `LANGUAGE_ID=frontend` -> `${PLUGIN_ROOT}/agents/cc-code-reviewer-frontend.md`，description: `"执行前端代码审查"`
 - `LANGUAGE_ID=python` -> `${PLUGIN_ROOT}/agents/cc-code-reviewer-python.md`，description: `"执行 Python 代码审查"`
-- prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据（所有语言的存量/增量审查均注入 `REVIEW_INPUT_PATH`、`REVIEW_RULES_RESOLVED_PATH` 和 source manifest；正式范围只认 selected=true）
+- prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据（所有语言的存量/增量审查均注入 `REVIEW_INPUT_PATH`、`REVIEW_UNITS_PATH`、`REVIEW_RULES_RESOLVED_PATH` 和 source manifest；正式范围只认 selected=true；review units 只提供结构关联，不预判安全语义）
 - model_profile: {MODEL_PROFILE}
 
 详细参数注入格式见下方「子 agent 调用规范」章节。
@@ -593,6 +600,19 @@ test -r "$BATCH_FILE_LIST"
 
 Maven 大仓库模式不注入 `BATCH_FILE_LIST`，仍以 `BATCH_PLAN_PATH` 中的 `scan_roots` / `units` 为正式边界。
 
+**所有分批路径的关联审查单元**：文件级 planner 已生成 `RUN_DIR/review-units.json`；Maven 大仓库 planner 没有该文件时，主 Skill 必须从同一冻结输入补充生成。结构单元只用于把直接相关代码放在同一推理上下文，不能充当安全候选或正式扫描边界：
+
+```bash
+REVIEW_INPUT_PATH="$RUN_DIR/review-input.json"
+REVIEW_UNITS_PATH="$RUN_DIR/review-units.json"
+if [ ! -r "$REVIEW_UNITS_PATH" ]; then
+  bash "${PLUGIN_ROOT}/scripts/core/prepare-review-context.sh" \
+    "$PROJECT_DIR" "$LANGUAGE_ID" "$REVIEW_INPUT_PATH" "$REVIEW_UNITS_PATH" >/dev/null
+fi
+test -r "$REVIEW_INPUT_PATH"
+test -r "$REVIEW_UNITS_PATH"
+```
+
 **Batch Agent Prompt 注入格式**：
 
 每个 batch agent 的 prompt 与现有格式一致，但额外注入以下参数并做以下调整：
@@ -632,6 +652,7 @@ Maven 大仓库模式不注入 `BATCH_FILE_LIST`，仍以 `BATCH_PLAN_PATH` 中�
 | source manifest | {不可变源码清单绝对路径}（仅 frontend/python 文件级分批） |
 | 本批审查文件列表 | {BATCH_FILE_LIST}（仅文件级分批模式） |
 | 审查输入清单 | {RUN_DIR/review-input.json 或 未生成} |
+| 关联审查单元 | {REVIEW_UNITS_PATH} |
 | 项目审查规则解析结果 | {RUN_DIR/review-rules.json} |
 | 审查输出模式 | 仅发现清单 |
 
@@ -1393,6 +1414,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | 项目 ignore 问题数量 | {IGNORE_RULE_COUNT} |
 | 语义增强 | {SEMANTIC_LEVEL} |
 | 审查输入清单 | {REVIEW_INPUT_PATH} |
+| 关联审查单元 | {REVIEW_UNITS_PATH} |
 | 项目审查规则解析结果 | {REVIEW_RULES_RESOLVED_PATH} |
 | source manifest | {MANIFEST 绝对路径}（所有语言均注入；正式范围以 REVIEW_INPUT_PATH 中 selected=true 为准） |
 | 本批审查文件列表 | {BATCH_FILE_LIST}（仅文件级分批模式，单 agent 模式不注入） |
@@ -1449,6 +1471,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `CHANGED_FILES_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git diff --name-only` |
 | `DIFF_STATS_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git diff --stat` |
 | `REVIEW_INPUT_PATH` | core/prepare-review-input.sh 输出（所有入口） | 不可变输入、ref、选中/排除原因和内容指纹 |
+| `REVIEW_UNITS_PATH` | core/prepare-review-context.sh 输出；文件级分批复用 RUN_DIR/review-units.json | 只按 import/直接依赖形成的结构关联单元，不包含安全语义或候选结论 |
 | `REVIEW_RULES_RESOLVED_PATH` | core/resolve-review-rules.sh 基于 REVIEW_INPUT_PATH 的 selected 文件解析 | 当前正式范围逐文件命中的项目审查规则；不作为 ignore |
 
 ### 增量审查预处理（仅增量审查时执行）
