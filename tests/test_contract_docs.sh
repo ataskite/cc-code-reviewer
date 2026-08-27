@@ -580,8 +580,11 @@ test -f "$ROOT_DIR/tests/core/test_core_filetype_rule_map.sh" || { echo "文件�
 require_literal "$SKILL_FILE" "filetype_checklists" "skill must disclose the filetype checklist overlay in resolved rules"
 # T2 内容指纹去重：merge 脚本保留 dedupe_issue_blocks（上方既有 pin），并固化 summary 披露口径
 require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "merged_duplicates" "summary.json must expose cross-batch dedup stats via the dedup object"
+require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "failed_by_class" "summary.json must expose the failed_by_class attribution object"
 require_literal "$SKILL_FILE" "行号不入键" "cross-batch dedup identity must document that line numbers are excluded from the fingerprint key"
-require_literal "$ROOT_DIR/references/report-format.md" "跨批次去重" "report format must document the cross-batch dedup disclosure line"
+require_literal "$ROOT_DIR/references/report-format.md" "跨批次去重：" "report format must document the cross-batch dedup disclosure line"
+# README 必须出现 1.6.5 文件类型定向规则清单特性关键词
+require_literal "$ROOT_DIR/README.md" "文件类型专项清单" "README must surface the filetype checklist feature keyword"
 # T3 失败归因枚举：agents 状态写入 + merge 解析 + 展示前缀与统计行
 for fc_agent_file in "$AGENT_FILE" "$FRONTEND_AGENT_FILE" "$ROOT_DIR/agents/cc-code-reviewer-python.md"; do
   require_literal "$fc_agent_file" "\"failure_class\"" "batch agent status JSON must carry failure_class attribution"
@@ -597,9 +600,11 @@ require_literal "$ROOT_DIR/scripts/core/plan-file-batches.sh" "rules_snapshot_sh
 require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "rules_snapshot_sha256" "large-repo planner must record the rules snapshot digest"
 test -f "$ROOT_DIR/scripts/core/validate-resume-input.sh" || { echo "validate-resume-input.sh 缺失" >&2; exit 1; }
 require_literal "$SKILL_FILE" "validate-resume-input.sh" "resume flow must run the admission gate script before listing schedulable batches"
+require_match "skill resume flow must invoke the admission gate with --rules" 'validate-resume-input\.sh.*--rules' "$SKILL_FILE"
 require_literal "$SKILL_FILE" "不得列出任何可调度批次" "a non-ok resume gate result must block listing any schedulable batches"
-require_literal "$AGENTS_FILE" "validate-resume-input.sh" "AGENTS must document the resume admission gate"
-require_literal "$CLAUDE_FILE" "validate-resume-input.sh" "CLAUDE must document the resume admission gate"
+require_match "AGENTS/CLAUDE must document the rules-scoped resume gate invocation" 'validate-resume-input\.sh <RUN_DIR> <PROJECT_DIR> --rules' "$AGENTS_FILE" "$CLAUDE_FILE"
+require_literal "$AGENTS_FILE" "GATE_OK=" "AGENTS must document the gate's single-line GATE_OK pass contract"
+require_literal "$CLAUDE_FILE" "GATE_OK=" "CLAUDE must document the gate's single-line GATE_OK pass contract"
 
 grep -q "pending.*待执行" "$SKILL_FILE"
 grep -q "running.*执行中" "$SKILL_FILE"
@@ -612,6 +617,22 @@ grep -q "partial.*部分完成待重跑" "$SKILL_FILE"
 FORBIDDEN_BATCH_STATE_DECL_PATTERN='("status"[[:space:]]*:[[:space:]]*"(stale|skipped|cancelled)")|((status[[:space:]_-]*(enum|state|list|value)|batch[[:space:]_-]*status|state[[:space:]_-]*(enum|list|value)|状态(枚举|列表|值)|批次状态)[^[:cntrl:]]{0,80}(stale|skipped|cancelled|中断待确认|已跳过|已取消))|((stale|skipped|cancelled|中断待确认|已跳过|已取消)[^[:cntrl:]]{0,80}(status[[:space:]_-]*(enum|state|list|value)|batch[[:space:]_-]*status|state[[:space:]_-]*(enum|list|value)|状态(枚举|列表|值)|批次状态))'
 if grep -qE "$FORBIDDEN_BATCH_STATE_DECL_PATTERN" "$SKILL_FILE" "$AGENT_FILE"; then
   echo "large repo status enum must only use pending/running/completed/failed/partial" >&2
+  exit 1
+fi
+# failure_class 合法值集合守卫（封闭五值）：任一契约文件声明 failure_class 时，
+# 五个合法值 context_exhausted / tool_budget_exhausted / output_truncated /
+# cancelled / unknown 必须齐全；非法样例 agent_crashed 与裸 tool_budget 不得作为
+# 枚举值出现（JSON 值位、表格单元、斜杠罗列三种形态，模仿上方 FORBIDDEN 批次状态守卫）。
+for fc_enum_file in "$SKILL_FILE" "$AGENT_FILE" "$FRONTEND_AGENT_FILE" "$ROOT_DIR/agents/cc-code-reviewer-python.md"; do
+  if grep -q "failure_class" "$fc_enum_file"; then
+    for fc_legal_value in context_exhausted tool_budget_exhausted output_truncated cancelled unknown; do
+      grep -q "$fc_legal_value" "$fc_enum_file" || { echo "failure_class declaration must enumerate $fc_legal_value in $fc_enum_file" >&2; exit 1; }
+    done
+  fi
+done
+FORBIDDEN_FAILURE_CLASS_VALUE_PATTERN='"failure_class"[[:space:]]*:[[:space:]]*"(agent_crashed|tool_budget)"|\|[[:space:]]*(agent_crashed|tool_budget)[[:space:]]*\||/(agent_crashed|tool_budget)([^_a-z]|$)'
+if grep -qE "$FORBIDDEN_FAILURE_CLASS_VALUE_PATTERN" "$SKILL_FILE" "$AGENT_FILE" "$FRONTEND_AGENT_FILE" "$ROOT_DIR/agents/cc-code-reviewer-python.md"; then
+  echo "failure_class enum is closed to context_exhausted/tool_budget_exhausted/output_truncated/cancelled/unknown; agent_crashed and bare tool_budget are illegal values" >&2
   exit 1
 fi
 if awk '

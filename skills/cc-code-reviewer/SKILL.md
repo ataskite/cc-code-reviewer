@@ -1568,7 +1568,7 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${PLUGIN_ROOT}/scripts/core/merge-batch-re
 1. **确定本轮批次集合**：读取 `RUN_BATCH_IDS`；为空时回退到 `RUN_DIR/batches/batch-*.json` 全量批次。
 2. **等待本轮批次终态**：检查 `results/batch-XXX.status.json`，对 `pending` / `running` 批次按脚本超时配置等待。
 3. **阻塞判断**：本轮存在 `failed`、结果缺失或等待超时，生成 `[合并阻塞]` 报告，提示用户重试或补齐对应批次。
-4. **批次状态总览**：在报告中列出所有批次的状态、本轮主任务标记、合并处理、文件数、行数、模块和错误信息。状态 JSON 的 `failure_class` 按 agents 的「中断归因枚举」（封闭五值）取值，解析次序为 显式声明恒优先 → 缺失走确定性中文关键词回退 → unknown；错误列展示为 `[短标签] 原error` 前缀与失败归因统计行。
+4. **批次状态总览**：在报告中列出所有批次的状态、本轮主任务标记、合并处理、文件数、行数、模块和错误信息。状态 JSON 的 `failure_class` 按 agents 的「中断归因枚举」取封闭五值：context_exhausted / tool_budget_exhausted / output_truncated / cancelled / unknown；解析次序为 显式声明恒优先 → 缺失走确定性中文关键词回退 → unknown；错误列展示为 `[短标签] 原error` 前缀与失败归因统计行，`summary.json` 输出 `failed_by_class` 五键含零归因对象（零失败时整体省略）。
 5. **合并本轮批次结果**：把本轮 `completed` 且结果文件存在的批次纳入正式发现；目标 `partial` 只有在结果文件和至少一条正式发现同时存在时才纳入发现，但其覆盖不计入完成覆盖率；非本轮批次列为遗留。
 6. **跨批线索汇总**：抽取各批 `跨批依赖待复核` 段落，集中列在报告中。
 7. **跨批去重**：对已纳入本次合并的发现按文件 × 维度 × 证据代码内容指纹去重——身份键 = sha256(文件路径 ␀ 维度标签 ␀ 归一化证据行)，行号不入键，证据行归一化与跨文件重归档同口径；仅当块无 `- 文件：` 行且无闭合围栏时才退回整块折叠键兜底，两类键空间隔离。去重统计写入 `summary.json` 的 `dedup` 对象（`input_findings` / `merged_duplicates` / `output_findings`，输入为 0 时整对象省略），覆盖说明区在合并重复数大于 0 时输出「跨批次去重」披露行；未完成或遗留批次不得参与正式结论。
