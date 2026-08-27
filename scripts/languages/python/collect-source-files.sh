@@ -9,6 +9,7 @@ PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd -P)"
 #   - flat layout：项目根下顶层目录（含 __init__.py 的常规包，或不含 __init__.py 但有生产 .py 的 namespace package）下的 .py
 #   - 根级单文件应用：项目根下的 app.py / main.py / wsgi.py / asgi.py / server.py / manage.py（Python 单文件应用常见入口形态）
 # 排除：tests/、test_*.py、*_test.py、conftest.py、setup.py、venv/、.venv/、__pycache__/、build/、dist/、migrations/（Django 生成代码，作只读上下文）、snapshots/testdata/fixtures、生成 Python 文件、site-packages/、.git/。
+# 例外：项目根 requirements*.txt / pyproject.toml 作为依赖描述符随伴随层并入（见文件末尾）。
 #
 # 信号复用 detect-project.sh（避免两处框架信号漂移）：collect 仅需确认项目是 Python，不需要框架类型，
 # 但 source 同一 detect-project.sh 保证未来扩展时不漂移。
@@ -113,6 +114,16 @@ fi
 # - 根级入口：始终合并白名单生产入口（不递归）
 # - 通用根级脚本：仅在没有 src/flat 包和白名单入口时收集
 # 注意：{ } 块内每个分支必须以 exit 0 的命令结尾，否则 pipefail 会使 sort 管道返回非 0。
+#
+# 伴随文件层例外（依赖描述符）：项目根的 requirements*.txt / pyproject.toml
+# 并入清单，用于支撑 scripts/core/filetype-rule-map.json 的 python-deps 模式；
+# settings.py/urls.py 属生产 .py，本来就随 src/flat 口径收集。实际并入数以
+# stderr 的 COMPANION_FILES_ADDED=N 披露；去重、上限与 Java/前端采集器同口径。
+COMPANION_FILE_LIMIT="${CC_CODE_REVIEWER_COMPANION_LIMIT:-200}"
+MAIN_TMP="$(mktemp "${TMPDIR:-/tmp}/pycf-main.XXXXXX")"
+COMP_TMP="$(mktemp "${TMPDIR:-/tmp}/pycf-comp.XXXXXX")"
+trap 'rm -f "$MAIN_TMP" "$COMP_TMP"' EXIT
+
 {
   for root in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
     [ -n "$root" ] || continue
@@ -126,4 +137,28 @@ fi
       -not -name 'setup.py' -not -name 'conftest.py' \
       -not -name 'test_*.py' -not -name '*_test.py' -print 2>/dev/null || true
   fi
-} | sort -u
+} > "$MAIN_TMP"
+
+# 伴随候选：仅项目根一层；setup.cfg/setup.py 等打包脚本不在此列（保持排除口径）。
+for dep in "$PROJECT_DIR"/requirements*.txt "$PROJECT_DIR"/pyproject.toml; do
+  # 未命中 glob 时保留字面量；以 -f 过滤真实存在文件。
+  [ -f "$dep" ] && printf '%s\n' "$dep" >> "$COMP_TMP"
+done
+
+LC_ALL=C sort -u "$MAIN_TMP" > "$MAIN_TMP.s" || true
+LC_ALL=C sort -u "$COMP_TMP" > "$COMP_TMP.s" || true
+comm -23 "$COMP_TMP.s" "$MAIN_TMP.s" > "$COMP_TMP.new"
+ADDED="$(grep -c . "$COMP_TMP.new" || true)"
+TRUNCATED_NOTE=""
+if [ "$ADDED" -gt "$COMPANION_FILE_LIMIT" ]; then
+  head -n "$COMPANION_FILE_LIMIT" "$COMP_TMP.new" > "$COMP_TMP.add"
+  TRUNCATED_NOTE="（伴随白名单命中 ${ADDED} 个已达上限 ${COMPANION_FILE_LIMIT}，超出部分截断）"
+  ADDED="$COMPANION_FILE_LIMIT"
+else
+  cp "$COMP_TMP.new" "$COMP_TMP.add"
+fi
+
+cat "$MAIN_TMP.s" "$COMP_TMP.add" | LC_ALL=C sort -u
+if [ "$ADDED" -gt 0 ]; then
+  echo "COMPANION_FILES_ADDED=${ADDED}${TRUNCATED_NOTE}" >&2
+fi

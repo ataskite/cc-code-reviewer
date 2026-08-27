@@ -572,6 +572,35 @@ require_literal "$CLAUDE_FILE" 'Immutable `REVIEW_INPUT_PATH` and `REVIEW_RULES_
 require_literal "$ROOT_DIR/references/report-format.md" "[合并阻塞]" "report format must document blocked merge reports"
 require_literal "$ROOT_DIR/references/report-format.md" "分批合并报告格式" "report format must document deterministic merge report shape"
 
+# === v1.6.5: 文件类型专项清单 / 内容指纹去重 / 失败归因枚举 / 续跑准入门禁 ===
+# T1 文件类型专项清单：resolver 叠加映射 + 守卫测试落盘
+require_literal "$ROOT_DIR/scripts/core/resolve-review-rules.sh" "filetype_checklists" "rule resolver must emit additive filetype_checklists groups"
+test -f "$ROOT_DIR/scripts/core/filetype-rule-map.json" || { echo "filetype-rule-map.json 缺失" >&2; exit 1; }
+test -f "$ROOT_DIR/tests/core/test_core_filetype_rule_map.sh" || { echo "文件类型专项清单完整性守卫测试缺失" >&2; exit 1; }
+require_literal "$SKILL_FILE" "filetype_checklists" "skill must disclose the filetype checklist overlay in resolved rules"
+# T2 内容指纹去重：merge 脚本保留 dedupe_issue_blocks（上方既有 pin），并固化 summary 披露口径
+require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "merged_duplicates" "summary.json must expose cross-batch dedup stats via the dedup object"
+require_literal "$SKILL_FILE" "行号不入键" "cross-batch dedup identity must document that line numbers are excluded from the fingerprint key"
+require_literal "$ROOT_DIR/references/report-format.md" "跨批次去重" "report format must document the cross-batch dedup disclosure line"
+# T3 失败归因枚举：agents 状态写入 + merge 解析 + 展示前缀与统计行
+for fc_agent_file in "$AGENT_FILE" "$FRONTEND_AGENT_FILE" "$ROOT_DIR/agents/cc-code-reviewer-python.md"; do
+  require_literal "$fc_agent_file" "\"failure_class\"" "batch agent status JSON must carry failure_class attribution"
+  require_literal "$fc_agent_file" "中断归因枚举" "batch agent must define the interruption attribution enum table"
+done
+require_literal "$ROOT_DIR/scripts/core/merge-batch-results.sh" "resolve_failure_class" "merge must resolve explicit failure_class then fall back to classifier/unknown"
+require_literal "$ROOT_DIR/scripts/core/show-batch-status.sh" "失败归因: " "batch status output must include the optional attribution summary line"
+require_literal "$ROOT_DIR/references/report-format.md" "失败归因枚举" "report format must document the five-value failure attribution enum"
+require_literal "$ROOT_DIR/references/report-format.md" "[短标签]" "report format must document the localized error-column attribution prefix"
+require_literal "$ROOT_DIR/references/report-format.md" "\"failed_by_class\"" "report format must document the per-class failure summary object"
+# T4 续跑准入门禁：planner 快照字段 + 门禁脚本 + SKILL 接线
+require_literal "$ROOT_DIR/scripts/core/plan-file-batches.sh" "rules_snapshot_sha256" "file planner must record the rules snapshot digest"
+require_literal "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "rules_snapshot_sha256" "large-repo planner must record the rules snapshot digest"
+test -f "$ROOT_DIR/scripts/core/validate-resume-input.sh" || { echo "validate-resume-input.sh 缺失" >&2; exit 1; }
+require_literal "$SKILL_FILE" "validate-resume-input.sh" "resume flow must run the admission gate script before listing schedulable batches"
+require_literal "$SKILL_FILE" "不得列出任何可调度批次" "a non-ok resume gate result must block listing any schedulable batches"
+require_literal "$AGENTS_FILE" "validate-resume-input.sh" "AGENTS must document the resume admission gate"
+require_literal "$CLAUDE_FILE" "validate-resume-input.sh" "CLAUDE must document the resume admission gate"
+
 grep -q "pending.*待执行" "$SKILL_FILE"
 grep -q "running.*执行中" "$SKILL_FILE"
 grep -q "completed.*已完成" "$SKILL_FILE"

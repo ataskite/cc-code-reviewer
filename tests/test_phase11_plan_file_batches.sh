@@ -120,4 +120,29 @@ grep -Fq '"semantic_group_ids": ["order-core"]' "${GROUP_SAME_BATCH%.files}.json
   exit 1
 }
 
+# 恢复准入门禁快照：Java 适配器委托 core 规划器后，plan.json 必须携带解析后规则
+# 快照哈希；真实 RUN_DIR 必须带 --rules 通过门禁；不得出现实验性 head_commit_sha256。
+phase11_rules_sha() {
+  perl -MDigest::SHA -e 'my $f = shift; my $s = Digest::SHA->new(256); $s->addfile($f); print $s->hexdigest, "\n"' "$1"
+}
+P11_EXPECTED_SHA="$(phase11_rules_sha "$RUN_DIR/review-rules.json")"
+grep -Fq "\"rules_snapshot_sha256\": \"$P11_EXPECTED_SHA\"" "$RUN_DIR/plan.json" || {
+  echo "plan.json must record rules_snapshot_sha256 matching review-rules.json" >&2
+  exit 1
+}
+if grep -q 'head_commit_sha256' "$RUN_DIR/plan.json"; then
+  echo "non-git fixture must not record head_commit_sha256" >&2
+  exit 1
+fi
+set +e
+P11_GATE_OUT="$(bash "$ROOT_DIR/scripts/core/validate-resume-input.sh" "$RUN_DIR" "$PROJECT_DIR" --rules 2>"$TMP_DIR/p11-gate.err")"
+P11_GATE_STATUS=$?
+set -e
+if [ "$P11_GATE_STATUS" -ne 0 ]; then
+  echo "resume gate must pass on a fresh Java file-batch plan (status=$P11_GATE_STATUS)" >&2
+  cat "$TMP_DIR/p11-gate.err" >&2
+  exit 1
+fi
+grep -q '^GATE_OK=' <<<"$P11_GATE_OUT"
+
 echo "PASS: phase11 file batch planner"

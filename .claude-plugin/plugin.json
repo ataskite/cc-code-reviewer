@@ -1,7 +1,7 @@
 {
   "name": "cc-code-reviewer",
   "description": "Java、前端族群（React/Vue2/Vue3/Node/TS/JS）与 Python（Django/FastAPI/通用 Python）代码审查与修复插件 - 多维度智能审查，多语言统一入口，支持基于报告的 TDD code-fixer 修复流程",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "author": {
     "name": "ataskite"
   },

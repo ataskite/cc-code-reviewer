@@ -165,6 +165,32 @@ status_label() {
   esac
 }
 
+# 中断归因枚举 → 中文短标签（与 merge-batch-results.sh、agents/*「中断归因枚举」一致）。
+# 封闭枚举五选一；未知（unknown）也有标签，用于显式声明兜底值的批次。
+# 仅采信状态文件里显式写入的这些值；枚举外视为未填写，不参与展示、也不做文本猜测。
+failure_class_label() {
+  case "${1:-}" in
+    context_exhausted) echo "上下文耗尽" ;; tool_budget_exhausted) echo "工具预算耗尽" ;;
+    output_truncated) echo "输出中断" ;; cancelled) echo "已取消" ;;
+    unknown) echo "未知" ;; *) echo "" ;;
+  esac
+}
+
+# 失败归因计数（仅统计显式 failure_class ∈ 封闭枚举的 failed/partial 批次；
+# 状态展示不做 error 文本推断，未声明的归因一律留空）。固定数组按封闭枚举序归并，
+# 保证输出顺序确定。
+FC_ENUM=(context_exhausted tool_budget_exhausted output_truncated cancelled unknown)
+FC_COUNTS=(0 0 0 0 0)
+tally_failure_class() {
+  local i
+  for ((i = 0; i < ${#FC_ENUM[@]}; i++)); do
+    if [ "${FC_ENUM[$i]}" = "$1" ]; then
+      FC_COUNTS[$i]=$(( ${FC_COUNTS[$i]} + 1 ))
+      return
+    fi
+  done
+}
+
 # ceil_div 已由 estimate-review-minutes.sh 提供（source 引入），此处不再重复定义
 
 TARGET_REVIEW_COST_BASE=260000
@@ -390,6 +416,14 @@ for batch_path in "$RUN_DIR"/batches/batch-*.json; do
     if [ -n "$status_cost" ]; then
       planned_cost="$status_cost"
     fi
+    case "$status" in
+      failed|partial)
+        # 失败归因：只采信显式 failure_class（封闭枚举），不做文本回退推断。
+        fc="$(json_get "$status_path" failure_class)"
+        case "$fc" in
+          context_exhausted|tool_budget_exhausted|output_truncated|cancelled|unknown) tally_failure_class "$fc" ;;
+        esac ;;
+    esac
   fi
   planned_loc="${planned_loc:-0}"
   planned_files="${planned_files:-0}"
@@ -417,6 +451,51 @@ echo "${COVERAGE_LABEL}: $(format_number "$COMPLETED_LOC") / $(format_number "$T
 echo
 echo "本轮可执行批次: ${RUNNABLE_BATCHES[*]:-无}"
 echo "说明: 已完成批次会自动跳过；待执行、失败待重试和部分完成待重跑批次可以在本轮调度（partial 整批重跑）。"
+# 失败归因行：按封闭枚举中文短标签归并本轮 failed/partial 批次的显式 failure_class
+# 计数，其后按出现类别输出重试提示（工具预算耗尽/输出中断可直接原样重试；上下文耗尽
+# 建议拆批或缩小范围后重跑；已取消请先人工确认；unknown 保持中性、不给建议）。
+# 无任何显式可归类中断时不输出该行与提示。
+ATTRIBUTION_LINE=""
+ATTRIBUTION_TOTAL=0
+FC_HAS_TOOL=0; FC_HAS_TRUNC=0; FC_HAS_CONTEXT=0; FC_HAS_CANCEL=0
+for ((fc_i = 0; fc_i < ${#FC_ENUM[@]}; fc_i++)); do
+  fc_cnt="${FC_COUNTS[$fc_i]}"
+  [ "${fc_cnt:-0}" -gt 0 ] || continue
+  fc_lbl="$(failure_class_label "${FC_ENUM[$fc_i]}")"
+  # 注意：此处必须用 ${var} 花括号形式；macOS 自带 bash 3.2 在无括号变量名后紧跟
+  # 多字节字符（如「、」）时会误把其首字节并入变量名，set -u 下报 unbound variable。
+  if [ -z "${ATTRIBUTION_LINE}" ]; then
+    ATTRIBUTION_LINE="${fc_lbl} ×${fc_cnt}"
+  else
+    ATTRIBUTION_LINE="${ATTRIBUTION_LINE}、${fc_lbl} ×${fc_cnt}"
+  fi
+  ATTRIBUTION_TOTAL=$((ATTRIBUTION_TOTAL + fc_cnt))
+done
+fc_scan_flags() {
+  local i
+  for ((i = 0; i < ${#FC_ENUM[@]}; i++)); do
+    [ "${FC_COUNTS[$i]}" -gt 0 ] || continue
+    case "${FC_ENUM[$i]}" in
+      tool_budget_exhausted) FC_HAS_TOOL=1 ;;
+      output_truncated)      FC_HAS_TRUNC=1 ;;
+      context_exhausted)     FC_HAS_CONTEXT=1 ;;
+      cancelled)             FC_HAS_CANCEL=1 ;;
+    esac
+  done
+}
+fc_scan_flags
+if [ "$ATTRIBUTION_TOTAL" -gt 0 ]; then
+  echo "失败归因: $ATTRIBUTION_LINE"
+  if [ "$FC_HAS_TOOL" -eq 1 ] || [ "$FC_HAS_TRUNC" -eq 1 ]; then
+    echo "重试提示: 工具预算耗尽、输出中断的批次可直接原样重试。"
+  fi
+  if [ "$FC_HAS_CONTEXT" -eq 1 ]; then
+    echo "重试提示: 上下文耗尽的批次建议拆批或缩小范围后重跑。"
+  fi
+  if [ "$FC_HAS_CANCEL" -eq 1 ]; then
+    echo "重试提示: 已取消的批次请先人工确认原因，再决定是否整批重跑。"
+  fi
+fi
 echo "也可以自行输入批次号，例如 batch-002,batch-004 或 2,4,7。"
 
 RUNNABLE_COUNT="${#RUNNABLE_BATCHES[@]}"

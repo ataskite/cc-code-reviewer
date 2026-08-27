@@ -130,6 +130,11 @@ if printf '%s\n' "$OUTPUT" | grep -qE "2 路约|3 路约"; then
   exit 1
 fi
 printf '%s\n' "$OUTPUT" | grep -q "也可以自行输入批次号"
+# failed 批次未写显式 failure_class（legacy）→ 失败归因行必须省略，不做文本推断
+if printf '%s\n' "$OUTPUT" | grep -q "失败归因"; then
+  echo "failed batch without failure_class must not render attribution line" >&2
+  exit 1
+fi
 
 if printf '%s\n' "$OUTPUT" | grep -qE '(^|[[:space:]])(pending|running|completed|failed)([[:space:]]|$)'; then
   echo "status output must not expose internal enum values" >&2
@@ -284,6 +289,95 @@ if printf '%s\n' "$PARTIAL_OUTPUT" | grep -qE '(^|[[:space:]])(pending|running|c
   exit 1
 fi
 printf '%s\n' "$PARTIAL_OUTPUT" | grep -q "部分完成待重跑批次可以在本轮调度"
+
+# 失败归因行：failed/partial 批次显式 failure_class（封闭枚举）按中文短标签计数，
+# 顺序固定为枚举序；英文枚举词不得出现在输出中；并按出现类别输出重试提示
+# （工具预算耗尽/输出中断可直接原样重试；上下文耗尽建议拆批或缩小范围后重跑）。
+ATTR_RUN_ID="20260528-040203-main-standard"
+ATTR_RUN_DIR="$PROJECT_DIR/.cc-code-reviewer/runs/$ATTR_RUN_ID"
+mkdir -p "$ATTR_RUN_DIR/batches" "$ATTR_RUN_DIR/results"
+
+cat > "$ATTR_RUN_DIR/plan.json" <<JSON
+{
+  "schema_version": 1,
+  "run_id": "$ATTR_RUN_ID",
+  "project_name": "maven-large",
+  "project_dir": "$PROJECT_DIR",
+  "review_mode": "standard",
+  "review_scope": "全量代码",
+  "semantic_level": "maven-static",
+  "total_java_loc": 30000,
+  "total_java_file_count": 600,
+  "batch_count": 3
+}
+JSON
+
+cat > "$ATTR_RUN_DIR/batches/batch-001.json" <<'JSON'
+{"batch_id":"batch-001","planned_java_loc":10000,"planned_review_cost":12500,"planned_java_file_count":200,"scan_roots":["alpha"],"modules":[{"name":"alpha"}]}
+JSON
+cat > "$ATTR_RUN_DIR/batches/batch-002.json" <<'JSON'
+{"batch_id":"batch-002","planned_java_loc":10000,"planned_review_cost":12500,"planned_java_file_count":200,"scan_roots":["beta"],"modules":[{"name":"beta"}]}
+JSON
+cat > "$ATTR_RUN_DIR/batches/batch-003.json" <<'JSON'
+{"batch_id":"batch-003","planned_java_loc":10000,"planned_review_cost":12500,"planned_java_file_count":200,"scan_roots":["gamma"],"modules":[{"name":"gamma"}]}
+JSON
+cat > "$ATTR_RUN_DIR/results/batch-001.status.json" <<'JSON'
+{"batch_id":"batch-001","status":"failed","failure_class":"tool_budget_exhausted","error":"工具调用轮次预算耗尽"}
+JSON
+cat > "$ATTR_RUN_DIR/results/batch-002.status.json" <<'JSON'
+{"batch_id":"batch-002","status":"failed","failure_class":"context_exhausted","error":"上下文不足以完成整批"}
+JSON
+cat > "$ATTR_RUN_DIR/results/batch-003.status.json" <<'JSON'
+{"batch_id":"batch-003","status":"partial","failure_class":"tool_budget_exhausted","error":"工具调用轮次预算耗尽，已产出部分发现"}
+JSON
+
+ATTR_OUTPUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR")"
+printf '%s\n' "$ATTR_OUTPUT" | grep -qF "失败归因: 上下文耗尽 ×1、工具预算耗尽 ×2"
+printf '%s\n' "$ATTR_OUTPUT" | grep -qF "重试提示: 工具预算耗尽、输出中断的批次可直接原样重试。"
+printf '%s\n' "$ATTR_OUTPUT" | grep -qF "重试提示: 上下文耗尽的批次建议拆批或缩小范围后重跑。"
+printf '%s\n' "$ATTR_OUTPUT" | grep -q "| batch-001 | 失败待重试 |"
+printf '%s\n' "$ATTR_OUTPUT" | grep -q "| batch-002 | 失败待重试 |"
+printf '%s\n' "$ATTR_OUTPUT" | grep -q "| batch-003 | 部分完成待重跑 |"
+if printf '%s\n' "$ATTR_OUTPUT" | grep -qE '(^|[[:space:]])(pending|running|completed|failed|partial|context_exhausted|tool_budget_exhausted|output_truncated|cancelled|unknown)([[:space:]]|$)'; then
+  echo "attribution output must use Chinese labels only, no internal enum values" >&2
+  printf '%s\n' "$ATTR_OUTPUT" >&2
+  exit 1
+fi
+
+# 已取消批次：归因行计「已取消」，并输出人工确认提示；不误触其他两类提示。
+CANCEL_RUN_ID="20260528-050203-main-standard"
+CANCEL_RUN_DIR="$PROJECT_DIR/.cc-code-reviewer/runs/$CANCEL_RUN_ID"
+mkdir -p "$CANCEL_RUN_DIR/batches" "$CANCEL_RUN_DIR/results"
+
+cp "$ATTR_RUN_DIR/plan.json" "$CANCEL_RUN_DIR/plan.json"
+cat > "$CANCEL_RUN_DIR/plan.json" <<JSON
+{
+  "schema_version": 1,
+  "run_id": "$CANCEL_RUN_ID",
+  "project_name": "maven-large",
+  "project_dir": "$PROJECT_DIR",
+  "review_mode": "standard",
+  "review_scope": "全量代码",
+  "semantic_level": "maven-static",
+  "total_java_loc": 30000,
+  "total_java_file_count": 600,
+  "batch_count": 1
+}
+JSON
+
+cp "$ATTR_RUN_DIR/batches/batch-001.json" "$CANCEL_RUN_DIR/batches/"
+cat > "$CANCEL_RUN_DIR/results/batch-001.status.json" <<'JSON'
+{"batch_id":"batch-001","status":"failed","failure_class":"cancelled","error":"用户在宿主侧中止"}
+JSON
+
+CANCEL_OUTPUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR")"
+printf '%s\n' "$CANCEL_OUTPUT" | grep -qF "失败归因: 已取消 ×1"
+printf '%s\n' "$CANCEL_OUTPUT" | grep -qF "重试提示: 已取消的批次请先人工确认原因，再决定是否整批重跑。"
+if printf '%s\n' "$CANCEL_OUTPUT" | grep -qE "重试提示: (工具预算耗尽|上下文耗尽)"; then
+  echo "FAIL: 仅已取消类时不得输出可直接重试或拆批提示" >&2
+  printf '%s\n' "$CANCEL_OUTPUT" >&2
+  exit 1
+fi
 
 # phase13 转发 wrapper 后，输出必须与 core/show-batch-status.sh 逐字节一致
 OLD_OUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR" 2>&1)"

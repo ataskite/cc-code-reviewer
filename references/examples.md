@@ -153,6 +153,19 @@ Maven 多模块存量审查先按当前已确认范围重算规模。只有
 - P0-1：高置信已证实：生产订单请求参数直达未参数化 SQL，无有效校验或绑定防护，可破坏关键订单数据，必须阻断发布
 - P0-2：高置信已证实：生产支付链路发生部分提交，无回滚或补偿防护，可造成资金错误，必须阻断发布
 - run-manifest.json 使用仓库相对路径，并为跨 clone/workspace 生成稳定 item_id
+
+我：批次失败归因示例——假设本轮 batch-004 因上下文耗尽失败且零产出，状态 JSON 按「中断归因枚举」（封闭五值）写入必填的 failure_class：
+
+{ "batch_id": "batch-004", "status": "failed", "finding_count": 0, "result_path": null, "failure_class": "context_exhausted", "error": "上下文耗尽，需要整批重跑" }
+
+失败与 partial 批次的 failure_class 会反映到失败归因统计：批次状态总览的错误列随之显示 [短标签] 原error（如 [上下文耗尽] 前缀），summary.json 的 failed_by_class 按解析后枚举计数，show-batch-status.sh 追加一行失败归因统计：
+失败归因: 上下文耗尽 ×1
+
+我：恢复前必须过 validate-resume-input 门禁（--rules）。用户次日要求复用未完成的 RUN_DIR，展示可调度批次之前主 skill 必须先执行：
+bash scripts/core/validate-resume-input.sh "$RUN_DIR" "$PROJECT_DIR" --rules
+→ 本次门禁 exit 2 输出单行 INPUT_CHANGED=review-input.json sha256 mismatch recorded=… actual=…，stderr 另有 ERROR_INPUT_CHANGED 行与中文处置建议。
+
+门禁退出码非 0（INPUT_CHANGED / RULES_CHANGED / FROZEN_INPUT_MISSING / 用法错误）：不得列出任何可调度批次，向用户转述门禁输出的单行原因与建议行，经用户确认整体重新规划并创建新的 RUN_DIR；legacy 计划缺 rules_snapshot_sha256 在 --rules 下同样 fail-closed（RULES_CHANGED=legacy run lacks rules snapshot）。仅当输出 GATE_OK=<run_id> 时才放行进入既有 pending/partial/failed 调度流程。
 ```
 
 ## lark-cli 不可用时

@@ -975,6 +975,9 @@ bash "$(dirname "$0")/../../core/resolve-review-rules.sh" \
   "$PROJECT_DIR" "$SOURCE_MANIFEST" "$REVIEW_RULES_RESOLVED_PATH" \
   "${CC_CODE_REVIEWER_REVIEW_RULES_PATH:-$PROJECT_DIR/.cc-code-reviewer/review-rules.yml}" >/dev/null
 REVIEW_INPUT_SHA256="$(sha256_file "$REVIEW_INPUT_PATH")"
+# 恢复准入门禁快照（resume admission gate）：解析后规则文件一落盘立即记录其 sha256，
+# 供 scripts/core/validate-resume-input.sh 在恢复旧 RUN_DIR 前复核冻结文件未被改动。
+RULES_SNAPSHOT_SHA256="$(sha256_file "$REVIEW_RULES_RESOLVED_PATH")"
 
 CREATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cat > "$RUN_DIR/plan.json.tmp" <<JSON
@@ -994,6 +997,7 @@ cat > "$RUN_DIR/plan.json.tmp" <<JSON
   "total_java_file_count": $TOTAL_JAVA_FILE_COUNT,
   "review_input_path": "$(json_escape "$REVIEW_INPUT_PATH")",
   "review_input_sha256": "$(json_escape "$REVIEW_INPUT_SHA256")",
+  "rules_snapshot_sha256": "$(json_escape "$RULES_SNAPSHOT_SHA256")",
   "review_rules_resolved_path": "$(json_escape "$REVIEW_RULES_RESOLVED_PATH")",
   "batch_count": $BATCH_COUNT,
   "budget": {

@@ -364,4 +364,33 @@ test "$AFFINITY_HIT" -eq 1 || {
   exit 1
 }
 
+# 恢复准入门禁快照：大仓规划器必须在 plan.json 记录与 review-rules.json 字节一致的
+# rules_snapshot_sha256；真实 RUN_DIR 带 --rules 必须通过 validate-resume-input.sh。
+phase11_rules_snapshot_sha() {
+  perl -MDigest::SHA -e 'my $f = shift; my $s = Digest::SHA->new(256); $s->addfile($f); print $s->hexdigest, "\n"' "$1"
+}
+
+OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-040405 bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$PROJECT_DIR" "standard" "main" "maven-static")"
+RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
+
+GATE_EXPECTED_SHA="$(phase11_rules_snapshot_sha "$RUN_DIR/review-rules.json")"
+grep -Fq "\"rules_snapshot_sha256\": \"$GATE_EXPECTED_SHA\"" "$RUN_DIR/plan.json" || {
+  echo "large-batch plan.json must record rules_snapshot_sha256 matching review-rules.json" >&2
+  exit 1
+}
+if grep -q 'head_commit_sha256' "$RUN_DIR/plan.json"; then
+  echo "large-batch plan.json must not record head_commit_sha256 (gate only compares frozen bytes)" >&2
+  exit 1
+fi
+
+set +e
+LARGE_GATE_OUT="$(bash "$ROOT_DIR/scripts/core/validate-resume-input.sh" "$RUN_DIR" "$PROJECT_DIR" --rules 2>"$TMP_DIR/large-gate.err")"
+LARGE_GATE_STATUS=$?
+set -e
+if [ "$LARGE_GATE_STATUS" -ne 0 ] || ! grep -q '^GATE_OK=' <<<"$LARGE_GATE_OUT"; then
+  echo "resume gate must pass right after planning (status=$LARGE_GATE_STATUS)" >&2
+  cat "$TMP_DIR/large-gate.err" >&2
+  exit 1
+fi
+
 echo "PASS: phase11 large Maven batch planner"

@@ -62,6 +62,9 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 bash "$SCRIPT_DIR/plan-review-units.sh" "$PROJECT_DIR" "$LANGUAGE_ID" "$SOURCE_MANIFEST" "$UNITS_JSON" >/dev/null
 bash "$SCRIPT_DIR/resolve-review-rules.sh" "$PROJECT_DIR" "$SOURCE_MANIFEST" "$RULES_RESOLVED" "${CC_CODE_REVIEWER_REVIEW_RULES_PATH:-$PROJECT_DIR/.cc-code-reviewer/review-rules.yml}" >/dev/null
+# 恢复准入门禁快照（resume admission gate）：规则解析产物一落盘立即记录其 sha256，
+# 供 scripts/core/validate-resume-input.sh 在恢复旧 RUN_DIR 前复核冻结文件未被改动。
+RULES_SNAPSHOT_SHA256="$(sha256_file "$RULES_RESOLVED")"
 perl -MJSON::PP -e '
   local $/; my $d=decode_json(<>); for my $u (@{$d->{units}}) { for my $f (@{$u->{files}}) { print "$u->{unit_id}\t$f\n"; } }
 ' "$UNITS_JSON" > "$UNIT_MEMBERS"
@@ -278,6 +281,7 @@ cat > "$RUN_DIR/plan.json.tmp" <<JSON
   "review_rules_resolved_path": "$(json_escape "$RULES_RESOLVED")",
   "review_input_path": "$(json_escape "$RUN_DIR/review-input.json")",
   "review_input_sha256": "$(json_escape "$REVIEW_INPUT_SHA256")",
+  "rules_snapshot_sha256": "$(json_escape "$RULES_SNAPSHOT_SHA256")",
   "total_source_loc": $TOTAL_LOC,
   "total_source_file_count": $TOTAL_FILES,
   "batch_count": $BATCH_COUNT,

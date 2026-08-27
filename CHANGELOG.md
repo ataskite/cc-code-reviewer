@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.6.5 — 对标 OpenCodeReview：定向规则清单与批次可信治理
+
+### 新增
+
+- **文件类型定向规则清单**：新增 `scripts/core/filetype-rule-map.json`（16 条有序 pattern，first-match-wins、大小写不敏感）与 `references/review-checklists/*.md` 共 11 份清单文档（pom、gradle 构建、mapper XML、Spring 配置、日志配置、CI workflow、Dockerfile、OpenAPI/Swagger、npm package.json、Django 核心、Python 依赖）。`core/resolve-review-rules.sh` 解析项目规则时向 review-rules.json 叠加输出 `filetype_checklists` 组——pattern / checklist / doc / files 与清单全文 `content` 内嵌，无命中时整键缺省；映射缺失或零命中一律 fail-open 整体省略。三个 collector 增加伴随文件白名单层：Java 为模块构建描述符 + `src/main/resources` 定向模式 + CI/容器文件（硬上限 200，stderr `COMPANION_FILES_ADDED=N` 披露），前端并入各 package 根 package.json，Python 并入根 requirements*/pyproject.toml，保证 pattern 始终可触达。三个审查 agent 阶段 C 叠加执行命中的清单检查：ignore 冲突以 ignore 为准，无命中不引用。
+- **跨批次内容指纹去重**：`core/merge-batch-results.sh` 的 `dedupe_issue_blocks()` 升级为内容指纹口径——身份键 = sha256(文件路径 ␀ 维度标签 ␀ 归一化证据行)。证据行归一与 relocate-findings.sh 同口径（trim → 剥 +/- → trim、空行全弃），路径按原字节保留（不做相对化/小写化），行号与措辞不入键；legacy 整块折叠键仅兜底「无 `- 文件：` 行且无闭合围栏」的块，`fp\0` 与 `legacy\0` 两类键空间隔离绝不互相命中。同一缺陷跨批次的措辞漂移不再重复计数。
+- **批次失败归因枚举**：状态 JSON 的 `failed` / `partial` 必填 `"failure_class"` 字段（判不准写 `unknown`，`completed` 禁带），取值为封闭五值枚举 context_exhausted / tool_budget_exhausted / output_truncated / cancelled / unknown，禁止发明其他值。merge 侧解析次序为显式值恒优先（枚举外视为未填写）→ 缺失走确定性中文关键词回退（上下文|context→context_exhausted；工具|轮次|tool→tool_budget_exhausted；中断|截断|truncat→output_truncated；取消|cancel|interrupt|ctrl→cancelled）→ 其余落 `unknown`，错误文本为空同样归 `unknown`。
+- **失败归因统计与重试提示**：`summary.json` 在 finding_count 后新增 `dedup` 去重统计对象（`input_findings` / `merged_duplicates` / `output_findings`，N=0 时整对象省略）并在覆盖说明区追加「跨批次去重」披露行；failed_batches 组后新增 `"failed_by_class"` 五键含零归因对象（零失败时整体省略，计数和恒等于 failed_batches）；run-manifest 的 failed/partial 条目写入解析后的枚举值；批次状态总览错误列展示为 `[短标签] 原error`；`core/show-batch-status.sh` footer 输出「失败归因」归因行与三类重试提示（工具预算耗尽/输出中断可原样重试，上下文耗尽建议拆批缩小范围，已取消先人工确认）——归因展示只采信显式声明、不做文本猜测。
+- **续跑准入门禁**：两个分批 planner 写 plan.json 时记录 `rules_snapshot_sha256`（review-rules.json 字节哈希，shasum -a 256 → sha256sum → perl Digest::SHA 回退链）；新增 `scripts/core/validate-resume-input.sh <RUN_DIR> <PROJECT_DIR> [--rules]` 恢复门禁——exit 0 输出单行 `GATE_OK=<run_id>` 放行；exit 2 INPUT_CHANGED（快照哈希不符/冻结输入缺失/review_input_path 越出 RUN_DIR/plan 缺 review_input_sha256 一律 fail-closed）、exit 3 RULES_CHANGED（仅 --rules 校验；legacy 计划缺快照字段 = 固定串 'legacy run lacks rules snapshot' 且同样 fail-closed）、exit 4 FROZEN_INPUT_MISSING、exit 1 用法错误；非零时 stderr 含机器可 grep 的 `ERROR_<REASON>` 行与中文建议行。主 Skill 恢复流程强制带 --rules 接线：非零不得列出任何可调度批次，必须由用户确认重新规划并新建 RUN_DIR。
+
+### 变更
+
+- 三个审查 agent（Java / Frontend / Python）阶段 C 统一接线：新增「文件类型专项清单叠加（强制）」段——清单是聚焦透镜而非替代框架，不得借清单跳过常规维度、不得套用到未命中的文件；状态写入约定加入「中断归因枚举」表。SKILL.md 批次注入表披露 `filetype_checklists` 映射与 content 内嵌，合并步骤跨批去重说明同步为指纹口径，恢复流程接线准入门禁；契约测试钉住枚举封闭性、`failed_by_class` 稳态、`rules_snapshot_sha256` 落盘、门禁脚本存在性与 `filetype_checklists` 输出。
+
+### 升级方式
+
+三端插件 manifest 已指向 1.6.5。Claude Code / Codex / ZCode 用户重新加载插件即可（`/reload-plugins` 或对应入口）。
+
 ## 1.6.4 — 吸收 OpenCodeReview v1.10.0 第一梯队特性
 
 ### 新增

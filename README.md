@@ -108,7 +108,10 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 
 - 15 个审查维度：正确性、代码质量、异常处理、数据访问、安全、性能、资源管理、并发、缓存、消息队列、API 设计、架构、配置、测试、技术债等
 - 技术栈感知：Spring Boot、MyBatis / MyBatis Plus、JPA/Hibernate、Redis、Kafka/RocketMQ、Spring Security 等
+- 文件类型专项清单（v1.6.5）：`resolve-review-rules.sh` 按路径模式对命中文件叠加聚焦检查清单——pom.xml / mapper XML / Spring 与日志配置 / Dockerfile / CI workflow（Jenkinsfile、GitLab CI、GitHub Actions）/ npm package.json 等 11 类（清单文档 content 内嵌注入，逐文件第一命中唯一分组）；文件级分批与单 Agent 路由全量可达，Maven 大仓模块分批路由仅覆盖模块内命中路径
 - Maven 多模块大仓库：支持 `module-sequential` 和 `ai-planned` 分批，批次可恢复，合并报告区分阶段性/完整
+- 续跑准入门禁（v1.6.5）：恢复未完成 RUN_DIR 前必须先执行 `validate-resume-input.sh <RUN_DIR> <PROJECT_DIR> --rules` 校验冻结输入与规则快照未被改动；仅 `GATE_OK=<run_id>` 放行，`INPUT_CHANGED` / `RULES_CHANGED` / `FROZEN_INPUT_MISSING` 一律 fail-closed——禁止列出可调度批次，由用户确认重新规划并新建 RUN_DIR
+- 批次失败归因（v1.6.5）：失败批次状态 JSON 写入五值封闭 `failure_class` 枚举（`failed` / `partial` 必填、判不准写 `unknown`、`completed` 禁带）；批次表错误列显示 `[短标签] 原error` 前缀，`summary.json` 新增 `failed_by_class` 归因对象并输出「失败归因」统计行与分类重试提示
 - partial 部分完成批次（v1.6.4）：批次中断但已产出发现时写入 partial 状态；合并纳入其发现但覆盖保守不计，报告保持阶段性，批次可整批重跑
 - Maven 多模块小仓库：按当前审查范围计算规模；`estimated_tokens <= 1000000` 时跳过分批方式选择，只有严格大于 100 万才开启分批
 - Maven 大仓依赖图亲和分批（v1.6.0）：有依赖边的模块装箱时 cost 容差放宽 15%，相关模块优先同批
@@ -172,6 +175,7 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 - 可选飞书云文档：使用 Markdown 一级标题作为云文档标题
 - 可选飞书多维表格：按扫描/修复阶段字段契约写入和更新
 - 分批合并报告：支持 `[阶段性]` 与 `[合并阻塞]` 标题，明确已纳入批次、遗留批次和覆盖率；合并前对纳入批次自动执行跨文件重归档（fail-open），partial 批次发现标注入纳但报告保持阶段性
+- 跨批次指纹去重（v1.6.5）：合并时按 文件路径 ␀ 维度标签 ␀ 归一化证据行 的 sha256 内容指纹（即按文件 × 维度 × 证据代码）确定性合并措辞漂移的重复发现；证据归一与跨文件重归档同口径，路径按原字节保留，行号与措辞不入键，无文件行且无闭合围栏的块退回整块折叠键兜底；`summary.json` 的 `dedup` 对象与报告「跨批次去重」行披露统计
 
 ## 项目级审查规则
 

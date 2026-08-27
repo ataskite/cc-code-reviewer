@@ -201,7 +201,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 
 ### 第三步之后：读取项目级审查规则
 
-独立读取可选的 `.cc-code-reviewer/review-rules.yml`。它与 ignore 规则不同：**只附加路径审查重点，绝不屏蔽发现**。文件级 batch planner 会在创建 `RUN_DIR` 后自动将同一 source manifest 的规则解析到 `RUN_DIR/review-rules.json`；主 Skill 只注入该路径，不自行解释 YAML 内容。
+独立读取可选的 `.cc-code-reviewer/review-rules.yml`。它与 ignore 规则不同：**只附加路径审查重点，绝不屏蔽发现**。文件级 batch planner 会在创建 `RUN_DIR` 后自动将同一 source manifest 的规则解析到 `RUN_DIR/review-rules.json`；主 Skill 只注入该路径，不自行解释 YAML 内容。解析结果另含内置的文件类型专项清单映射（`filetype_checklists`，含 checklist 文档的 content 内嵌），按注入文件的路径逐个第一命中匹配。可达性边界：文件类型专项清单对文件级分批与单 Agent 路由全量可达；Maven 大仓模块分批路由由 planner 自建 `src/main/java` 清单、不含伴随文件，故仅覆盖模块内命中路径。前端与 Python 采集清单的扩展名与现有映射互斥，两路由的清单命中天然稀疏，完整性守卫测试已固化此语义。
 
 ### 第五步：输出预扫描摘要（不允许跳过）
 
@@ -411,7 +411,15 @@ failed 失败待重试
 partial 部分完成待重跑（已产出部分发现，可整批重跑）
 ```
 
-如果发现兼容的未完成 `RUN_DIR`，必须先读取 `plan.json` 并展示状态表。恢复时：
+如果发现兼容的未完成 `RUN_DIR`，必须先读取 `plan.json` 并展示状态表。
+
+展示可调度批次选项之前，必须先执行恢复准入门禁，验证冻结快照未被改动；门禁必须带 `--rules` 把规则快照一并校验：
+```bash
+bash "${PLUGIN_ROOT}/scripts/core/validate-resume-input.sh" "$RUN_DIR" "$PROJECT_DIR" --rules
+```
+门禁退出码非 0 时不得列出任何可调度批次：任何非零结果（含 `INPUT_CHANGED`、`RULES_CHANGED`、`FROZEN_INPUT_MISSING` 与用法错误）均表示冻结输入与现状不再一致或已不可信，不允许在该 `RUN_DIR` 续跑；必须向用户转述门禁输出的单行原因与 stderr 提示，并按既有交互规则由用户确认后整体重新规划（创建新的 `RUN_DIR`），禁止仅凭旧计划复用已完成、部分完成或失败批次。仅当输出 `GATE_OK=<run_id>` 时才放行进入既有 pending/partial/failed 调度流程。
+
+恢复时：
 - `completed` 批次默认跳过，不重跑
 - `running` 批次一律转为 `failed`，错误写为"上次执行中断，需要整批重跑"
 - `pending`、`failed` 和 `partial` 批次按用户本轮执行批次数调度
@@ -665,7 +673,7 @@ test -r "$REVIEW_UNITS_PATH"
 | 本批审查文件列表 | {BATCH_FILE_LIST}（仅文件级分批模式） |
 | 审查输入清单 | {RUN_DIR/review-input.json 或 未生成} |
 | 关联审查单元 | {REVIEW_UNITS_PATH} |
-| 项目审查规则解析结果 | {RUN_DIR/review-rules.json} |
+| 项目审查规则解析结果 | {RUN_DIR/review-rules.json}（含文件类型专项清单映射，清单文档 content 已内嵌） |
 | 审查输出模式 | 仅发现清单 |
 
 ### 本批审查边界
@@ -691,7 +699,7 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 
 如果疑似问题位置在当前正式边界（`BATCH_FILE_LIST`、`scan_roots`，或 Python 的 `FORMAL_CONFIG_FILE:`）外，写入「跨批依赖待复核」。
 
-若注入“项目审查规则解析结果”，只读取其中本批正式文件命中的规则并作为额外审查重点；`merge_language_rule=true` 时与语言框架规则共同执行，任何规则不得降低现有 P0 门槛、ignore 规则或正式扫描边界。
+若注入“项目审查规则解析结果”，只读取其中本批正式文件命中的规则并作为额外审查重点；`filetype_checklists` 同样只取命中本批正式文件的清单组并逐条执行（文档 content 已内嵌，无需再读磁盘）；`merge_language_rule=true` 时与语言框架规则共同执行，任何规则不得降低现有 P0 门槛、ignore 规则或正式扫描边界。
 
 ### 项目概况（预扫描结果）
 {PROJECT_SCAN_RESULT}
@@ -1512,7 +1520,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `REVIEW_INPUT_PATH` | core/prepare-review-input.sh 输出（所有入口） | 不可变输入、ref、选中/排除原因和内容指纹 |
 | `SEMANTIC_GROUPS_PATH` | 增量审查时由 `scripts/core/prepare-semantic-groups.sh` 从冻结 review-input.json 元数据生成；单 agent 路径为 `${REVIEW_INPUT_PATH%.json}-semantic-groups.tsv`，文件级分批路径为 `$RUN_DIR/semantic-groups.tsv`；非增量或未分组时为 未生成 | `{group_key}\t{仓库相对路径}` 逐行 TSV |
 | `REVIEW_UNITS_PATH` | core/prepare-review-context.sh 输出；文件级分批复用 RUN_DIR/review-units.json | 只按 import/直接依赖形成的结构关联单元，不包含安全语义或候选结论 |
-| `REVIEW_RULES_RESOLVED_PATH` | core/resolve-review-rules.sh 基于 REVIEW_INPUT_PATH 的 selected 文件解析 | 当前正式范围逐文件命中的项目审查规则；不作为 ignore |
+| `REVIEW_RULES_RESOLVED_PATH` | core/resolve-review-rules.sh 基于 REVIEW_INPUT_PATH 的 selected 文件解析 | 当前正式范围逐文件命中的项目审查规则；不作为 ignore。文件内含文件类型专项清单映射（含 content 内嵌） |
 
 ### 增量审查预处理（仅增量审查时执行）
 
@@ -1560,10 +1568,10 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${PLUGIN_ROOT}/scripts/core/merge-batch-re
 1. **确定本轮批次集合**：读取 `RUN_BATCH_IDS`；为空时回退到 `RUN_DIR/batches/batch-*.json` 全量批次。
 2. **等待本轮批次终态**：检查 `results/batch-XXX.status.json`，对 `pending` / `running` 批次按脚本超时配置等待。
 3. **阻塞判断**：本轮存在 `failed`、结果缺失或等待超时，生成 `[合并阻塞]` 报告，提示用户重试或补齐对应批次。
-4. **批次状态总览**：在报告中列出所有批次的状态、本轮主任务标记、合并处理、文件数、行数、模块和错误信息。
+4. **批次状态总览**：在报告中列出所有批次的状态、本轮主任务标记、合并处理、文件数、行数、模块和错误信息。状态 JSON 的 `failure_class` 按 agents 的「中断归因枚举」（封闭五值）取值，解析次序为 显式声明恒优先 → 缺失走确定性中文关键词回退 → unknown；错误列展示为 `[短标签] 原error` 前缀与失败归因统计行。
 5. **合并本轮批次结果**：把本轮 `completed` 且结果文件存在的批次纳入正式发现；目标 `partial` 只有在结果文件和至少一条正式发现同时存在时才纳入发现，但其覆盖不计入完成覆盖率；非本轮批次列为遗留。
 6. **跨批线索汇总**：抽取各批 `跨批依赖待复核` 段落，集中列在报告中。
-7. **跨批去重**：对已纳入本次合并的发现按文件、行号、维度和根因去重；未完成或遗留批次不得参与正式结论。
+7. **跨批去重**：对已纳入本次合并的发现按文件 × 维度 × 证据代码内容指纹去重——身份键 = sha256(文件路径 ␀ 维度标签 ␀ 归一化证据行)，行号不入键，证据行归一化与跨文件重归档同口径；仅当块无 `- 文件：` 行且无闭合围栏时才退回整块折叠键兜底，两类键空间隔离。去重统计写入 `summary.json` 的 `dedup` 对象（`input_findings` / `merged_duplicates` / `output_findings`，输入为 0 时整对象省略），覆盖说明区在合并重复数大于 0 时输出「跨批次去重」披露行；未完成或遗留批次不得参与正式结论。
 8. **聚合同类问题**：对同一根因的多处出现聚合为一条，保留代表位置和影响范围。
 9. **汇总覆盖率**：Java 文件覆盖率只统计已纳入合并的批次文件数；LOC 与 review cost 仅作为规划规模参考。
 10. **按分批合并报告格式输出**：复用 `references/report-format.md` 中的合并报告格式，至少包含审查配置快照、审查范围说明、执行摘要、批次状态总览、已纳入批次发现、跨批依赖线索、覆盖限制与未审查范围。

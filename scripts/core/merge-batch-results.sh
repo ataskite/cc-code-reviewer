@@ -36,6 +36,47 @@ status_label() {
     *) echo "待执行" ;;
   esac
 }
+# ---- 批次失败归因（failure_class）----
+# 封闭枚举（与 agents/*「中断归因枚举」表一致）：context_exhausted | tool_budget_exhausted |
+# output_truncated | cancelled | unknown，共 5 个，禁止发明其他值。每批只解析一次，
+# 错误列前缀、summary.json 的 failed_by_class 与 run-manifest 台账共用同一结果。
+# 解析顺序：状态文件显式 failure_class（枚举内，含 unknown）→ error 文本确定性关键词
+# 分类（大小写不敏感、按下述顺序首个命中生效）→ unknown（error 为空同样落到 unknown）。
+# 中文短标签固定五选一：上下文耗尽 / 工具预算耗尽 / 输出中断 / 已取消 / 未知。
+# 注意：枚举清单必须与下方 run-manifest perl 程序内的 %FC_ENUM 保持一致。
+failure_class_label() {
+  case "${1:-}" in
+    context_exhausted) echo "上下文耗尽" ;; tool_budget_exhausted) echo "工具预算耗尽" ;;
+    output_truncated) echo "输出中断" ;; cancelled) echo "已取消" ;;
+    unknown) echo "未知" ;;
+    *) echo "" ;;
+  esac
+}
+resolve_failure_class() {
+  # $1 = status.json 路径；$2 = 该批状态。仅 failed/partial 参与归因；其他状态输出空。
+  # 枚举外值视为未填写（回落到关键词回退）。回退关键词族：
+  #   上下文/context → context_exhausted；工具/轮次/tool → tool_budget_exhausted；
+  #   中断/截断/truncat → output_truncated；取消/cancel/interrupt(ctrl) → cancelled；
+  #   其余一律 unknown。注意：decode_json 返回字符序列，模式字面量必须以 `use utf8`
+  #   声明为字符语义，中文关键词才能与 UTF-8 error 文本正确匹配。
+  perl -MJSON::PP -e '
+    use utf8;
+    my ($file, $st) = @ARGV;
+    open my $fh, "<", $file or exit 0;
+    local $/;
+    my $d = eval { decode_json(<$fh>) };
+    exit 0 unless ref $d eq "HASH";
+    my %enum = map { $_ => 1 } qw(context_exhausted tool_budget_exhausted output_truncated cancelled unknown);
+    if (defined $d->{failure_class} && $enum{$d->{failure_class}}) { print "$d->{failure_class}\n"; exit 0; }
+    exit 0 unless $st eq "failed" || $st eq "partial";
+    my $e = lc($d->{error} // "");
+    print "context_exhausted\n"     and exit 0 if $e =~ /上下文|context/;
+    print "tool_budget_exhausted\n" and exit 0 if $e =~ /工具|轮次|tool/;
+    print "output_truncated\n"      and exit 0 if $e =~ /中断|截断|truncat/;
+    print "cancelled\n"             and exit 0 if $e =~ /取消|cancel|interrupt|ctrl/;
+    print "unknown\n";
+  ' "$1" "$2"
+}
 markdown_cell() { printf '%s' "$1" | tr '\n\r' '  ' | sed 's/|/\\|/g'; }
 batch_modules() {
   perl -MJSON::PP -e '
@@ -55,19 +96,113 @@ batch_modules() {
     print join(",", @modules);
   ' "$1"
 }
+# 批次发现去重（内容指纹版，确定性、零 LLM）：同一缺陷跨批次常常只是措辞漂移
+# （标题改写、标点差异、建议句序交换），因此身份不再锚定整块散文文本，而是锚定
+# 稳定事实——借鉴 SARIF partialFingerprint 的 Path|Category|ExistingCode 组合：
+#   指纹 = sha256_hex(文件路径 \0 维度标签 \0 归一化证据代码行)
+#   - 文件路径：块内第一条 "- 文件：" 行取出的路径。保留原字节（同仓库范围写入，
+#     不做相对化/大小写归一，避免误并），仅 trim 并统一 "\\" 为 "/"，再剥掉结尾一个
+#     半角/全角 ":数字" 行号（行号跨批次漂移且已由上游重归档钩子修正）；无该行则 ""
+#   - 维度标签：表头第一个 [...] 内层文本（内部连续空白折叠为单空格）；缺失为 ""
+#   - 证据代码：块内第一个闭合围栏代码块的内容（围栏行允许缩进/带语言标记）；每行
+#     按 relocate-findings.sh 的 norm_line 同口径归一（去 CR → trim → 剥一个 +/- 前缀
+#     → 再 trim → 去尾空白），完全丢弃空行后按原顺序以 "\n" 连接；无闭合围栏或内容
+#     全空时为 ""
+# 兜底（防误吞）：块既无 "- 文件：" 行又无围栏证据时无法构成稳定身份，退回旧的
+# 整块空白折叠键。两类键命名空间独立，绝不互相命中；相同键位置序首个命中者胜出。
+# 存续块逐字节原样输出；`### batch-XXX - 模块` 分隔行不含 P0-P3/待确认前缀，
+# 始终作为分隔符而非发现表头解析。计数：进入去重的发现总数与被合并的重复数写入
+# 统计文件（第 3 参，可选；两行十进制），供 summary.json 的 dedup 对象与报告
+# “跨批次去重”行披露；写文件失败即中断（调用方先 rm 保证干净起点）。
 dedupe_issue_blocks() {
-  perl -CS -Mutf8 -e '
+  CC_MERGE_DEDUP_STATS_FILE="${3:-}" perl -CS -Mutf8 -MEncode=encode_utf8 -MDigest::SHA=sha256_hex -e '
+    use strict; use warnings;
     binmode STDIN, ":utf8"; binmode STDOUT, ":utf8";
-    my %seen; my @block; my $in_issue = 0;
+    my $stats_file = $ENV{CC_MERGE_DEDUP_STATS_FILE} // "";
+    my (%seen, @block, $in_issue);
+    my ($input_blocks, $merged_dups) = (0, 0);
+    sub collapse_ws {
+      my $s = shift // "";
+      $s =~ s/\s+/ /g;
+      $s =~ s/^\s+//;
+      $s =~ s/\s+$//;
+      return $s;
+    }
+    # 证据行归一化：与 scripts/core/relocate-findings.sh 的 norm_line 完全一致口径
+    # （步骤顺序不得调整，保证两处对同一行的归一结果逐字节相同）。
+    sub norm_evidence_line {
+      my $l = shift // "";
+      $l =~ s/\r$//;
+      $l =~ s/^\s+//;
+      $l =~ s/^[-+]?//;
+      $l =~ s/^\s+//;
+      $l =~ s/\s+$//;
+      return $l;
+    }
+    sub parse_dim_tag {
+      my ($hdr) = @_;
+      return "" unless $hdr =~ /\[([^\]]*)\]/;
+      my $tag = collapse_ws($1);
+      return $tag // "";
+    }
+    sub first_location_path {
+      for (@_) {
+        next unless /^-\s*文件：\s*(.*)$/;
+        my $p = $1;
+        $p =~ s/^\s+//;
+        $p =~ s/\s+$//;
+        return "" unless length $p;
+        $p =~ s!\\!/!g;
+        ($p =~ s/:([0-9]+)$//) || ($p =~ s/：([0-9]+)$//);
+        return $p;
+      }
+      return "";
+    }
+    sub evidence_block {
+      my ($open, $close);
+      for my $i (0 .. $#_) {
+        my $t = $_[$i];
+        $t =~ s/^\s+//;
+        $t =~ s/\s+$//;
+        next unless $t =~ /^```/;
+        if (!defined $open) { $open = $i; }
+        else { $close = $i; last; }
+      }
+      return () unless defined $open && defined $close && $close > $open;
+      my @ev;
+      for my $i (($open + 1) .. ($close - 1)) {
+        my $n = norm_evidence_line($_[$i]);
+        push @ev, $n if length $n;
+      }
+      return @ev;
+    }
+    sub identity_key {
+      my @all = @_;
+      my @rest = @all; shift @rest;
+      my @locs = grep { /^-\s*文件：/ } @rest;
+      my @ev = evidence_block(@rest);
+      if (!@locs && !@ev) {
+        return ("legacy", collapse_ws(join("", @all)));
+      }
+      my $dim  = parse_dim_tag($all[0]);
+      my $path = first_location_path(@rest);
+      my $evid = @ev ? join("\n", @ev) : "";
+      return ("fp", sha256_hex(encode_utf8(join("\x00", $path, $dim, $evid))));
+    }
     sub flush_block {
-      return if !@block;
-      my $key = join("", @block); $key =~ s/\s+/ /g;
-      print @block if !$seen{$key}++;
-      @block = (); $in_issue = 0;
+      return unless @block;
+      $input_blocks++;
+      my ($namespace, $key) = identity_key(@block);
+      my $full_key = "$namespace\0$key";
+      if (!$seen{$full_key}++) { print @block; }
+      else { $merged_dups++; }
+      @block = ();
+      $in_issue = 0;
     }
     while (my $line = <STDIN>) {
       if ($line =~ /^###\s+(?:P[0-3]|待确认)(?:\b|\s|\|)/) {
-        flush_block(); @block = ($line); $in_issue = 1; next;
+        flush_block();
+        @block = ($line); $in_issue = 1; next;
       }
       if ($in_issue) {
         if ($line =~ /^##\s+/ || $line =~ /^###\s+/) { flush_block(); print $line; }
@@ -77,6 +212,11 @@ dedupe_issue_blocks() {
       print $line;
     }
     flush_block();
+    if (length $stats_file) {
+      open my $sf, ">", $stats_file or die "DEDUP_STATS_WRITE_ERROR=$stats_file: $!\n";
+      print {$sf} "$input_blocks\n$merged_dups\n";
+      close $sf or die "DEDUP_STATS_CLOSE_ERROR=$stats_file: $!\n";
+    }
   ' < "$1" > "$2"
 }
 count_issue_blocks() {
@@ -181,12 +321,16 @@ fi
 mkdir -p "$RUN_DIR/final"
 COMPLETED_RESULTS="$RUN_DIR/final/.completed-results.md"
 DEDUPED_RESULTS="$RUN_DIR/final/.deduped-results.md"
+DEDUP_STATS_FILE="$RUN_DIR/final/.dedup-stats"
 CROSS_BATCH_LEADS="$RUN_DIR/final/.cross-batch-leads.md"
 BATCH_STATUS_TABLE="$RUN_DIR/final/.batch-status-table.md"
 : > "$COMPLETED_RESULTS"; : > "$DEDUPED_RESULTS"; : > "$CROSS_BATCH_LEADS"; : > "$BATCH_STATUS_TABLE"
+rm -f "$DEDUP_STATS_FILE"
 
 COMPLETED_BATCHES=0; FAILED_BATCHES=0; PENDING_BATCHES=0; RUNNING_BATCHES=0; PARTIAL_BATCHES=0
 COVERED_LOC=0; COVERED_FILES=0; TOTAL_FINDINGS=0
+# failed_by_class 计数（仅统计 FAILED 批次；partial 不计入该对象）。
+FC_FAILED_CTX=0; FC_FAILED_TOOL=0; FC_FAILED_TRUNC=0; FC_FAILED_CANCEL=0; FC_FAILED_UNKNOWN=0
 INCLUDED_BATCHES=0; LEFTOVER_BATCHES=0; MERGE_BLOCKED=false
 INCLUDED_BATCH_IDS=(); MERGED_BATCH_IDS=(); LEFTOVER_BATCH_IDS=(); PARTIAL_BATCH_IDS=()
 
@@ -282,10 +426,33 @@ for bp in "$RUN_DIR"/batches/batch-*.json; do
     case "$status" in completed|failed|partial) ;; *) MERGE_BLOCKED=true; error="${error:-等待本轮批次完成超时}";; esac
   fi
 
+  # 每批只解析一次失败归因（仅 failed/partial）：显式枚举 → error 关键词回退 → unknown。
+  resolved_fc=""
+  case "$status" in failed|partial) resolved_fc="$(resolve_failure_class "$sp" "$status")" ;; esac
+
+  # 错误列展示：解析出的归因必有中文短标签（failed/partial 的封闭枚举五选一，含
+  # unknown→未知），有非空错误文本时统一加「[标签] 」前缀；其余状态/空错误保持原文。
+  display_error="$error"
+  if [ -n "$display_error" ]; then
+    fc_label="$(failure_class_label "$resolved_fc")"
+    [ -n "$fc_label" ] && display_error="[$fc_label] $display_error"
+  fi
+
+  # summary.json 的 failed_by_class：只统计 FAILED 批次按解析后枚举归类；partial 不计入。
+  if [ "$status" = "failed" ]; then
+    case "$resolved_fc" in
+      context_exhausted)     FC_FAILED_CTX=$((FC_FAILED_CTX + 1)) ;;
+      tool_budget_exhausted) FC_FAILED_TOOL=$((FC_FAILED_TOOL + 1)) ;;
+      output_truncated)      FC_FAILED_TRUNC=$((FC_FAILED_TRUNC + 1)) ;;
+      cancelled)             FC_FAILED_CANCEL=$((FC_FAILED_CANCEL + 1)) ;;
+      *)                     FC_FAILED_UNKNOWN=$((FC_FAILED_UNKNOWN + 1)) ;;
+    esac
+  fi
+
   printf '| %s | %s | %s | %s | %s | %s | %s | %s |\n' \
     "$(markdown_cell "$bid")" "$(markdown_cell "$(status_label "$status")")" \
     "$target_label" "$(markdown_cell "$merge_action")" "$planned_files" "$planned_loc" \
-    "$(markdown_cell "$(batch_modules "$bp")")" "$(markdown_cell "$error")" >> "$BATCH_STATUS_TABLE"
+    "$(markdown_cell "$(batch_modules "$bp")")" "$(markdown_cell "$display_error")" >> "$BATCH_STATUS_TABLE"
 done
 
 # 证据重归档钩子（fail-open）：以冻结审查输入（plan.json.review_input_path，缺省回退
@@ -354,8 +521,23 @@ if [ "$RELOCATION_HAD_RESULTS" = true ]; then
   fi
 fi
 
-dedupe_issue_blocks "$COMPLETED_RESULTS" "$DEDUPED_RESULTS"
+dedupe_issue_blocks "$COMPLETED_RESULTS" "$DEDUPED_RESULTS" "$DEDUP_STATS_FILE"
 TOTAL_FINDINGS="$(count_issue_blocks "$DEDUPED_RESULTS")"
+# 去重披露（增量、schema_version 仍为 1）：N = 进入去重的发现总数（含各 included
+# 批次全部正式块），K = 去重后计数（即 count_issue_blocks 结果），M = N - K
+# （指纹键与旧折叠键合并的重复数；K 超过 N 的异常输入按 0 兜底）。
+# N == 0 时不输出 dedup 键与“跨批次去重”行，保持旧输出的字节兼容。
+DEDUP_INPUT_FINDINGS="0"
+if [ -f "$DEDUP_STATS_FILE" ]; then
+  dedup_raw_input="$(sed -n '1p' "$DEDUP_STATS_FILE")"
+  case "$dedup_raw_input" in ''|*[!0-9]*) dedup_raw_input="0" ;; esac
+  DEDUP_INPUT_FINDINGS="$dedup_raw_input"
+fi
+rm -f "$DEDUP_STATS_FILE"
+DEDUP_MERGED_DUPLICATES=0
+if [ "$DEDUP_INPUT_FINDINGS" -gt "$TOTAL_FINDINGS" ]; then
+  DEDUP_MERGED_DUPLICATES=$((DEDUP_INPUT_FINDINGS - TOTAL_FINDINGS))
+fi
 FILE_COVERAGE="$(percent "$COVERED_FILES" "$TOTAL_FILE_COUNT")"
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
@@ -377,6 +559,19 @@ if [ "$RELOCATION_ENABLED" = true ]; then
   RELOCATION_SUMMARY_LINE="  \"relocation\": {\"enabled\": true, \"same_file_fixed\": $RELOC_SAME, \"refiled\": $RELOC_REFILED, \"unresolved\": $RELOC_UNRESOLVED},"
 fi
 
+DEDUP_SUMMARY_LINE=""
+if [ "$DEDUP_INPUT_FINDINGS" -gt 0 ]; then
+  DEDUP_SUMMARY_LINE="  \"dedup\": {\"input_findings\": $DEDUP_INPUT_FINDINGS, \"merged_duplicates\": $DEDUP_MERGED_DUPLICATES, \"output_findings\": $TOTAL_FINDINGS},"
+fi
+
+# failed_by_class（增量、schema_version 仍为 1）：按解析后枚举统计 FAILED 批次数，
+# 五个键固定出现（含 0）保证形状稳定；计数值之和恒等于 failed_batches。
+# 没有任何 failed 批次时整个对象省略，与全绿运行的旧输出逐字节兼容。
+FAILED_BY_CLASS_LINE=""
+if [ "$FAILED_BATCHES" -gt 0 ]; then
+  FAILED_BY_CLASS_LINE="  \"failed_by_class\": {\"context_exhausted\": $FC_FAILED_CTX, \"tool_budget_exhausted\": $FC_FAILED_TOOL, \"output_truncated\": $FC_FAILED_TRUNC, \"cancelled\": $FC_FAILED_CANCEL, \"unknown\": $FC_FAILED_UNKNOWN},"
+fi
+
 cat > "$RUN_DIR/summary.json.tmp" <<JSON
 {
   "schema_version": 1,
@@ -384,6 +579,7 @@ cat > "$RUN_DIR/summary.json.tmp" <<JSON
   "language_id": "$(json_escape "$LANGUAGE_ID")",
   "completed_batches": $COMPLETED_BATCHES,
   "failed_batches": $FAILED_BATCHES,
+${FAILED_BY_CLASS_LINE}
   "partial_batches": $PARTIAL_BATCHES,
   "partial_batch_ids": $(json_string_array ${PARTIAL_BATCH_IDS[@]+"${PARTIAL_BATCH_IDS[@]}"}),
   "pending_batches": $PENDING_BATCHES,
@@ -405,6 +601,7 @@ cat > "$RUN_DIR/summary.json.tmp" <<JSON
   "source_file_coverage_percent": $FILE_COVERAGE,
   "finding_count": $TOTAL_FINDINGS,
 ${RELOCATION_SUMMARY_LINE}
+${DEDUP_SUMMARY_LINE}
   "report_title": "$(json_escape "$REPORT_TITLE")",
   "run_manifest_path": "$(json_escape "$RUN_DIR/run-manifest.json")",
   "final_report_path": "$(json_escape "$FINAL_REPORT")"
@@ -454,6 +651,9 @@ perl -MJSON::PP -MFile::Spec -MCwd=abs_path -e '
   my %target=map { $_=>1 } @{$s->{target_batch_ids}||[]};
   my @items;
   my %batch_errors;
+  # 状态文件显式声明的失败归因（枚举校验后收录；枚举外视为未填写）。
+  my %batch_failure_classes;
+  my %FC_ENUM = map { $_ => 1 } qw(context_exhausted tool_budget_exhausted output_truncated cancelled unknown);
   my %root_coverage;
   my $project=$p->{project_dir}||"";
   $project=(abs_path($project)||File::Spec->canonpath($project)) if length $project;
@@ -497,7 +697,7 @@ perl -MJSON::PP -MFile::Spec -MCwd=abs_path -e '
   closedir $bd;
   for my $bp (@batch_files) {
     my $b=loadj($bp); my $id=$b->{batch_id}; my $status_path="$run/results/$id.status.json";
-    my $status="pending"; if (-f $status_path) { my $sr=loadj($status_path); $status=$sr->{status}||"pending"; $batch_errors{$id}=$sr->{error}||""; }
+    my $status="pending"; if (-f $status_path) { my $sr=loadj($status_path); $status=$sr->{status}||"pending"; $batch_errors{$id}=$sr->{error}||""; $batch_failure_classes{$id}=$sr->{failure_class} if defined $sr->{failure_class} && $FC_ENUM{$sr->{failure_class}}; }
     my $coverage = $included{$id} ? "completed" : (!$target{$id} ? "leftover" : ($status eq "failed" ? "failed" : ($status eq "partial" ? "partial" : "leftover")));
     for my $root (@{$b->{scan_roots}||[]}) {
       next unless defined $root && length $root;
@@ -524,25 +724,35 @@ perl -MJSON::PP -MFile::Spec -MCwd=abs_path -e '
   }
   @items=sort { ($a->{path}//"") cmp ($b->{path}//"") || ($a->{batch_id}//"") cmp ($b->{batch_id}//"") } @items;
   sub item_id { sha256_hex(join("\0", "review", $repository_identity_sha256, $p->{language_id}||"", $_[0]||"")); }
-  sub failure_class {
-    my $e=lc($_[0]||"");
-    return "timeout" if $e =~ /timeout|timed out/;
-    return "cancelled" if $e =~ /cancel/;
-    return "budget" if $e =~ /budget|token/;
-    return "configuration" if $e =~ /config/;
-    return "provider" if $e =~ /provider|llm|model/;
-    return "input" if $e =~ /input|manifest|path/;
+  # error 文本确定性关键词分类器（大小写不敏感、顺序首个命中生效；与上方
+  # resolve_failure_class 的回退族完全一致）：空文本/无命中一律 unknown。
+  # `use utf8` 使模式字面量为字符语义，与 decode_json 解出的字符序列同构可比。
+  use utf8;
+  sub classify_error_text {
+    my $e=lc($_[0]//"");
+    return "context_exhausted"     if $e =~ /上下文|context/;
+    return "tool_budget_exhausted" if $e =~ /工具|轮次|tool/;
+    return "output_truncated"      if $e =~ /中断|截断|truncat/;
+    return "cancelled"             if $e =~ /取消|cancel|interrupt|ctrl/;
     return "unknown";
+  }
+  # 每批只解析一次：显式 failure_class（枚举内）→ 关键词回退 → unknown。
+  sub resolved_failure_class {
+    my ($id)=@_;
+    return $batch_failure_classes{$id} if $batch_failure_classes{$id};
+    return classify_error_text($batch_errors{$id} // "");
   }
   for my $i (@items) {
     $i->{item_id}=item_id($i->{path});
+    # failed/partial 台账统一携带解析后的失败归因枚举；included-partial 与 failed 的
+    # 区分由 status 字段本身承担（partial 不再硬编码字面量 "partial" 作为归因）。
     if (($i->{status}||"") eq "failed") {
-      $i->{failure_class}=failure_class($batch_errors{$i->{batch_id}});
+      $i->{failure_class}=resolved_failure_class($i->{batch_id});
       $i->{reason}=$batch_errors{$i->{batch_id}} if $batch_errors{$i->{batch_id}};
     } elsif (($i->{status}||"") eq "partial") {
       # partial 批次的 item_id 与 completed 完全一致（只由 path+仓库身份+语言派生）；
-      # 台账只额外标记 failure_class=partial 与中断原因，覆盖计数保持保守。
-      $i->{failure_class}="partial";
+      # 覆盖计数保持保守。
+      $i->{failure_class}=resolved_failure_class($i->{batch_id});
       $i->{reason}=$batch_errors{$i->{batch_id}} if $batch_errors{$i->{batch_id}};
     } elsif (($i->{status}||"") eq "leftover") {
       $i->{reason}="not included in current merge";
@@ -673,6 +883,10 @@ if [ "$RELOCATION_ENABLED" = true ] && [ "$RELOC_REFILED" -gt 0 ]; then
 fi
 if [ -n "$RELOCATION_SKIP_REASON" ] && [ "$RELOCATION_HAD_RESULTS" = true ]; then
   echo "# 跨文件重归档：跳过（${RELOCATION_SKIP_REASON}）" >> "$FINAL_REPORT.tmp"
+fi
+# 与 summary.json 的 dedup 对象同口径：仅当确实合并了重复（M > 0）时披露。
+if [ "$DEDUP_MERGED_DUPLICATES" -gt 0 ]; then
+  echo "跨批次去重：${DEDUP_INPUT_FINDINGS} 条发现中合并重复 ${DEDUP_MERGED_DUPLICATES} 条（按文件 × 维度 × 证据代码指纹），保留 ${TOTAL_FINDINGS} 条。" >> "$FINAL_REPORT.tmp"
 fi
 
 mv "$FINAL_REPORT.tmp" "$FINAL_REPORT"

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "match": "first",
+  "patterns": [
+    {"pattern": "**/pom.xml", "checklist": "maven-pom", "enabled": true},
+    {"pattern": "**/build.gradle", "checklist": "gradle-build", "enabled": true},
+    {"pattern": "**/build.gradle.kts", "checklist": "gradle-build", "enabled": true},
+    {"pattern": "**/*mapper*.xml", "checklist": "mapper-xml", "enabled": true},
+    {"pattern": "**/*dao*.xml", "checklist": "mapper-xml", "enabled": true},
+    {"pattern": "**/application*.{yml,yaml,properties}", "checklist": "spring-config", "enabled": true},
+    {"pattern": "**/bootstrap*.{yml,yaml,properties}", "checklist": "spring-config", "enabled": true},
+    {"pattern": "**/{logback*,log4j2*}.xml", "checklist": "logging-config", "enabled": true},
+    {"pattern": "**/.github/workflows/*.{yml,yaml}", "checklist": "ci-workflow", "enabled": true},
+    {"pattern": "**/Jenkinsfile", "checklist": "ci-workflow", "enabled": true},
+    {"pattern": "**/.gitlab-ci.yml", "checklist": "ci-workflow", "enabled": true},
+    {"pattern": "**/Dockerfile*", "checklist": "dockerfile", "enabled": true},
+    {"pattern": "**/{openapi,swagger}.{json,yml,yaml}", "checklist": "openapi-spec", "enabled": true},
+    {"pattern": "**/package.json", "checklist": "npm-package", "enabled": true},
+    {"pattern": "**/{settings,urls}.py", "checklist": "django-core", "enabled": true},
+    {"pattern": "**/{requirements*.txt,pyproject.toml}", "checklist": "python-deps", "enabled": true}
+  ]
+}

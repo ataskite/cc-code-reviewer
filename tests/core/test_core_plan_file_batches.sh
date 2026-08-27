@@ -97,6 +97,25 @@ assert_absent() { # pattern file...
   fi
 }
 
+# 恢复准入门禁快照：plan.json 必须记录解析后 review-rules.json 字节一致的 sha256；
+# 真实规则快照必须带 --rules 通过 validate-resume-input.sh；不得出现实验性 head_commit_sha256。
+sha_of_file() {
+  perl -MDigest::SHA -e 'my $f = shift; my $s = Digest::SHA->new(256); $s->addfile($f); print $s->hexdigest, "\n"' "$1"
+}
+CORE_RULES_SHA_EXPECTED="$(sha_of_file "$RUN_DIR/review-rules.json")"
+grep -Fq "\"rules_snapshot_sha256\": \"$CORE_RULES_SHA_EXPECTED\"" "$RUN_DIR/plan.json"
+assert_absent 'head_commit_sha256' "$RUN_DIR/plan.json"
+set +e
+CORE_GATE_OUT="$(bash "$ROOT_DIR/scripts/core/validate-resume-input.sh" "$RUN_DIR" "$D" --rules 2>"$TMP_DIR/core-gate.err")"
+CORE_GATE_STATUS=$?
+set -e
+if [ "$CORE_GATE_STATUS" -ne 0 ]; then
+  echo "FAIL: resume gate must pass on a fresh plan (status=$CORE_GATE_STATUS)" >&2
+  cat "$TMP_DIR/core-gate.err" >&2
+  exit 1
+fi
+grep -q '^GATE_OK=' <<<"$CORE_GATE_OUT"
+
 # 用例 S1（向后兼容 / 零命中 fail-open）：同一 fixture 跑两次 —— 一次不设
 # CC_CODE_REVIEWER_SEMANTIC_GROUPS_FILE，一次设一个只引用清单外路径（零命中）的 groups 文件。
 # 两次运行都不得出现 semantic_* 字段、批次成员逐批一致；归一化（替换 run 时间戳、

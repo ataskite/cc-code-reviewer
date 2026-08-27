@@ -166,9 +166,9 @@ maxTurns: 50
 - 如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」，不计入正式问题数量。
 - 批次是原子的；不要写其他运行状态，也不要写文件级 reviewed 状态。
 - 大型仓库批次模式不得自行命名结果文件。必须把批次发现清单写入 `BATCH_RESULT_PATH`，不得写入 `*.result.md`、`/tmp/review-batch-*` 或任何其他自造路径。
-- 完整写入 `BATCH_RESULT_PATH` 后，才能把 `BATCH_STATUS_PATH` 写为 `completed`。状态文件中的 `result_path` 必须指向同一个 `BATCH_RESULT_PATH`；如果使用相对路径，必须是相对 `RUN_DIR` 的路径，例如 `results/batch-001.md`。
-- **部分完成（partial）**：若本批中途无法继续（上下文耗尽、输出中断、工具连续失败），但**已产出至少一条正式发现**：先把已产出的完整发现清单（含 `## 覆盖情况`，并如实标注未完整覆盖）完整写入 `BATCH_RESULT_PATH`，再将 `BATCH_STATUS_PATH` 写为 `"status":"partial"`、`finding_count` = 已产出发现数、`error` = 中断原因（如"上下文耗尽，已产出部分发现，可整批重跑"）、`result_path` 指向该文件。**零产出才写 failed**。
-- 无法完整完成且零产出时，把 `BATCH_STATUS_PATH` 写为 `failed`，并写明错误原因。
+- 完整写入 `BATCH_RESULT_PATH` 后，才能把 `BATCH_STATUS_PATH` 写为 `completed`。状态文件中的 `result_path` 必须指向同一个 `BATCH_RESULT_PATH`；如果使用相对路径，必须是相对 `RUN_DIR` 的路径，例如 `results/batch-001.md`。`completed` 状态**不得**携带 `"failure_class"` 字段。
+- **部分完成（partial）**：若本批中途无法继续（上下文耗尽、输出中断、工具连续失败），但**已产出至少一条正式发现**：先把已产出的完整发现清单（含 `## 覆盖情况`，并如实标注未完整覆盖）完整写入 `BATCH_RESULT_PATH`，再将 `BATCH_STATUS_PATH` 写为 `"status":"partial"`、`finding_count` = 已产出发现数、`error` = 中断原因（如"上下文耗尽，已产出部分发现，可整批重跑"）、`result_path` 指向该文件。**零产出才写 failed**。状态 JSON 同时必须写入 `"failure_class"` = 下方「中断归因枚举」中的对应值（判不准写 `unknown`，不得省略）；`error` 保持自由文本。
+- 无法完整完成且零产出时，把 `BATCH_STATUS_PATH` 写为 `failed`，并写明错误原因；状态 JSON 必须包含 `"failure_class"` = 下方「中断归因枚举」之一（判不准写 `unknown`），`error` 保持自由文本。
 
 状态文件写为完成时使用以下结构：
 
@@ -196,9 +196,20 @@ maxTurns: 50
   "planned_java_file_count": 186,
   "finding_count": 0,
   "result_path": null,
-  "error": "上次执行中断，需要整批重跑"
+  "error": "上次执行中断，需要整批重跑",
+  "failure_class": "context_exhausted"
 }
 ```
+
+中断归因枚举（`failure_class` 只允许以下值，禁止发明其他值；`failed` 与 `partial` 必填、判不准写 `unknown`；`completed` 不得携带该字段。缺失或枚举外值时，合并侧会对 `error` 文本做确定性关键词回退推断，最终仍落到本表之一）：
+
+| 枚举值 | 中文短标签 | 触发条件 |
+|---|---|---|
+| context_exhausted | 上下文耗尽 | 上下文/窗口不足以完成整批，可整批重跑、建议拆分 |
+| tool_budget_exhausted | 工具预算耗尽 | 工具调用轮次/工具预算耗尽 |
+| output_truncated | 输出中断 | 报告/发现清单写入中途断掉（部分产出场景多为 partial） |
+| cancelled | 已取消 | 用户或宿主主动中断执行 |
+| unknown | 未知 | 无法归入以上任何一类时的兜底值（禁止乱猜） |
 
 当 `REVIEW_OUTPUT_MODE=仅发现清单` 且计划为 `strategy=file-token-batching`（或历史兼容调用未提供计划但提供 `BATCH_FILE_LIST`）时，执行文件列表分批流程，调整如下：
 - **阶段 A（文件收集）跳过**：直接使用 `BATCH_FILE_LIST` 注入的文件列表
@@ -209,7 +220,7 @@ maxTurns: 50
 - **第三步（应用 ignore 规则）正常执行**
 - **第四步（发现清单自校验）正常执行**：行号回抽 + 证伪过滤对本批发现同样适用
 - **第五步（生成报告）替换为发现清单输出**：不按 REPORT_FORMAT_PATH 生成完整报告，而是将结构化发现列表写入 `BATCH_RESULT_PATH`。只有未注入该路径的历史兼容调用才允许回退 `/tmp/review-batch-{BATCH_INDEX}-{PROJECT_NAME}.md`
-- **状态写入**：完整写入 `BATCH_RESULT_PATH` 后才将 `BATCH_STATUS_PATH` 写为 `completed`，字段取自本批计划；中途无法继续但已产出正式发现时，按上方「部分完成（partial）」规则写 `partial`；执行失败（零产出）则写为 `failed` 并记录错误
+- **状态写入**：完整写入 `BATCH_RESULT_PATH` 后才将 `BATCH_STATUS_PATH` 写为 `completed`，字段取自本批计划；中途无法继续但已产出正式发现时，按上方「部分完成（partial）」规则写 `partial`；执行失败（零产出）则写为 `failed` 并记录错误。两种非终态的 `failure_class` 归因要求同样按上方「中断归因枚举」表执行
 - **第六步（持久化报告文件）跳过**：`仅发现清单` 模式只输出发现清单，不生成完整报告、不落盘完整报告文件
 - **飞书上传跳过**：本子 agent 在任何输出模式下都不执行飞书上传；飞书上传由主 skill 统一处理
 - **第七步（输出最终汇总）替换**：仅输出简要完成信息 `✅ Batch {BATCH_INDEX}/{BATCH_COUNT} 完成：发现 {问题数} 个问题`，不输出完整报告
@@ -316,6 +327,8 @@ maxTurns: 50
 | 测试文件 | 9 | 1(测试正确性) |
 
 > 上表的维度编号仅在该维度被当前审查模式启用时才生效；模式未启用的维度自动跳过。此表为快速参考，最终以实际文件内容为准——如果文件中出现了跨类型的技术特征（如 Service 中有 Redis 操作），则对应维度（如 14）也应纳入评估。
+
+**文件类型专项清单叠加（强制）**：当注入的 `REVIEW_RULES_RESOLVED_PATH` 含有 `filetype_checklists` 时，命中清单的文件必须逐条执行对应清单（`content` 已内嵌文档全文）的全部检查点，结果并入该文件的多维度评估；清单是聚焦透镜而不是替代框架——不得因清单存在而跳过已启用维度的常规评估，也不得把某清单检查点套用到未命中清单的文件上。清单与 ignore 规则冲突时以 ignore 为准；`filetype_checklists` 缺省或无命中时不得引用本节，不得虚构或转述未注入的清单内容。
 
 > **安全设计不变量（与命名、框架和返回类型无关）**：安全维度启用时，不能通过预置类名、方法名或字段名词表寻找问题。完成一个关联审查单元的文件读取后，先根据代码真实行为建立内部安全契约：
 >   1. **受保护动作**：哪些执行结果会读取受限数据、改变关键状态、调用特权能力或把请求继续交给受保护的下游。

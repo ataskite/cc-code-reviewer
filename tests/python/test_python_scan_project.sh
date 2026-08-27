@@ -72,9 +72,10 @@ grep -qF 'SOURCE_SCOPE:context|**/migrations/**/*.py' <<< "$OUT"
 grep -qF 'SOURCE_SCOPE:excluded|**/venv/**' <<< "$OUT"
 grep -qF 'SOURCE_SCOPE:excluded|**/__pycache__/**' <<< "$OUT"
 
-# SOURCE_FILE_COUNT 必须只统计生产源码（排除 tests/migrations）
+# SOURCE_FILE_COUNT 只统计生产源码（tests/migrations 始终排除）；根级
+# pyproject.toml 属依赖描述符伴随层（filetype-rule-map 可达性），一并计入。
 FC="$(grep '^SOURCE_FILE_COUNT=' <<< "$OUT" | cut -d= -f2)"
-test "$FC" -eq 4  # __init__.py + models.py + views.py + settings.py
+test "$FC" -eq 5  # __init__.py + models.py + views.py + settings.py + pyproject.toml
 
 # FORMAL_CONFIG_FILE / CONTEXT_ROOT 断言：配置可正式发现，测试/迁移只读
 # 注意：scan-project.sh 用 pwd -P 规范化 PROJECT_DIR，macOS 上 /var -> /private/var，需同样规范化

@@ -122,10 +122,20 @@ maxTurns: 50
 
 - 读取 `BATCH_PLAN_PATH` 并确认 `strategy=file-token-batching` / `batch_file_list`；正式源码只来自 `BATCH_FILE_LIST`，不得查找 `scan_roots` 或重新扫描项目
 - 将本批结构化发现完整写入 `BATCH_RESULT_PATH`，不得生成完整报告或写入项目根报告文件
-- 结果文件写完后，才把 `BATCH_STATUS_PATH` 原子写为 `completed`；状态必须包含计划中的 `batch_id`、`planned_source_loc`、`planned_source_file_count`、实际 `finding_count`、指向同一结果文件的 `result_path` 和 `error: null`
-- **部分完成（partial）**：若本批中途无法继续（上下文耗尽、输出中断、工具连续失败），但**已产出至少一条正式发现**：先把已产出的完整发现清单（含 `## 覆盖情况`，并如实标注未完整覆盖）完整写入 `BATCH_RESULT_PATH`，再将 `BATCH_STATUS_PATH` 写为 `"status":"partial"`、`finding_count` = 已产出发现数、`error` = 中断原因（如"上下文耗尽，已产出部分发现，可整批重跑"）、`result_path` 指向该文件。**零产出才写 failed**；不得把部分结果标为 completed
-- 执行未完整完成且零产出时写 `failed`，`finding_count: 0`、`result_path: null` 并记录错误；不得把部分结果标为完成
+- 结果文件写完后，才把 `BATCH_STATUS_PATH` 原子写为 `completed`；状态必须包含计划中的 `batch_id`、`planned_source_loc`、`planned_source_file_count`、实际 `finding_count`、指向同一结果文件的 `result_path` 和 `error: null`。`completed` 状态**不得**携带 `"failure_class"` 字段
+- **部分完成（partial）**：若本批中途无法继续（上下文耗尽、输出中断、工具连续失败），但**已产出至少一条正式发现**：先把已产出的完整发现清单（含 `## 覆盖情况`，并如实标注未完整覆盖）完整写入 `BATCH_RESULT_PATH`，再将 `BATCH_STATUS_PATH` 写为 `"status":"partial"`、`finding_count` = 已产出发现数、`error` = 中断原因（如"上下文耗尽，已产出部分发现，可整批重跑"）、`result_path` 指向该文件。**零产出才写 failed**；不得把部分结果标为 completed。状态 JSON 同时必须写入 `"failure_class"` = 下方「中断归因枚举」中的对应值（判不准写 `unknown`，不得省略）；`error` 保持自由文本
+- 执行未完整完成且零产出时写 `failed`，`finding_count: 0`、`result_path: null` 并记录错误；不得把部分结果标为完成。状态 JSON 必须包含 `"failure_class"` = 下方「中断归因枚举」之一（判不准写 `unknown`）
 - 分批模式仅计划中的 `batch-001` 审查 `FORMAL_CONFIG_FILE:`；其余批次只读取必要配置作为上下文，不产生重复配置发现
+
+中断归因枚举（`failure_class` 只允许以下值，禁止发明其他值；`failed` 与 `partial` 必填、判不准写 `unknown`；`completed` 不得携带该字段。缺失或枚举外值时，合并侧会对 `error` 文本做确定性关键词回退推断，最终仍落到本表之一）：
+
+| 枚举值 | 中文短标签 | 触发条件 |
+|---|---|---|
+| context_exhausted | 上下文耗尽 | 上下文/窗口不足以完成整批，可整批重跑、建议拆分 |
+| tool_budget_exhausted | 工具预算耗尽 | 工具调用轮次/工具预算耗尽 |
+| output_truncated | 输出中断 | 报告/发现清单写入中途断掉（部分产出场景多为 partial） |
+| cancelled | 已取消 | 用户或宿主主动中断执行 |
+| unknown | 未知 | 无法归入以上任何一类时的兜底值（禁止乱猜） |
 
 ### 第一步：执行代码审查
 
@@ -159,6 +169,8 @@ maxTurns: 50
 | `tests/`（只读上下文） | 11 |
 | `pyproject.toml` / `requirements.txt` | 6（依赖风险）、4（工具配置） |
 | `migrations/`（只读上下文） | 5（迁移质量，仅 deep） |
+
+**文件类型专项清单叠加（强制）**：当注入的 `REVIEW_RULES_RESOLVED_PATH` 含有 `filetype_checklists` 时，命中清单的文件必须逐条执行对应清单（`content` 已内嵌文档全文）的全部检查点，结果并入该文件的多维度评估；清单是聚焦透镜而不是替代框架——不得因清单存在而跳过已启用维度的常规评估，也不得把某清单检查点套用到未命中清单的文件上。清单与 ignore 规则冲突时以 ignore 为准；`filetype_checklists` 缺省或无命中时不得引用本节，不得虚构或转述未注入的清单内容。
 
 - **安全设计不变量（与命名、框架和返回类型无关）**：安全维度启用时，完成一个关联审查单元的读取后，必须根据代码真实行为建立内部安全契约：识别受保护动作；识别允许执行该动作所依赖的授权证据；从赋值、分支、异常和组合逻辑归纳全部可达状态；分别追踪每种状态的最终效果；核查主体—资源绑定、外部数据到敏感效果以及敏感数据跨输出边界的传播。不得通过预置函数名、字段名、装饰器名或框架角色词表代替这一步语义判断。
 - 对每个安全契约主动构造反例：**是否存在尚未获得明确授权证据，却仍能到达受保护动作的可达路径？** 同时核查多段处理全部未作出决定时的实际默认行为。模型必须先从现场代码识别参与决策的符号，再使用这些符号查询引用、赋值和下游效果；契约假设只触发取证，不直接决定级别。

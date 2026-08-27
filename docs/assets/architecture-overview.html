@@ -116,7 +116,7 @@
       <h2>2. Scan · 发现与构建问题</h2>
       <div class="body">
         <div class="item"><span class="ic">🔎</span><div><b>预扫描</b><i>项目 / Git / 语言 / 技术栈 / LSP</i></div></div>
-        <div class="item"><span class="ic">🗃️</span><div><b>Shared Core</b><i>范围 · Ignore · 状态 · 合并 · 重归档</i></div></div>
+        <div class="item"><span class="ic">🗃️</span><div><b>Shared Core</b><i>范围 · Ignore · 状态 · 合并 · 重归档 · 文件类型专项清单</i></div></div>
         <div class="item"><span class="ic">🧩</span><div><b>Language Adapters</b><i>Java · Maven/Gradle<br>Frontend · React/Vue/Node/TS/JS<br>Python · Django/FastAPI</i></div></div>
         <div class="item"><span class="ic">🎚️</span><div><b>Review Modes</b><i>fast（仅 P0）· standard · deep · security</i></div></div>
         <div class="item"><span class="ic">📦</span><div><b>单 Agent / 大仓分批</b><i>加配 1M 上下文 · FFD · 可恢复 · 并发</i></div></div>
@@ -134,7 +134,7 @@
             <span class="file">review-rules.json</span><span class="arrow">▼</span>
             <span class="file">review-units.json</span>
           </div>
-          <div class="note">依赖亲和 ＋ 语义分组亲和分批</div>
+          <div class="note">依赖/语义分组亲和分批 · 续跑前过准入门禁</div>
         </div>
         <div class="box">
           <b>运行清单（治理账本）</b>
@@ -146,7 +146,7 @@
           </div>
           <div class="note">partial：部分完成待重跑，发现照常纳入合并</div>
         </div>
-        <div class="gov-note">合并去重 · 自动跨文件重归档 · 覆盖情况披露</div>
+        <div class="gov-note">合并去重（指纹） · 自动跨文件重归档 · 覆盖情况披露 · 失败归因</div>
         <div class="footer-chips"><span>输入不可变</span><span>可追溯</span><span>可增量续跑</span><span>可审计</span></div>
       </div>
     </div>
