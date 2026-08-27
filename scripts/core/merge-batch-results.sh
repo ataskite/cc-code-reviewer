@@ -32,7 +32,8 @@ percent() { if [ "${2:-0}" -gt 0 ]; then echo $(( ${1:-0} * 100 / ${2:-0} )); el
 status_label() {
   case "${1:-pending}" in
     completed) echo "已完成" ;; failed) echo "失败" ;;
-    running) echo "执行中" ;; *) echo "待执行" ;;
+    running) echo "执行中" ;; partial) echo "部分完成待重跑" ;;
+    *) echo "待执行" ;;
   esac
 }
 markdown_cell() { printf '%s' "$1" | tr '\n\r' '  ' | sed 's/|/\\|/g'; }
@@ -160,7 +161,7 @@ target_has_nonterminal_batches() {
   for t in "${TARGET_BATCH_IDS[@]}"; do
     sp="$RUN_DIR/results/$t.status.json"; st="pending"
     if [ -f "$sp" ]; then st="$(json_get "$sp" status)"; [ -n "$st" ] || st="pending"; fi
-    case "$st" in completed|failed) ;; *) return 0 ;; esac
+    case "$st" in completed|failed|partial) ;; *) return 0 ;; esac
   done
   return 1
 }
@@ -184,10 +185,10 @@ CROSS_BATCH_LEADS="$RUN_DIR/final/.cross-batch-leads.md"
 BATCH_STATUS_TABLE="$RUN_DIR/final/.batch-status-table.md"
 : > "$COMPLETED_RESULTS"; : > "$DEDUPED_RESULTS"; : > "$CROSS_BATCH_LEADS"; : > "$BATCH_STATUS_TABLE"
 
-COMPLETED_BATCHES=0; FAILED_BATCHES=0; PENDING_BATCHES=0; RUNNING_BATCHES=0
+COMPLETED_BATCHES=0; FAILED_BATCHES=0; PENDING_BATCHES=0; RUNNING_BATCHES=0; PARTIAL_BATCHES=0
 COVERED_LOC=0; COVERED_FILES=0; TOTAL_FINDINGS=0
 INCLUDED_BATCHES=0; LEFTOVER_BATCHES=0; MERGE_BLOCKED=false
-INCLUDED_BATCH_IDS=(); LEFTOVER_BATCH_IDS=()
+INCLUDED_BATCH_IDS=(); MERGED_BATCH_IDS=(); LEFTOVER_BATCH_IDS=(); PARTIAL_BATCH_IDS=()
 
 { echo "| 批次 | 状态 | 本轮主任务 | 合并处理 | 文件数 | 行数 | 模块 | 错误 |"; echo "|---|---|---|---|---:|---:|---|---|"; } > "$BATCH_STATUS_TABLE"
 
@@ -222,7 +223,7 @@ for bp in "$RUN_DIR"/batches/batch-*.json; do
       COMPLETED_BATCHES=$((COMPLETED_BATCHES+1))
       if is_target_batch "$bid" && [ "$result_available" = true ]; then
         target_label="是"; merge_action="已纳入本次合并"
-        INCLUDED_BATCHES=$((INCLUDED_BATCHES+1)); INCLUDED_BATCH_IDS+=("$bid")
+        INCLUDED_BATCHES=$((INCLUDED_BATCHES+1)); INCLUDED_BATCH_IDS+=("$bid"); MERGED_BATCH_IDS+=("$bid")
         COVERED_LOC=$((COVERED_LOC+planned_loc)); COVERED_FILES=$((COVERED_FILES+planned_files))
         { echo ""; echo "### $bid - $(batch_modules "$bp")"; echo ""; cat "$resolved"; echo ""; } >> "$COMPLETED_RESULTS"
         awk '/^##[[:space:]]*跨批依赖待复核/{c=1;next} /^##[[:space:]]/{c=0} c&&NF>0{print}' "$resolved" >> "$CROSS_BATCH_LEADS"
@@ -236,6 +237,37 @@ for bp in "$RUN_DIR"/batches/batch-*.json; do
       FAILED_BATCHES=$((FAILED_BATCHES+1))
       if is_target_batch "$bid"; then target_label="是"; merge_action="失败遗留"; MERGE_BLOCKED=true; fi
       LEFTOVER_BATCHES=$((LEFTOVER_BATCHES+1)); LEFTOVER_BATCH_IDS+=("$bid") ;;
+    partial)
+      # 部分完成：已产出 ≥1 正式发现并写入结果文件。目标批次纳入合并（发现计入
+      # finding_count），但覆盖统计按保守口径不计入已覆盖；非目标批次保持遗留。
+      PARTIAL_BATCHES=$((PARTIAL_BATCHES+1)); PARTIAL_BATCH_IDS+=("$bid")
+      formal_finding_count=0
+      if [ "$result_available" = true ]; then
+        formal_finding_count="$(count_issue_blocks "$resolved")"
+      fi
+      case "$finding_count" in
+        ''|*[!0-9]*) finding_count=0 ;;
+      esac
+      if is_target_batch "$bid" && [ "$result_available" = true ] \
+        && [ "$finding_count" -gt 0 ] && [ "$formal_finding_count" -gt 0 ]; then
+        target_label="是"; merge_action="部分完成已纳入"
+        MERGED_BATCH_IDS+=("$bid")
+        { echo ""; echo "### $bid - $(batch_modules "$bp")"; echo ""; cat "$resolved"; echo ""; } >> "$COMPLETED_RESULTS"
+        awk '/^##[[:space:]]*跨批依赖待复核/{c=1;next} /^##[[:space:]]/{c=0} c&&NF>0{print}' "$resolved" >> "$CROSS_BATCH_LEADS"
+      elif is_target_batch "$bid"; then
+        # partial 必须同时提供 finding_count>0 和至少一个正式发现块；否则视为
+        # 契约违规，与结果缺失的目标批次同等阻塞，避免把零产出当作成功。
+        target_label="是"; MERGE_BLOCKED=true
+        if [ "$result_available" = true ]; then
+          merge_action="部分完成结果无正式发现遗留"
+        else
+          merge_action="部分完成结果缺失遗留"
+        fi
+        LEFTOVER_BATCHES=$((LEFTOVER_BATCHES+1)); LEFTOVER_BATCH_IDS+=("$bid")
+      else
+        merge_action="部分完成未纳入本轮，遗留"
+        LEFTOVER_BATCHES=$((LEFTOVER_BATCHES+1)); LEFTOVER_BATCH_IDS+=("$bid")
+      fi ;;
     running)
       RUNNING_BATCHES=$((RUNNING_BATCHES+1))
       if is_target_batch "$bid"; then target_label="是"; merge_action="未完成遗留"; MERGE_BLOCKED=true; fi
@@ -247,7 +279,7 @@ for bp in "$RUN_DIR"/batches/batch-*.json; do
   esac
 
   if [ "$WAIT_TIMED_OUT" = true ] && is_target_batch "$bid"; then
-    case "$status" in completed|failed) ;; *) MERGE_BLOCKED=true; error="${error:-等待本轮批次完成超时}";; esac
+    case "$status" in completed|failed|partial) ;; *) MERGE_BLOCKED=true; error="${error:-等待本轮批次完成超时}";; esac
   fi
 
   printf '| %s | %s | %s | %s | %s | %s | %s | %s |\n' \
@@ -255,6 +287,72 @@ for bp in "$RUN_DIR"/batches/batch-*.json; do
     "$target_label" "$(markdown_cell "$merge_action")" "$planned_files" "$planned_loc" \
     "$(markdown_cell "$(batch_modules "$bp")")" "$(markdown_cell "$error")" >> "$BATCH_STATUS_TABLE"
 done
+
+# 证据重归档钩子（fail-open）：以冻结审查输入（plan.json.review_input_path，缺省回退
+# RUN_DIR/review-input.json）中 selected=true 的相对路径为范围清单，对已纳入批次结果
+# 就地修正行号漂移并做跨文件唯一命中重归档。plan.json 字段缺失、清单不可解析、脚本
+# 缺失或执行失败时只记录跳过原因，绝不阻断合并。必须在去重与计数之前运行。
+RELOCATION_ENABLED=false
+RELOC_SAME=0; RELOC_REFILED=0; RELOC_UNRESOLVED=0
+RELOCATION_SKIP_REASON=""
+RELOCATION_HAD_RESULTS=false
+if [ -s "$COMPLETED_RESULTS" ]; then RELOCATION_HAD_RESULTS=true; fi
+if [ "$RELOCATION_HAD_RESULTS" = true ]; then
+  REVIEW_INPUT_FOR_RELOC="$(json_get "$PLAN_PATH" review_input_path)"
+  if [ -n "$REVIEW_INPUT_FOR_RELOC" ]; then
+    case "$REVIEW_INPUT_FOR_RELOC" in /*) ;; *) REVIEW_INPUT_FOR_RELOC="$RUN_DIR/$REVIEW_INPUT_FOR_RELOC" ;; esac
+  elif [ -r "$RUN_DIR/review-input.json" ]; then
+    REVIEW_INPUT_FOR_RELOC="$RUN_DIR/review-input.json"
+  fi
+  RELOCATION_MANIFEST=""
+  if [ -r "$REVIEW_INPUT_FOR_RELOC" ]; then
+    RELOCATION_MANIFEST="$(mktemp "${TMPDIR:-/tmp}/cc-merge-relocate.XXXXXX")"
+    if ! perl -MJSON::PP -e '
+      my ($file) = @ARGV;
+      open my $fh, "<", $file or exit 1;
+      local $/;
+      my $data = eval { decode_json(<$fh>) };
+      exit 1 unless defined $data && ref($data->{items}) eq "ARRAY";
+      for my $item (@{$data->{items}}) {
+        next unless ref($item) eq "HASH" && $item->{selected};
+        my $path = $item->{path} // "";
+        $path =~ s/\r?\n\z//;
+        $path =~ s/^\s+//;
+        $path =~ s/\s+$//;
+        next unless length $path;
+        print "$path\n";
+      }
+    ' "$REVIEW_INPUT_FOR_RELOC" > "$RELOCATION_MANIFEST" 2>/dev/null; then
+      rm -f "$RELOCATION_MANIFEST"; RELOCATION_MANIFEST=""
+      RELOCATION_SKIP_REASON="审查输入清单不可解析"
+    elif [ ! -s "$RELOCATION_MANIFEST" ]; then
+      rm -f "$RELOCATION_MANIFEST"; RELOCATION_MANIFEST=""
+      RELOCATION_SKIP_REASON="审查输入清单无已选文件"
+    fi
+  else
+    RELOCATION_SKIP_REASON="缺少冻结审查输入"
+  fi
+  if [ -n "$RELOCATION_MANIFEST" ]; then
+    RELOCATE_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/relocate-findings.sh"
+    RELOCATION_PROJECT_DIR="$(json_get "$PLAN_PATH" project_dir)"
+    if [ ! -f "$RELOCATE_SCRIPT" ]; then
+      RELOCATION_SKIP_REASON="重归档脚本缺失"
+    elif [ -z "$RELOCATION_PROJECT_DIR" ] || [ ! -d "$RELOCATION_PROJECT_DIR" ]; then
+      RELOCATION_SKIP_REASON="plan.json 缺少可用 project_dir"
+    elif RELOCATE_OUT="$(bash "$RELOCATE_SCRIPT" "$COMPLETED_RESULTS" "$RELOCATION_PROJECT_DIR" "$RELOCATION_MANIFEST" 2>/dev/null)"; then
+      RELOCATION_ENABLED=true
+      RELOC_SAME="$(printf '%s\n' "$RELOCATE_OUT" | sed -n 's/^RELOCATE_SAME_FILE_FIXED=//p')"
+      RELOC_REFILED="$(printf '%s\n' "$RELOCATE_OUT" | sed -n 's/^RELOCATE_REFILED=//p')"
+      RELOC_UNRESOLVED="$(printf '%s\n' "$RELOCATE_OUT" | sed -n 's/^RELOCATE_UNRESOLVED=//p')"
+      [ -n "$RELOC_SAME" ] || RELOC_SAME=0
+      [ -n "$RELOC_REFILED" ] || RELOC_REFILED=0
+      [ -n "$RELOC_UNRESOLVED" ] || RELOC_UNRESOLVED=0
+    else
+      RELOCATION_SKIP_REASON="重归档脚本执行失败"
+    fi
+    rm -f "$RELOCATION_MANIFEST"
+  fi
+fi
 
 dedupe_issue_blocks "$COMPLETED_RESULTS" "$DEDUPED_RESULTS"
 TOTAL_FINDINGS="$(count_issue_blocks "$DEDUPED_RESULTS")"
@@ -267,10 +365,16 @@ FINAL_REPORT="$RUN_DIR/final/code-review-report-$SAFE_PROJECT_NAME-$TIMESTAMP.md
 
 if [ "$MERGE_BLOCKED" = true ]; then
   REPORT_TITLE="[合并阻塞] 代码审查报告 - $PROJECT_NAME"
-elif [ "$INCLUDED_BATCHES" -lt "$BATCH_COUNT" ]; then
+elif [ $((INCLUDED_BATCHES + PARTIAL_BATCHES)) -lt "$BATCH_COUNT" ] || [ "$PARTIAL_BATCHES" -gt 0 ]; then
+  # 任何 partial 批次都意味着本轮未完整覆盖（其覆盖按保守口径不计入）→ 阶段性。
   REPORT_TITLE="[阶段性] 代码审查报告 - $PROJECT_NAME"
 else
   REPORT_TITLE="代码审查报告 - $PROJECT_NAME"
+fi
+
+RELOCATION_SUMMARY_LINE=""
+if [ "$RELOCATION_ENABLED" = true ]; then
+  RELOCATION_SUMMARY_LINE="  \"relocation\": {\"enabled\": true, \"same_file_fixed\": $RELOC_SAME, \"refiled\": $RELOC_REFILED, \"unresolved\": $RELOC_UNRESOLVED},"
 fi
 
 cat > "$RUN_DIR/summary.json.tmp" <<JSON
@@ -280,6 +384,8 @@ cat > "$RUN_DIR/summary.json.tmp" <<JSON
   "language_id": "$(json_escape "$LANGUAGE_ID")",
   "completed_batches": $COMPLETED_BATCHES,
   "failed_batches": $FAILED_BATCHES,
+  "partial_batches": $PARTIAL_BATCHES,
+  "partial_batch_ids": $(json_string_array ${PARTIAL_BATCH_IDS[@]+"${PARTIAL_BATCH_IDS[@]}"}),
   "pending_batches": $PENDING_BATCHES,
   "running_batches": $RUNNING_BATCHES,
   "batch_count": $BATCH_COUNT,
@@ -290,6 +396,7 @@ cat > "$RUN_DIR/summary.json.tmp" <<JSON
   "wait_timed_out": $WAIT_TIMED_OUT,
   "target_batch_ids": $(json_string_array ${TARGET_BATCH_IDS[@]+"${TARGET_BATCH_IDS[@]}"}),
   "included_batch_ids": $(json_string_array ${INCLUDED_BATCH_IDS[@]+"${INCLUDED_BATCH_IDS[@]}"}),
+  "merged_batch_ids": $(json_string_array ${MERGED_BATCH_IDS[@]+"${MERGED_BATCH_IDS[@]}"}),
   "leftover_batch_ids": $(json_string_array ${LEFTOVER_BATCH_IDS[@]+"${LEFTOVER_BATCH_IDS[@]}"}),
   "covered_source_loc": $COVERED_LOC,
   "total_source_loc": $TOTAL_LOC,
@@ -297,6 +404,7 @@ cat > "$RUN_DIR/summary.json.tmp" <<JSON
   "total_source_file_count": $TOTAL_FILE_COUNT,
   "source_file_coverage_percent": $FILE_COVERAGE,
   "finding_count": $TOTAL_FINDINGS,
+${RELOCATION_SUMMARY_LINE}
   "report_title": "$(json_escape "$REPORT_TITLE")",
   "run_manifest_path": "$(json_escape "$RUN_DIR/run-manifest.json")",
   "final_report_path": "$(json_escape "$FINAL_REPORT")"
@@ -390,7 +498,7 @@ perl -MJSON::PP -MFile::Spec -MCwd=abs_path -e '
   for my $bp (@batch_files) {
     my $b=loadj($bp); my $id=$b->{batch_id}; my $status_path="$run/results/$id.status.json";
     my $status="pending"; if (-f $status_path) { my $sr=loadj($status_path); $status=$sr->{status}||"pending"; $batch_errors{$id}=$sr->{error}||""; }
-    my $coverage = $included{$id} ? "completed" : (!$target{$id} ? "leftover" : ($status eq "failed" ? "failed" : "leftover"));
+    my $coverage = $included{$id} ? "completed" : (!$target{$id} ? "leftover" : ($status eq "failed" ? "failed" : ($status eq "partial" ? "partial" : "leftover")));
     for my $root (@{$b->{scan_roots}||[]}) {
       next unless defined $root && length $root;
       $root_coverage{$root}={batch_id=>$id,status=>$coverage};
@@ -431,6 +539,11 @@ perl -MJSON::PP -MFile::Spec -MCwd=abs_path -e '
     if (($i->{status}||"") eq "failed") {
       $i->{failure_class}=failure_class($batch_errors{$i->{batch_id}});
       $i->{reason}=$batch_errors{$i->{batch_id}} if $batch_errors{$i->{batch_id}};
+    } elsif (($i->{status}||"") eq "partial") {
+      # partial 批次的 item_id 与 completed 完全一致（只由 path+仓库身份+语言派生）；
+      # 台账只额外标记 failure_class=partial 与中断原因，覆盖计数保持保守。
+      $i->{failure_class}="partial";
+      $i->{reason}=$batch_errors{$i->{batch_id}} if $batch_errors{$i->{batch_id}};
     } elsif (($i->{status}||"") eq "leftover") {
       $i->{reason}="not included in current merge";
     }
@@ -446,8 +559,9 @@ perl -MJSON::PP -MFile::Spec -MCwd=abs_path -e '
   }
   my @completed=grep { ($_->{status}||"") eq "completed" } @items;
   my @failed=grep { ($_->{status}||"") eq "failed" } @items;
+  my @partialcov=grep { ($_->{status}||"") eq "partial" } @items;
   my @leftover=grep { ($_->{status}||"") eq "leftover" } @items;
-  my $terminal = $s->{merge_blocked} ? "failed" : (!@items ? "skipped" : (@completed == @items ? "complete" : (@completed ? "partial" : "failed")));
+  my $terminal = $s->{merge_blocked} ? "failed" : (!@items ? "skipped" : (@completed == @items ? "complete" : ((@completed || @partialcov) ? "partial" : "failed")));
   my $input_mode = "workspace";
   if ($input && ($input->{selection_mode}||"") eq "incremental") { $input_mode="commit"; }
   my $coverage_percent = @items ? int(@completed * 100 / @items) : 0;
@@ -492,7 +606,7 @@ if [ "$LANGUAGE_ID" = "java" ]; then
 ## 审查范围说明
 
 - 项目名称：${PROJECT_NAME}
-- 覆盖方式：仅合并本轮主任务中状态为“已完成”且结果文件存在的批次
+- 覆盖方式：合并本轮主任务中状态为“已完成”且结果文件存在的批次；partial 结果仅纳入已产出发现
 - 覆盖口径：${COVERAGE_LABEL}只统计已纳入合并的批次文件数
 - 未纳入范围：失败、待执行、执行中、结果缺失或未纳入本轮的批次，详见“批次状态总览”
 
@@ -505,6 +619,7 @@ if [ "$LANGUAGE_ID" = "java" ]; then
 - 本轮主任务批次：${TARGET_BATCH_COUNT} / ${BATCH_COUNT}
 - 批次完成：${COMPLETED_BATCHES} / ${BATCH_COUNT}
 - 失败待重试批次：${FAILED_BATCHES}
+- 部分完成待重跑批次：${PARTIAL_BATCHES}
 - 待执行批次：${PENDING_BATCHES}
 - 执行中批次：${RUNNING_BATCHES}
 - 已纳入本次合并批次：${INCLUDED_BATCHES}
@@ -524,10 +639,10 @@ MD
 cat "$BATCH_STATUS_TABLE" >> "$FINAL_REPORT.tmp"
 cat >> "$FINAL_REPORT.tmp" <<'MD'
 
-## 已完成批次发现
+## 已纳入批次发现
 
 MD
-if [ -s "$DEDUPED_RESULTS" ]; then cat "$DEDUPED_RESULTS" >> "$FINAL_REPORT.tmp"; else echo "暂无已完成批次发现。" >> "$FINAL_REPORT.tmp"; fi
+if [ -s "$DEDUPED_RESULTS" ]; then cat "$DEDUPED_RESULTS" >> "$FINAL_REPORT.tmp"; else echo "暂无已纳入批次发现。" >> "$FINAL_REPORT.tmp"; fi
 
 cat >> "$FINAL_REPORT.tmp" <<'MD'
 
@@ -550,9 +665,15 @@ cat >> "$FINAL_REPORT.tmp" <<MD
 
 ## 覆盖说明
 
-本报告只合并本轮主任务中状态为"已完成"且结果文件存在的批次。失败、待执行、执行中、结果缺失或未纳入本轮的批次不会进入正式问题结论，详见"批次状态总览"。
+本报告合并本轮主任务中状态为"已完成"且结果文件存在的批次；状态为"部分完成"（partial）且结果文件存在的批次，其已产出发现同样纳入合并，但覆盖统计按保守口径不计入已覆盖。失败、待执行、执行中、结果缺失或未纳入本轮的批次不会进入正式问题结论，详见"批次状态总览"。
 ${COVERAGE_LABEL}是唯一覆盖指标；LOC 与 review cost 仅作为分批规划和进度参考。
 MD
+if [ "$RELOCATION_ENABLED" = true ] && [ "$RELOC_REFILED" -gt 0 ]; then
+  echo "跨文件重归档：修正行号 ${RELOC_SAME} 处、迁移发现 ${RELOC_REFILED} 条（证据代码位于其他文件）。" >> "$FINAL_REPORT.tmp"
+fi
+if [ -n "$RELOCATION_SKIP_REASON" ] && [ "$RELOCATION_HAD_RESULTS" = true ]; then
+  echo "# 跨文件重归档：跳过（${RELOCATION_SKIP_REASON}）" >> "$FINAL_REPORT.tmp"
+fi
 
 mv "$FINAL_REPORT.tmp" "$FINAL_REPORT"
 rm -f "$COMPLETED_RESULTS" "$DEDUPED_RESULTS" "$CROSS_BATCH_LEADS" "$BATCH_STATUS_TABLE"

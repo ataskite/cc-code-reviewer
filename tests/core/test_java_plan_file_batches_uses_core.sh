@@ -16,5 +16,23 @@ PLAN_PATH="$RUN_DIR/plan.json"
 grep -q '"language_id":"java"' "$PLAN_PATH" || \
   grep -q '"language_id": "java"' "$PLAN_PATH" || \
   { echo "FAIL: Java 文件分批应通过 core/ 走，plan.json 须含 language_id=java" >&2; cat "$PLAN_PATH" >&2; exit 1; }
+
+# 语义分组 env 透传：适配器须把 CC_CODE_REVIEWER_SEMANTIC_GROUPS_FILE 原样传给 core。
+# 单文件 A.java 登记为 grp-a（仓库相对路径）→ plan.json 披露 semantic_grouping_enabled，
+# batch-001.json 披露 semantic_group_ids。
+GROUPS_FILE="$TMP/semantic-groups.tsv"
+printf 'grp-a\tsrc/main/java/com/example/A.java\n' > "$GROUPS_FILE"
+OUT2="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260826-060000 \
+        CC_CODE_REVIEWER_SEMANTIC_GROUPS_FILE="$GROUPS_FILE" \
+        bash "$ROOT_DIR/scripts/languages/java/plan-file-batches.sh" "$TMP" standard main 2>&1)"
+RUN_DIR2="$(printf '%s\n' "$OUT2" | sed -n 's/^RUN_DIR=//p')"
+[ -n "$RUN_DIR2" ] || { echo "FAIL: 分组运行未输出 RUN_DIR" >&2; echo "$OUT2" >&2; exit 1; }
+grep -q '"language_id": "java"' "$RUN_DIR2/plan.json" || \
+  { echo "FAIL: 分组运行 plan.json 仍须含 language_id=java" >&2; cat "$RUN_DIR2/plan.json" >&2; exit 1; }
+grep -q '"semantic_grouping_enabled": true' "$RUN_DIR2/plan.json" || \
+  { echo "FAIL: 适配器未把 CC_CODE_REVIEWER_SEMANTIC_GROUPS_FILE 透传给 core" >&2; cat "$RUN_DIR2/plan.json" >&2; exit 1; }
+grep -Fq '"semantic_group_ids": ["grp-a"]' "$RUN_DIR2/batches/batch-001.json" || \
+  { echo "FAIL: batch json 缺 semantic_group_ids" >&2; cat "$RUN_DIR2/batches/batch-001.json" >&2; exit 1; }
+
 rm -rf "$TMP"
 echo "PASS: java plan-file-batches uses core"

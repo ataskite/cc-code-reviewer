@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **Claude Code plugin skill** for enterprise-grade Java code review and report-driven fixing. It provides 15-dimension comprehensive analysis with 4 review modes (fast/standard/deep/security), supports incremental and stock review types, and can use review reports as input for a controlled fix stage.
+This is a **claudecode plugin skill** for enterprise-grade Java code review and report-driven fixing. It provides 15-dimension comprehensive analysis with 4 review modes (fast/standard/deep/security), supports incremental and stock review types, and can use review reports as input for a controlled fix stage.
 
 **Important**: This repository intentionally uses **skill-only entry points** plus dedicated sub-agents. Claude Code can invoke the skills explicitly via `/cc-code-reviewer:cc-code-reviewer` for scan, `/cc-code-reviewer:cc-code-ignore` for scan ignore-rule maintenance, and `/cc-code-reviewer:cc-code-fixer` for fix.
 
@@ -151,6 +151,7 @@ scripts/
   │   ├── prepare-incremental.sh         # Incremental review preparation
   │   ├── prepare-review-input.sh        # Immutable review input snapshot
   │   ├── prepare-review-context.sh      # Structural review units from immutable selected input
+  │   ├── prepare-semantic-groups.sh     # Deterministic incremental semantic-group sidecar from review-input metadata
   │   ├── detect-fix-input.sh            # Local Markdown fix input path validation
   │   ├── detect-superpowers.sh          # Optional Superpowers capability detection
   │   ├── prepare-fix-workspace.sh       # Fix branch/worktree preparation
@@ -163,6 +164,7 @@ scripts/
   │   ├── plan-file-batches.sh           # Language-neutral file-token batch planner
   │   ├── plan-review-units.sh           # Conservative cross-file review units
   │   ├── resolve-review-rules.sh         # Project review-rule resolver
+  │   ├── relocate-findings.sh            # Cross-file finding re-filing (evidence-unique-match relocation, fail-open)
   │   ├── merge-batch-results.sh         # Batch result merge (dedup + coverage)
   │   └── show-batch-status.sh           # User-visible batch status and dynamic execution plan
   ├── languages/
@@ -211,9 +213,10 @@ The suite runs every `tests/test_*.sh` file and then `git diff --check`. It cove
 - `languages/java/detect-code-intelligence.sh`: jdtls-lsp availability and fallback messaging
 - `languages/java/plan-large-batches.sh`: scoped Maven module planning, concise `RUN_DIR`, semantic-cost and module-sequential strategies, immutable file input
 - `languages/java/collect-source-files.sh`: Java `src/main/java` manifest for full/scoped single-agent input
-- `core/plan-file-batches.sh`: deterministic file-token batching with conservative review units and resolved project rules
-- `core/merge-batch-results.sh`: current-run batch status gate, wait/blocked/staged/full report generation, batch status summary, and run-manifest coverage accounting
-- `core/show-batch-status.sh`: Markdown batch table, dynamic execution plans, and cost-based time estimates
+- `core/plan-file-batches.sh`: deterministic file-token batching with conservative review units, resolved project rules, and semantic-grouping affinity via `CC_CODE_REVIEWER_SEMANTIC_GROUPS_FILE` (group-aware FFD, fail-open)
+- `core/relocate-findings.sh`: cross-file re-filing of findings whose evidence code uniquely matches another file in scope; in-file line-drift correction; 0-match/multi-match stay untouched
+- `core/merge-batch-results.sh`: current-run batch status gate, wait/blocked/staged/full report generation, batch status summary, run-manifest coverage accounting, automatic pre-dedup relocation (fail-open), and partial-batch inclusion semantics (`partial_batches` / `partial_batch_ids` / `merged_batch_ids`)
+- `core/show-batch-status.sh`: Markdown batch table, dynamic execution plans, cost-based time estimates, and partial-batch runnable scheduling
 - `core/detect-fix-input.sh`: local Markdown path validation only; Feishu Doc/Base inputs are read through `lark-doc` / `lark-base`
 - `core/detect-superpowers.sh`: optional Superpowers route capability detection
 - `core/prepare-fix-workspace.sh`: current/branch/worktree strategies and dirty workspace protection
@@ -294,6 +297,10 @@ Verify installation by triggering the skill with a Java review request such as `
 - Frontend selected-directory reviews must filter the immutable source manifest through `languages/frontend/filter-source-manifest.sh`; `src/components` or `components` matches every supported package-local `*/src/components/` in React/Vue/Node monorepos, while full paths such as `apps/web/src/components` match only that package.
 - `RUN_DIR` names are fixed as `{YYYYMMDD-HHMMSS}-{branch_slug}-{REVIEW_MODE}`. Scope, strategy, task type, selected modules, and totals must be read from `plan.json`, not inferred from the directory name.
 - Merged batch reports are complete only when all planned batches are included in the merge. Completed but non-target batches remain leftovers, keep the report `[阶段性]`, and must not inflate the merged finding count.
+- partial 批次状态语义 (v1.6.4): the batch status enum is pending/running/completed/failed/partial. A batch agent interrupted with at least one formal finding must write the partial finding list to `BATCH_RESULT_PATH` plus `"status":"partial"`, `finding_count`, and an interruption `error`; zero output stays `failed`. `partial` batches remain runnable and are re-run as a whole batch; merge includes their produced findings (labeled `部分完成已纳入`) but conservatively does NOT count their coverage, and the merged report stays `[阶段性]` with `summary.json` exposing `partial_batches` / `partial_batch_ids` / `merged_batch_ids`. A target `partial` batch without a result file or formal finding is treated as blocked.
+- Merge-stage cross-file re-filing (v1.6.4): `core/merge-batch-results.sh` automatically runs `core/relocate-findings.sh` on every included batch result before dedup (fail-open — relocation failure never blocks the merge). It corrects in-file line drift first, then re-files a finding to another file only when its quoted evidence code matches exactly one file in the review scope; `summary.json` gains a `relocation` object and the report's 覆盖说明 gains 跨文件重归档 lines.
+- Semantic-grouping affinity for the file-token planner (v1.6.4): `core/plan-file-batches.sh` accepts env `CC_CODE_REVIEWER_SEMANTIC_GROUPS_FILE` (TSV `<group_key>\t<file_path>`, repository-relative or absolute, fail-open on missing/unreadable/zero-match) and packs grouped review units together with group-aware FFD; hard budget limits always win over affinity. `plan.json` discloses `semantic_grouping_enabled` / `semantic_groups_path`, and batch json gains `semantic_group_ids` only when enabled. The main skill invokes `core/prepare-semantic-groups.sh` for incremental review-input metadata and writes the single-agent sidecar before injection.
+- Batch agent result template (v1.6.4) must end with a `## 覆盖情况` section (已审文件 N/M plus per-file skip reasons), enforcing per-file coverage duty for minor files inside each batch; partial interruption must still disclose incomplete coverage honestly.
 - `core/merge-batch-results.sh` must deterministically deduplicate identical finding blocks across included batch results before writing `summary.json.finding_count`.
 - `summary.json` from `core/merge-batch-results.sh` must include `report_title`; the merged Markdown report's first non-empty line must be `# {report_title}` before any Feishu cloud-doc upload.
 - Batch status must be shown as normal assistant-visible Markdown, not only as collapsed shell output. The table header is `| 批次 | 状态 | 行数 | 文件数 | 模块 |`.

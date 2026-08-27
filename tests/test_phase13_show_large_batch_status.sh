@@ -204,6 +204,87 @@ if printf '%s\n' "$THREE_OUTPUT" | grep -qE "执行 (5|10) 批"; then
   exit 1
 fi
 
+# partial 状态批次：标签「部分完成待重跑」、计入本轮可执行批次；行覆盖按保守口径只统计 completed
+PARTIAL_RUN_ID="20260528-030203-main-standard"
+PARTIAL_RUN_DIR="$PROJECT_DIR/.cc-code-reviewer/runs/$PARTIAL_RUN_ID"
+mkdir -p "$PARTIAL_RUN_DIR/batches" "$PARTIAL_RUN_DIR/results"
+
+cat > "$PARTIAL_RUN_DIR/plan.json" <<JSON
+{
+  "schema_version": 1,
+  "run_id": "$PARTIAL_RUN_ID",
+  "project_name": "maven-large",
+  "project_dir": "$PROJECT_DIR",
+  "review_mode": "standard",
+  "review_scope": "全量代码",
+  "semantic_level": "maven-static",
+  "total_java_loc": 50000,
+  "total_java_file_count": 400,
+  "batch_count": 2
+}
+JSON
+
+cat > "$PARTIAL_RUN_DIR/batches/batch-001.json" <<'JSON'
+{
+  "schema_version": 1,
+  "batch_id": "batch-001",
+  "strategy": "semantic-cost-batching",
+  "planned_java_loc": 25000,
+  "planned_review_cost": 30000,
+  "planned_java_file_count": 200,
+  "scan_roots": ["core"],
+  "modules": [{"name": "core"}]
+}
+JSON
+
+cat > "$PARTIAL_RUN_DIR/batches/batch-002.json" <<'JSON'
+{
+  "schema_version": 1,
+  "batch_id": "batch-002",
+  "strategy": "semantic-cost-batching",
+  "planned_java_loc": 25000,
+  "planned_review_cost": 30000,
+  "planned_java_file_count": 200,
+  "scan_roots": ["web"],
+  "modules": [{"name": "web"}]
+}
+JSON
+
+cat > "$PARTIAL_RUN_DIR/results/batch-001.status.json" <<'JSON'
+{
+  "schema_version": 1,
+  "batch_id": "batch-001",
+  "status": "completed",
+  "planned_java_loc": 25000,
+  "planned_java_file_count": 200
+}
+JSON
+
+cat > "$PARTIAL_RUN_DIR/results/batch-002.status.json" <<'JSON'
+{
+  "schema_version": 1,
+  "batch_id": "batch-002",
+  "status": "partial",
+  "planned_java_loc": 25000,
+  "planned_java_file_count": 200,
+  "error": "subagent interrupted"
+}
+JSON
+
+PARTIAL_OUTPUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR")"
+
+printf '%s\n' "$PARTIAL_OUTPUT" | grep -q "| batch-001 | 已完成 | 25,000 | 200 | core |"
+printf '%s\n' "$PARTIAL_OUTPUT" | grep -q "| batch-002 | 部分完成待重跑 | 25,000 | 200 | web |"
+printf '%s\n' "$PARTIAL_OUTPUT" | grep -q "Java 行覆盖: 25,000 / 50,000"
+printf '%s\n' "$PARTIAL_OUTPUT" | grep -q "本轮可执行批次: batch-002"
+printf '%s\n' "$PARTIAL_OUTPUT" | grep -q "仅 1 个可执行批次，将自动选择 batch-002，并自动设置并发数为 1。"
+if printf '%s\n' "$PARTIAL_OUTPUT" | grep -qE '(^|[[:space:]])(pending|running|completed|failed|partial)([[:space:]]|$)'; then
+  echo "status output must not expose internal enum values" >&2
+  printf '%s\n' "$PARTIAL_OUTPUT" >&2
+  exit 1
+fi
+printf '%s\n' "$PARTIAL_OUTPUT" | grep -q "部分完成待重跑批次可以在本轮调度"
+
 # phase13 转发 wrapper 后，输出必须与 core/show-batch-status.sh 逐字节一致
 OLD_OUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR" 2>&1)"
 NEW_OUT="$(bash "$ROOT_DIR/scripts/core/show-batch-status.sh" "$PROJECT_DIR" 2>&1)"

@@ -316,4 +316,83 @@ grep -q '\[合并阻塞\]' "$PENDING_REPORT"
 grep -q "batch-001.*未完成遗留" "$PENDING_REPORT"
 grep -q "等待本轮批次完成超时" "$PENDING_REPORT"
 
+# partial（部分完成）批次：目标批次有结果 → 发现纳入合并、覆盖保守不计、manifest 标记 partial
+PARTIAL_STATUS_RUN_DIR="$TMP_DIR/partial status run"
+mkdir -p "$PARTIAL_STATUS_RUN_DIR/batches" "$PARTIAL_STATUS_RUN_DIR/results"
+cat > "$PARTIAL_STATUS_RUN_DIR/plan.json" <<'JSON'
+{
+  "schema_version": 1,
+  "run_id": "run-partial-status",
+  "project_name": "demo partial status",
+  "review_mode": "standard",
+  "review_scope": "全量代码",
+  "semantic_level": "maven-static",
+  "total_java_loc": 50000,
+  "total_java_file_count": 400,
+  "batch_count": 2
+}
+JSON
+cat > "$PARTIAL_STATUS_RUN_DIR/batches/batch-001.json" <<'JSON'
+{"batch_id":"batch-001","planned_java_loc":25000,"planned_java_file_count":200,"scan_roots":["order-api"],"modules":[{"name":"order-api"}]}
+JSON
+cat > "$PARTIAL_STATUS_RUN_DIR/batches/batch-002.json" <<'JSON'
+{"batch_id":"batch-002","planned_java_loc":25000,"planned_java_file_count":200,"scan_roots":["payment"],"modules":[{"name":"payment"}]}
+JSON
+cat > "$PARTIAL_STATUS_RUN_DIR/review-input.json" <<'JSON'
+{
+  "schema_version": 1,
+  "language_id": "java",
+  "items": [
+    {"path":"order-api/src/main/java/Demo.java","selected":true},
+    {"path":"payment/src/main/java/Payment.java","selected":true}
+  ]
+}
+JSON
+cat > "$PARTIAL_STATUS_RUN_DIR/results/batch-001.status.json" <<JSON
+{"batch_id":"batch-001","status":"partial","planned_java_loc":25000,"planned_java_file_count":200,
+ "result_path":"$PARTIAL_STATUS_RUN_DIR/results/batch-001.md","finding_count":1,"error":"subagent interrupted"}
+JSON
+cat > "$PARTIAL_STATUS_RUN_DIR/results/batch-001.md" <<'MD'
+# Batch 001
+
+## 发现列表
+
+### P1 | [维度1-正确性] 部分完成示例问题
+- 文件：order-api/src/main/java/Demo.java:10
+- 置信度：高
+- 证据：示例证据
+- 影响：示例影响
+- 建议：示例建议
+
+## 覆盖情况
+- 中断前已覆盖 order-api 全部 controller
+MD
+
+set +e
+PARTIAL_STATUS_OUTPUT="$(RUN_BATCH_IDS="batch-001" bash "$ROOT_DIR/scripts/core/merge-batch-results.sh" "$PARTIAL_STATUS_RUN_DIR" 2>&1)"
+PARTIAL_STATUS=$?
+set -e
+test "$PARTIAL_STATUS" -eq 0
+PARTIAL_STATUS_REPORT="$(printf '%s\n' "$PARTIAL_STATUS_OUTPUT" | sed -n 's/^FINAL_REPORT_PATH=//p')"
+test -f "$PARTIAL_STATUS_REPORT"
+validate_json_file "$PARTIAL_STATUS_RUN_DIR/summary.json"
+validate_json_file "$PARTIAL_STATUS_RUN_DIR/run-manifest.json"
+grep -qF '"partial_batches": 1' "$PARTIAL_STATUS_RUN_DIR/summary.json"
+grep -qF '"partial_batch_ids": ["batch-001"]' "$PARTIAL_STATUS_RUN_DIR/summary.json"
+grep -qF '"included_batches": 0' "$PARTIAL_STATUS_RUN_DIR/summary.json"
+grep -q '"finding_count": 1' "$PARTIAL_STATUS_RUN_DIR/summary.json"
+grep -q '"covered_java_file_count": 0' "$PARTIAL_STATUS_RUN_DIR/summary.json"
+grep -q '"merge_blocked": false' "$PARTIAL_STATUS_RUN_DIR/summary.json"
+grep -q '"report_title": "\[阶段性\] 代码审查报告 - demo partial status"' "$PARTIAL_STATUS_RUN_DIR/summary.json"
+head -n 1 "$PARTIAL_STATUS_REPORT" | grep -Fx '# [阶段性] 代码审查报告 - demo partial status'
+grep -q "大仓库审查执行摘要" "$PARTIAL_STATUS_REPORT"
+grep -q "部分完成待重跑批次：1" "$PARTIAL_STATUS_REPORT"
+grep -qF '| batch-001 | 部分完成待重跑 | 是 | 部分完成已纳入 | 200 | 25000 | order-api | subagent interrupted |' "$PARTIAL_STATUS_REPORT"
+grep -q "中断前已覆盖 order-api 全部 controller" "$PARTIAL_STATUS_REPORT"
+jq -e '.coverage[] | select(.path == "order-api/src/main/java/Demo.java" and .batch_id == "batch-001" and .status == "partial" and .failure_class == "partial")' "$PARTIAL_STATUS_RUN_DIR/run-manifest.json" >/dev/null
+jq -e '.coverage_sets.selected[] | select(.path == "order-api/src/main/java/Demo.java" and .failure_class == "partial")' "$PARTIAL_STATUS_RUN_DIR/run-manifest.json" >/dev/null
+jq -e '.terminal_state == "partial"' "$PARTIAL_STATUS_RUN_DIR/run-manifest.json" >/dev/null
+# partial 批次的 item_id 与 completed 派生一致：同一 path 的 item_id 只依赖路径与仓库身份
+jq -e '(.coverage[] | select(.path == "order-api/src/main/java/Demo.java") | .item_id | length) == 64' "$PARTIAL_STATUS_RUN_DIR/run-manifest.json" >/dev/null
+
 echo "PASS: phase12 large Maven batch merge"

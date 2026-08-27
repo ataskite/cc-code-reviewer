@@ -45,5 +45,25 @@ cat > "$JRUN2/plan.json" <<'EOF'
 EOF
 bash "$SCRIPT" "$JTMP2" >/dev/null  # 不应报错
 
-rm -rf "$JTMP" "$FTMP" "$PYTMP" "$JTMP2"
+# partial 状态批次：显示「部分完成待重跑」，计入本轮可执行批次（可整批重跑）
+PTMP="$(mktemp -d)"
+PRUN="$PTMP/.cc-code-reviewer/runs/20260101-000000-main-standard"
+mkdir -p "$PRUN/batches" "$PRUN/results"
+cat > "$PRUN/plan.json" <<'EOF'
+{"language_id":"frontend","batch_count":1,"total_source_loc":1500,"total_source_file_count":20,"review_mode":"standard","run_id":"test","project_name":"p","review_scope":"全量"}
+EOF
+cat > "$PRUN/batches/batch-001.json" <<'EOF'
+{"batch_id":"batch-001","scan_roots":["src"],"planned_source_loc":1500,"planned_source_file_count":20,"planned_review_cost":1500,"modules":[{"name":"mod-a"}]}
+EOF
+cat > "$PRUN/results/batch-001.status.json" <<'EOF'
+{"batch_id":"batch-001","status":"partial","planned_source_loc":1500,"planned_source_file_count":20,"error":"中断"}
+EOF
+POUT="$(bash "$SCRIPT" "$PTMP")"
+echo "$POUT" | grep -q "| batch-001 | 部分完成待重跑 | 1,500 | 20 | mod-a |"
+echo "$POUT" | grep -q "本轮可执行批次: batch-001"
+echo "$POUT" | grep -q "部分完成待重跑批次可以在本轮调度"
+# partial 批次的行数不计入已完成覆盖（保守口径）
+echo "$POUT" | grep -q "前端源码行覆盖: 0 / 1,500"
+
+rm -rf "$JTMP" "$FTMP" "$PYTMP" "$JTMP2" "$PTMP"
 echo "PASS: core show-batch-status"

@@ -20,8 +20,6 @@ IGNORE_WORKFLOW_FILE="$ROOT_DIR/references/ignore-workflow.md"
 ARCHITECTURE_PNG="$ROOT_DIR/docs/assets/architecture-overview.png"
 ARCHITECTURE_SVG="$ROOT_DIR/docs/assets/architecture-overview.svg"
 PLUGIN_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
-VERSIONED_ARCHITECTURE_RELATIVE_PATH="docs/assets/architecture-overview-v${PLUGIN_VERSION}.png"
-VERSIONED_ARCHITECTURE_PNG="$ROOT_DIR/$VERSIONED_ARCHITECTURE_RELATIVE_PATH"
 MARKETPLACE_FILE="$ROOT_DIR/.claude-plugin/marketplace.json"
 PLUGIN_FILE="$ROOT_DIR/.claude-plugin/plugin.json"
 DD="--"
@@ -227,6 +225,20 @@ for security_contract_file in \
   require_literal "$security_contract_file" "怀疑是高危但缺少生产可达性、调用链或运行配置证据：待确认" "unproven severe security risks must map to pending confirmation"
 done
 
+for security_invariant_file in \
+  "$ROOT_DIR/references/languages/java/review-framework.md" \
+  "$ROOT_DIR/references/languages/frontend/review-framework.md" \
+  "$ROOT_DIR/references/languages/python/review-framework.md" \
+  "$AGENT_FILE" \
+  "$FRONTEND_AGENT_FILE" \
+  "$ROOT_DIR/agents/cc-code-reviewer-python.md"; do
+  require_literal "$security_invariant_file" "高危安全问题必为 P0" "confirmed incident-level security findings must be P0 without probability-based downgrade"
+  require_literal "$security_invariant_file" "反向降级必须证明触发路径生产不可达" "security downgrades must require proof of unreachability, not low-probability claims"
+  require_literal "$security_invariant_file" "fail-open" "auth fail-open must be treated as authentication bypass"
+  require_literal "$security_invariant_file" "认证绕过" "fail-open and trust-boundary defects must map to authentication bypass grading"
+  require_literal "$security_invariant_file" "P0 待验证" "trust-boundary defects pending external evidence must be marked as P0-pending"
+done
+
 require_literal "$ROOT_DIR/references/languages/java/review-framework.md" 'credentialed request 与 `Access-Control-Allow-Origin: *` 的组合会被浏览器 CORS 校验拒绝' "wildcard ACAO with credentials must be classified as a rejected CORS configuration"
 require_literal "$ROOT_DIR/references/languages/java/review-framework.md" '反射任意 `Origin`' "credentialed arbitrary-origin reflection must remain the actionable CORS risk"
 require_literal "$ROOT_DIR/references/languages/java/review-framework.md" "个人信息（PII，Personally Identifiable Information" "personal-data review rules must use the standard PII term"
@@ -236,9 +248,9 @@ if [ ! -f "$ARCHITECTURE_PNG" ]; then
   echo "架构总览图缺失: $ARCHITECTURE_PNG" >&2
   exit 1
 fi
-require_literal "$ROOT_DIR/README.md" "($VERSIONED_ARCHITECTURE_RELATIVE_PATH)" "README must reference the architecture image matching VERSION"
-if [ ! -f "$VERSIONED_ARCHITECTURE_PNG" ]; then
-  echo "README 引用的版本化架构总览图缺失: $VERSIONED_ARCHITECTURE_PNG" >&2
+require_literal "$ROOT_DIR/README.md" "(docs/assets/architecture-overview.png)" "README must reference the versionless architecture overview image"
+if grep -q "architecture-overview-v" "$ROOT_DIR/README.md"; then
+  echo "README must not reference stale versioned architecture copies (architecture-overview-v*)" >&2
   exit 1
 fi
 if [ -f "$ARCHITECTURE_SVG" ]; then
@@ -564,9 +576,13 @@ grep -q "pending.*待执行" "$SKILL_FILE"
 grep -q "running.*执行中" "$SKILL_FILE"
 grep -q "completed.*已完成" "$SKILL_FILE"
 grep -q "failed.*失败待重试" "$SKILL_FILE"
-FORBIDDEN_BATCH_STATE_DECL_PATTERN='("status"[[:space:]]*:[[:space:]]*"(partial|stale|skipped)")|((status[[:space:]_-]*(enum|state|list|value)|batch[[:space:]_-]*status|state[[:space:]_-]*(enum|list|value)|状态(枚举|列表|值)|批次状态)[^[:cntrl:]]{0,80}(partial|stale|skipped|部分完成|中断待确认|已跳过))|((partial|stale|skipped|部分完成|中断待确认|已跳过)[^[:cntrl:]]{0,80}(status[[:space:]_-]*(enum|state|list|value)|batch[[:space:]_-]*status|state[[:space:]_-]*(enum|list|value)|状态(枚举|列表|值)|批次状态))'
+grep -q "partial.*部分完成待重跑" "$SKILL_FILE"
+# 合法状态枚举固定为 5 值：pending/running/completed/failed/partial。
+# partial（部分完成待重跑）是 1.6.4 起的合法终态：中断但已产出 ≥1 条发现时写入，
+# 合并时纳入其发现但覆盖保守不计。仍禁止额外状态（stale/skipped/cancelled 等）混入。
+FORBIDDEN_BATCH_STATE_DECL_PATTERN='("status"[[:space:]]*:[[:space:]]*"(stale|skipped|cancelled)")|((status[[:space:]_-]*(enum|state|list|value)|batch[[:space:]_-]*status|state[[:space:]_-]*(enum|list|value)|状态(枚举|列表|值)|批次状态)[^[:cntrl:]]{0,80}(stale|skipped|cancelled|中断待确认|已跳过|已取消))|((stale|skipped|cancelled|中断待确认|已跳过|已取消)[^[:cntrl:]]{0,80}(status[[:space:]_-]*(enum|state|list|value)|batch[[:space:]_-]*status|state[[:space:]_-]*(enum|list|value)|状态(枚举|列表|值)|批次状态))'
 if grep -qE "$FORBIDDEN_BATCH_STATE_DECL_PATTERN" "$SKILL_FILE" "$AGENT_FILE"; then
-  echo "large repo v1 status enum must only use pending/running/completed/failed" >&2
+  echo "large repo status enum must only use pending/running/completed/failed/partial" >&2
   exit 1
 fi
 if awk '

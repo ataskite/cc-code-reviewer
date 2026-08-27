@@ -160,6 +160,7 @@ status_label() {
     running) echo "执行中" ;;
     completed) echo "已完成" ;;
     failed) echo "失败待重试" ;;
+    partial) echo "部分完成待重跑" ;;
     *) echo "待执行" ;;
   esac
 }
@@ -398,7 +399,7 @@ for batch_path in "$RUN_DIR"/batches/batch-*.json; do
   if [ "$status" = "completed" ]; then
     COMPLETED_LOC=$((COMPLETED_LOC + planned_loc))
   fi
-  if [ "$status" = "pending" ] || [ "$status" = "failed" ]; then
+  if [ "$status" = "pending" ] || [ "$status" = "failed" ] || [ "$status" = "partial" ]; then
     RUNNABLE_BATCHES+=("$batch_id")
     RUNNABLE_MINUTES+=("$(batch_estimate_minutes "$planned_cost" "$planned_loc" "$planned_files" "$REVIEW_MODE")")
   fi
@@ -415,7 +416,7 @@ echo
 echo "${COVERAGE_LABEL}: $(format_number "$COMPLETED_LOC") / $(format_number "$TOTAL_LOC")"
 echo
 echo "本轮可执行批次: ${RUNNABLE_BATCHES[*]:-无}"
-echo "说明: 已完成批次会自动跳过；待执行和失败待重试批次可以在本轮调度。"
+echo "说明: 已完成批次会自动跳过；待执行、失败待重试和部分完成待重跑批次可以在本轮调度（partial 整批重跑）。"
 echo "也可以自行输入批次号，例如 batch-002,batch-004 或 2,4,7。"
 
 RUNNABLE_COUNT="${#RUNNABLE_BATCHES[@]}"

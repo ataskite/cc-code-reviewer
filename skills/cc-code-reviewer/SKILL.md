@@ -408,12 +408,14 @@ pending 待执行
 running 执行中
 completed 已完成
 failed 失败待重试
+partial 部分完成待重跑（已产出部分发现，可整批重跑）
 ```
 
 如果发现兼容的未完成 `RUN_DIR`，必须先读取 `plan.json` 并展示状态表。恢复时：
 - `completed` 批次默认跳过，不重跑
 - `running` 批次一律转为 `failed`，错误写为"上次执行中断，需要整批重跑"
-- `pending` 和 `failed` 批次按用户本轮执行批次数调度
+- `pending`、`failed` 和 `partial` 批次按用户本轮执行批次数调度
+- `partial` 批次同样可调度（整批重跑）；其已产出的发现在合并时会纳入，但覆盖统计按保守口径不计入
 - 重新规划必须由用户明确选择，并创建新的 `RUN_DIR`
 
 `RUN_DIR` 目录名固定为 `{YYYYMMDD-HHMMSS}-{branch_slug}-{REVIEW_MODE}`，例如 `20260603-143000-master-deep`。目录名不得包含审查范围、分批策略、`large-maven` 或 `file-batches` 后缀；审查范围、分批策略和任务类型必须从 `plan.json` 读取。
@@ -525,6 +527,16 @@ else
 fi
 test -r "$REVIEW_INPUT_PATH"
 
+# 增量审查的语义分组只读取冻结 review-input.json 元数据；输出为空时按
+# fail-open 处理，不影响正式 selected=true 范围，也不新增交互步骤。
+SEMANTIC_GROUPS_PATH="未生成"
+if [ "$REVIEW_TYPE" = "增量审查" ]; then
+  SEMANTIC_GROUPS_PATH="${REVIEW_INPUT_PATH%.json}-semantic-groups.tsv"
+  bash "${PLUGIN_ROOT}/scripts/core/prepare-semantic-groups.sh" \
+    "$PROJECT_DIR" "$REVIEW_INPUT_PATH" "$SEMANTIC_GROUPS_PATH" >/dev/null
+  [ -s "$SEMANTIC_GROUPS_PATH" ] || SEMANTIC_GROUPS_PATH="未生成"
+fi
+
 # 关联审查单元与正式输入使用同一 selected=true 文件集合。该脚本只按
 # import/直接依赖组织结构上下文，不识别安全语义，也不生成候选问题。
 REVIEW_UNITS_PATH="${REVIEW_INPUT_PATH%.json}-review-units.json"
@@ -562,8 +574,8 @@ REVIEW_LINE_COUNT="$(perl -MJSON::PP -e 'local $/; print decode_json(<>)->{selec
 
 如果当前为 Maven 大仓库模式，主 skill 必须先根据 `CURRENT_RUN_BATCH_LIMIT` 或 `BATCH_SELECTION` 计算本轮 `RUN_BATCH_IDS`：
 - `BATCH_SELECTION` 存在时，只调度该列表中的批次
-- `CURRENT_RUN_BATCH_LIMIT=3|5|10` 时，只调度状态表顺序中前 N 个 `pending` / `failed` 批次
-- `CURRENT_RUN_BATCH_LIMIT=all` 时，调度全部 `pending` / `failed` 批次
+- `CURRENT_RUN_BATCH_LIMIT=3|5|10` 时，只调度状态表顺序中前 N 个 `pending` / `failed` / `partial` 批次
+- `CURRENT_RUN_BATCH_LIMIT=all` 时，调度全部 `pending` / `failed` / `partial` 批次
 - `completed` 批次永远不进入 `RUN_BATCH_IDS`
 - 后续启动和合并文案都必须使用 `RUN_BATCH_IDS` / `RUN_BATCH_COUNT`，不得用总 `BATCH_COUNT` 代替本轮执行批次
 
@@ -1078,7 +1090,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 该输出必须包含：
 - 批次状态表：使用用户可见的 Markdown 表格，表头固定为 `| 批次 | 状态 | 行数 | 文件数 | 模块 |`，下一行必须为 `|------|------|------:|------:|------|`
 - 模块列必须使用缩略名展示；当同一批次内模块存在共同工程前缀（例如 `yudao-module-`）时，去掉共同前缀，只展示真正的业务模块含义名称，例如 `trade-server,statistics-api`。
-- 本轮可执行批次：`pending` 和 `failed` 批次；`completed` 批次只展示不调度
+- 本轮可执行批次：`pending`、`failed` 和 `partial` 批次；`completed` 批次只展示不调度
 - 推荐执行计划：必须根据本轮可执行批次数动态生成，不能固定展示 3 / 5 / 10 批选项
 - 自行输入批次号提示：允许用户根据表格在 Other/free-form 中输入若干批次号，例如 `batch-002,batch-004` 或 `2,4,7`
 
@@ -1088,7 +1100,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 - 可以保留 Bash 工具调用用于读取数据，但用户可见的表格必须由主 skill 重新输出。
 
 **动态选项规则**：
-- 先从状态表计算 `RUNNABLE_BATCH_IDS` 和 `RUNNABLE_COUNT`，只包含 `pending` / `failed` 批次。
+- 先从状态表计算 `RUNNABLE_BATCH_IDS` 和 `RUNNABLE_COUNT`，只包含 `pending` / `failed` / `partial` 批次。
 - `RUNNABLE_COUNT=0` → 不调用 INTERACT；输出没有可执行批次，进入合并或结束提示。
 - `RUNNABLE_COUNT=1` → 不调用 INTERACT；自动设置 `RUN_BATCH_IDS` 为唯一可执行批次，`RUN_BATCH_COUNT=1`，直接进入步骤 5B 选择并发数。
 - `RUNNABLE_COUNT=2` → options 只包含 `执行 1 批`、`执行全部 2 批（推荐）` 和 Other/free-form；不得出现 `执行 3 批`、`执行 5 批` 或 `执行 10 批`。
@@ -1107,10 +1119,10 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 **用户响应后**：
 - 固定选项 → 设置 `CURRENT_RUN_BATCH_LIMIT` 为该选项对应的实际批次数，`执行全部 {RUNNABLE_COUNT} 批` 设置为 `all`
 - Other/free-form 批次号 → 设置 `BATCH_SELECTION` 为用户输入的批次号列表；支持 `batch-002,batch-004`、`2,4,7`、空格或中文顿号/逗号分隔
-- 解析 `BATCH_SELECTION` 时必须标准化为 `batch-XXX` 格式，并校验这些批次存在且状态为 `pending` 或 `failed`
+- 解析 `BATCH_SELECTION` 时必须标准化为 `batch-XXX` 格式，并校验这些批次存在且状态为 `pending`、`failed` 或 `partial`
 - 输入包含不存在、已完成或执行中的批次时，不得继续执行；必须再次调用 INTERACT 让用户重新选择
 - `completed` 批次必须跳过
-- 固定选项只调度状态表顺序中前 N 个 `pending` / `failed` 批次；未调度批次保持 `pending`
+- 固定选项只调度状态表顺序中前 N 个 `pending` / `failed` / `partial` 批次；未调度批次保持原状态
 
 ### 步骤 5B：选择并发数（条件步骤）
 
@@ -1274,6 +1286,13 @@ bash "${PLUGIN_ROOT}/scripts/languages/java/plan-large-batches.sh" \
 Maven 多模块存量分批绝不调用 `languages/java/plan-file-batches.sh`。即使只选择一个模块，也必须使用 Maven 多模块 planner，以便 `REVIEW_SCOPE` 限定在所选模块内，避免生成全项目批次。
 
 ```bash
+# 语义分组亲和（可选，fail-open）：主 skill 已在 planner 前从冻结 review-input.json
+# 生成 $RUN_DIR/semantic-groups.tsv 时导出，
+# 分批器按组做亲和装箱（预算硬限制优先），plan.json 会披露 semantic_grouping_enabled。
+if [ -r "$RUN_DIR/semantic-groups.tsv" ]; then
+  export CC_CODE_REVIEWER_SEMANTIC_GROUPS_FILE="$RUN_DIR/semantic-groups.tsv"
+fi
+
 bash "${PLUGIN_ROOT}/scripts/languages/java/plan-file-batches.sh" \
   "$PROJECT_DIR" \
   "$REVIEW_MODE" \
@@ -1284,6 +1303,8 @@ bash "${PLUGIN_ROOT}/scripts/languages/java/plan-file-batches.sh" \
 - `RUN_DIR`、`BATCH_COUNT`、`TOTAL_JAVA_LOC`、`TOTAL_JAVA_FILE_COUNT`
 - `BATCH_FILE_LIST_DIR`，其中每个 `batch-XXX.files` 是注入 batch agent 的 `BATCH_FILE_LIST`
 - `简要分批计划` 表：批次号、行数、文件数、每批代表性文件或目录概要
+
+若导出了语义分组清单，`plan.json` 会以 `semantic_grouping_enabled: true` 和 `semantic_groups_path` 披露生效状态；清单缺失或零命中时自动退化为未启用（fail-open），分批行为与原 FFD 完全一致。
 
 执行要求：
 - 禁止在主 skill 中临时拼接 Bash 数组、Python heredoc 或手写 token 打包逻辑
@@ -1311,6 +1332,13 @@ if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_SCOPE" != "全量代码" ]; the
   bash "${PLUGIN_ROOT}/scripts/languages/frontend/filter-source-manifest.sh" \
     "$PROJECT_DIR" "$MANIFEST" "$REVIEW_SCOPE" > "$FILTERED"
   mv "$FILTERED" "$MANIFEST"
+fi
+
+# 语义分组亲和（可选，fail-open）：主 skill 已在 planner 前从冻结 review-input.json
+# 生成 $RUN_DIR/semantic-groups.tsv 时导出，
+# 分批器按组做亲和装箱（预算硬限制优先），plan.json 会披露 semantic_grouping_enabled。
+if [ -r "$RUN_DIR/semantic-groups.tsv" ]; then
+  export CC_CODE_REVIEWER_SEMANTIC_GROUPS_FILE="$RUN_DIR/semantic-groups.tsv"
 fi
 
 bash "${PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
@@ -1349,6 +1377,13 @@ if [ "$LANGUAGE_ID" = "python" ] && [ "$REVIEW_SCOPE" != "全量代码" ]; then
   bash "${PLUGIN_ROOT}/scripts/languages/python/filter-source-manifest.sh" \
     "$PROJECT_DIR" "$MANIFEST" "$REVIEW_SCOPE" > "$FILTERED"
   mv "$FILTERED" "$MANIFEST"
+fi
+
+# 语义分组亲和（可选，fail-open）：主 skill 已在 planner 前从冻结 review-input.json
+# 生成 $RUN_DIR/semantic-groups.tsv 时导出，
+# 分批器按组做亲和装箱（预算硬限制优先），plan.json 会披露 semantic_grouping_enabled。
+if [ -r "$RUN_DIR/semantic-groups.tsv" ]; then
+  export CC_CODE_REVIEWER_SEMANTIC_GROUPS_FILE="$RUN_DIR/semantic-groups.tsv"
 fi
 
 bash "${PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
@@ -1418,6 +1453,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | 项目审查规则解析结果 | {REVIEW_RULES_RESOLVED_PATH} |
 | source manifest | {MANIFEST 绝对路径}（所有语言均注入；正式范围以 REVIEW_INPUT_PATH 中 selected=true 为准） |
 | 本批审查文件列表 | {BATCH_FILE_LIST}（仅文件级分批模式，单 agent 模式不注入） |
+| 语义分组清单 | {SEMANTIC_GROUPS_PATH 或 未生成}（可选，仅增量审查时提供） |
 
 ### 项目概况（预扫描结果）
 {PROJECT_SCAN_RESULT}
@@ -1433,6 +1469,9 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 
 ### 变更统计概览（仅增量审查时提供）
 {DIFF_STATS_OUTPUT}
+
+### 语义分组清单（可选，仅增量审查时提供）
+{SEMANTIC_GROUPS_PATH 或 未生成}；提供时逐组列出 group_key 与组内文件（仓库相对路径）
 
 请基于以上审查参数，立即开始执行代码审查。不要进行任何用户交互或询问，直接从代码审查开始执行。
 ```
@@ -1471,12 +1510,23 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `CHANGED_FILES_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git diff --name-only` |
 | `DIFF_STATS_OUTPUT` | core/prepare-incremental.sh 脚本输出（仅增量） | `git diff --stat` |
 | `REVIEW_INPUT_PATH` | core/prepare-review-input.sh 输出（所有入口） | 不可变输入、ref、选中/排除原因和内容指纹 |
+| `SEMANTIC_GROUPS_PATH` | 增量审查时由 `scripts/core/prepare-semantic-groups.sh` 从冻结 review-input.json 元数据生成；单 agent 路径为 `${REVIEW_INPUT_PATH%.json}-semantic-groups.tsv`，文件级分批路径为 `$RUN_DIR/semantic-groups.tsv`；非增量或未分组时为 未生成 | `{group_key}\t{仓库相对路径}` 逐行 TSV |
 | `REVIEW_UNITS_PATH` | core/prepare-review-context.sh 输出；文件级分批复用 RUN_DIR/review-units.json | 只按 import/直接依赖形成的结构关联单元，不包含安全语义或候选结论 |
 | `REVIEW_RULES_RESOLVED_PATH` | core/resolve-review-rules.sh 基于 REVIEW_INPUT_PATH 的 selected 文件解析 | 当前正式范围逐文件命中的项目审查规则；不作为 ignore |
 
 ### 增量审查预处理（仅增量审查时执行）
 
-在调用子 agent 之前，执行增量预处理脚本：`bash "${PLUGIN_ROOT}/scripts/core/prepare-incremental.sh" "$PROJECT_DIR" {N}`。随后由路径 A 的统一输入生成块，以 `COMMIT_COUNT={N}` 生成 `REVIEW_INPUT_PATH`，再从其中 `selected=true` 的文件解析 `REVIEW_RULES_RESOLVED_PATH`。两条路径都必须注入单 Agent；`REVIEW_INPUT_PATH` 是增量正式范围的唯一清单，Agent 不得另行扩展发现范围。文件级存量分批与 Maven 大仓模块分批都会生成 `RUN_DIR/review-input.json` 和 `RUN_DIR/review-rules.json`，并将路径注入每个 batch agent。
+在调用子 agent 之前，执行增量预处理脚本：`bash "${PLUGIN_ROOT}/scripts/core/prepare-incremental.sh" "$PROJECT_DIR" {N}`。随后由路径 A 的统一输入生成块，以 `COMMIT_COUNT={N}` 生成 `REVIEW_INPUT_PATH`，调用 `scripts/core/prepare-semantic-groups.sh` 生成语义分组清单，再从其中 `selected=true` 的文件解析 `REVIEW_RULES_RESOLVED_PATH`。两条路径都必须注入单 Agent；`REVIEW_INPUT_PATH` 是增量正式范围的唯一清单，Agent 不得另行扩展发现范围。文件级存量分批与 Maven 大仓模块分批都会生成 `RUN_DIR/review-input.json` 和 `RUN_DIR/review-rules.json`，并将路径注入每个 batch agent。
+
+**语义分组清单（可选，仅增量审查时生成，自动执行、不新增 INTERACT 步骤）**：
+
+`REVIEW_INPUT_PATH` 生成后，主 skill 只依据 review-input 自带的元数据（文件路径、insertions/deletions、模块/目录、扩展名）为 selected=true 的变更文件构建语义分组清单。分组关系限定为：同模块同功能、接口+实现+调用点、测试+被测、i18n/配置变体、rename 对应物。规则：
+
+- 只做有把握的分组：不确定就不分组，孤立文件保持不属于任何组
+- 变更文件只有 1 个，或 selected 文件总数 ≤ 3 时，跳过分组清单生成（`SEMANTIC_GROUPS_PATH=未生成`）
+- 分组只影响审查上下文组织与文件级分批的组亲和装箱，不改变审查范围：正式范围仍以 `REVIEW_INPUT_PATH` 的 selected=true 为准
+- 输出为 TSV：每行 `<group_key>\t<仓库相对路径>`，一个文件一行；`group_key` 用稳定短标识（如 `order-service`、`UserMapper-rename`）
+- `scripts/core/prepare-semantic-groups.sh` 只读取冻结输入的文件路径、变更统计和目录元数据；单 agent 增量路径写入 `${REVIEW_INPUT_PATH%.json}-semantic-groups.tsv`，并把该路径作为 `语义分组清单` 注入子 agent。文件级分批若启用该能力，应在 planner 前将同一输出复制为 `$RUN_DIR/semantic-groups.tsv`，供 `plan-file-batches.sh` 做组亲和装箱（存在时导出 `CC_CODE_REVIEWER_SEMANTIC_GROUPS_FILE`，详见分批章节）
 
 脚本输出用 `# ===` 分隔为三部分：
 1. `# === 提交记录 ===` → GIT_LOG_OUTPUT
@@ -1511,12 +1561,12 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${PLUGIN_ROOT}/scripts/core/merge-batch-re
 2. **等待本轮批次终态**：检查 `results/batch-XXX.status.json`，对 `pending` / `running` 批次按脚本超时配置等待。
 3. **阻塞判断**：本轮存在 `failed`、结果缺失或等待超时，生成 `[合并阻塞]` 报告，提示用户重试或补齐对应批次。
 4. **批次状态总览**：在报告中列出所有批次的状态、本轮主任务标记、合并处理、文件数、行数、模块和错误信息。
-5. **合并已完成本轮批次**：只把本轮 `completed` 且结果文件存在的批次纳入正式发现；非本轮批次列为遗留。
+5. **合并本轮批次结果**：把本轮 `completed` 且结果文件存在的批次纳入正式发现；目标 `partial` 只有在结果文件和至少一条正式发现同时存在时才纳入发现，但其覆盖不计入完成覆盖率；非本轮批次列为遗留。
 6. **跨批线索汇总**：抽取各批 `跨批依赖待复核` 段落，集中列在报告中。
 7. **跨批去重**：对已纳入本次合并的发现按文件、行号、维度和根因去重；未完成或遗留批次不得参与正式结论。
 8. **聚合同类问题**：对同一根因的多处出现聚合为一条，保留代表位置和影响范围。
 9. **汇总覆盖率**：Java 文件覆盖率只统计已纳入合并的批次文件数；LOC 与 review cost 仅作为规划规模参考。
-10. **按分批合并报告格式输出**：复用 `references/report-format.md` 中的合并报告格式，至少包含审查配置快照、审查范围说明、执行摘要、批次状态总览、已完成批次发现、跨批依赖线索、覆盖限制与未审查范围。
+10. **按分批合并报告格式输出**：复用 `references/report-format.md` 中的合并报告格式，至少包含审查配置快照、审查范围说明、执行摘要、批次状态总览、已纳入批次发现、跨批依赖线索、覆盖限制与未审查范围。
 
 #### 合并后输出
 

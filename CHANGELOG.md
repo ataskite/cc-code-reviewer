@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.6.4 — 吸收 OpenCodeReview v1.10.0 第一梯队特性
+
+### 新增
+
+- **跨文件重归档**：新增 `scripts/core/relocate-findings.sh`。发现声明的文件与证据代码实际所在文件不一致时，先在声明文件内校正行号漂移；声明文件内找不到证据时，在 manifest 圈定的审查范围内逐行精确匹配，唯一命中才把位置（文件+行号）整体迁移到真实文件；0 处或多处命中保持原状（fail-open，绝不猜测）。`core/merge-batch-results.sh` 在去重前对纳入批次自动挂接该脚本（fail-open），`summary.json` 新增 `relocation` 对象，合并报告覆盖说明输出跨文件重归档统计行。
+- **partial 部分完成批次**：批次状态枚举扩展为 5 值（pending/running/completed/failed/partial）。批次 agent 中途无法继续但已产出至少一条正式发现时，写入结果文件并把状态记为 `partial`（含 `finding_count` 与中断原因）；零产出才记 `failed`。`partial` 批次保持可调度、可整批重跑；合并时其已产出发现纳入正式结论（标注「部分完成已纳入」），覆盖统计保守不计，报告保持 `[阶段性]`，`summary.json` 新增 `partial_batches` / `partial_batch_ids`。
+- **语义分组亲和分批**：`core/plan-file-batches.sh` 支持环境变量 `CC_CODE_REVIEWER_SEMANTIC_GROUPS_FILE`（TSV `<group_key>\t<file_path>`，仓库相对或绝对路径），分组单元按组亲和装箱（组优先于普通 FFD 顺序，预算硬限制优先）；清单缺失、不可读或零命中时整体退化为未启用（fail-open）。`plan.json` 披露 `semantic_grouping_enabled` / `semantic_groups_path`，batch json 在启用时输出 `semantic_group_ids`；Java 适配层透传同一环境变量。
+- **增量审查语义分组清单**：主 Skill 在增量审查输入冻结后，仅依据 review-input 元数据（路径、增删行数、模块/目录、扩展名）自动生成语义分组清单（同模块同功能、接口+实现+调用点、测试+被测、i18n/配置变体、rename 对应物），写入 `$RUN_DIR/semantic-groups.tsv`：单 agent 增量路径作为「语义分组清单（可选，仅增量审查时提供）」注入子 agent，文件级分批路径导出给分批器做组亲和。不确定就不分组，单文件或 ≤3 个变更文件跳过，分组不改变审查范围。
+- **组内次要文件覆盖义务**：三个审查 agent 新增逐文件覆盖义务（强制），批次结果模板以 `## 覆盖情况` 章节披露已审文件 N/M 与逐文件跳过原因；中途按 partial 结束时也必须如实标注未完整覆盖，次要文件不再可能被静默跳过。
+
+### 变更
+
+- **Agent 自校验升级为三层**：发现清单自校验在行号回抽（RE_LOCATION）与证伪过滤（REVIEW_FILTER）之外新增跨文件重归档层级（SELF_REFILED_COUNT）；披露行统一为 `自校验：行号修正 N 处、跨文件重归档 K 处、证伪移除 M 条（误报清道夫）`。
+- **批次恢复与调度语义**：恢复未完成 `RUN_DIR` 时 `partial` 批次与 `pending` / `failed` 一样可调度（整批重跑）；`CURRENT_RUN_BATCH_LIMIT` 的候选批次集合同步包含 `partial`；`core/show-batch-status.sh` 将 `partial` 展示为可执行状态。
+- **架构总览图去版本号**：架构总览主图固定为 `docs/assets/architecture-overview.png`（内容已含跨文件重归档 / partial 状态 / 语义分组亲和），HTML 源文件随仓库维护、改源码即可重渲染，不再随版本复制带水印的副本；README 引用同步切换，契约测试锁定无版本号引用并禁止回引 `architecture-overview-v*` 历史副本（v1.6.0/v1.6.2/v1.6.3/v1.6.4 等旧图全部清理）。
+
+### 升级方式
+
+三端插件已指向 1.6.4。Claude Code / Codex / ZCode 用户重新加载插件即可（`/reload-plugins` 或对应入口）。
+
 ## 1.6.3 — 安全设计不变量审查
 
 ### 变更
