@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.6.6 — 对标 OpenCodeReview：增量重复抑制、业务背景与 SARIF 导出
+
+### 新增
+
+- **增量重复抑制（上轮已报标记）**：新增 `scripts/core/mark-repeat-findings.sh <NEW_REPORT> <PREV_REPORT> [iou_threshold]`。复审同一仓库时，命中「同文件路径 + 同维度标签 + 行区间 IoU > 阈值（默认 0.6，env `CC_CODE_REVIEWER_REPEAT_IOU_THRESHOLD` 可覆盖，CLI 优先）」的发现块只在标题末尾追加一次 `（上轮已报）`，不删除任何问题（fail-open）；行区间口径与 relocate-findings / merge 去重一致（`路径:起-止` 显式区间优先，点发现按行号 + 证据展开）。stdout 恒 4 行（`REPEAT_REPORT_PATH=` / `REPEAT_TOTAL_BLOCKS=` / `REPEAT_PREV_BLOCKS=` / `REPEAT_MARKED=`）；零标记运行保持报告字节不变，重复运行幂等；参数/可读性错误 exit 1。主 Skill 在步骤 4 增量分支追加一次可选单选 INTERACT（跳过（默认） / 对照历史报告标记重复，路径经 Other 提供，不存在则按跳过处理），并在单 agent 报告落盘后与批次 merge 报告 `report_title` 校验之后执行标记、展示 4 行计数、`REPEAT_MARKED>0` 时最终汇总追加 `🔁 上轮已报标记：N 条（对照 {PREV_REPORT basename}，IoU>0.6）`。
+- **业务背景注入**：三个审查 agent（Java / Frontend / Python）参数表新增 `| 业务背景（可选） | {REVIEW_BACKGROUND 或 未提供} |` 行（≤8000 字符），注入章节新增 `### 业务背景使用规则` 五条（背景只辅助判断意图、不替代代码证据、冲突以代码为准等），增量提交记录处声明「未单独提供业务背景时提交记录即默认来源」，阶段 C 增加背景定向警觉原则（背景提示重点风险域但不扩大/缩小范围）。主 Skill 最终确认步骤新增 `确认执行（附业务背景）` 选项，选中后追加一次单选 INTERACT（使用所审提交的 commit message（仅增量可选） / 跳过背景，Other 可输入自定义文本）；`REVIEW_BACKGROUND` 自定义文本优先、增量未提供时默认注入已收集提交记录、全量未提供为 `未提供`，超 8000 字符截断并在最终汇总披露；单 agent 与批次 prompt 注入表各加一行、注入模板新增 `### 业务背景（可选）` 段。
+- **SARIF 导出**：新增 `scripts/core/export-sarif.sh <REPORT_MD> <OUTPUT_SARIF> [--project-name <name>]`，把报告发现块确定性转换为 SARIF v2.1.0 JSON——P0→error / P1→warning / P2/P3/待确认→note；ruleId 取维度标签（缺失为 unknown-dimension）；`partialFingerprints["ccCodeReviewer/v1"]` 与 merge 跨批次去重指纹同公式（sha256(文件路径 ␀ 维度标签 ␀ 归一化证据行)）；无文件行的块 locations 为空但绝不丢发现。stdout 单行 `SARIF_EXPORTED=<abs> RESULTS=<n> RULES=<m>`；用法/IO 错误 exit 1；输出原子落盘且字节级确定。报告保存方式（多选）新增 `SARIF 文件（本地 .sarif，CI 对接）` 选项；选中时本地 Markdown 报告持久化后（批次路径在 merge 报告生成后）执行导出并向用户展示 `SARIF_EXPORTED=` 行；SARIF 仅本地导出，与飞书上传互不影响、不作为飞书上传前置条件。
+
+### 变更
+
+- SKILL.md 交互与注入接线：增量可选上轮对照问题、报告保存方式 SARIF 选项、最终确认背景选项及其条件 INTERACT（均为单选、每问恰好一次）、单 agent 与批次注入表/模板的业务背景行与段落、报告产出后（上轮标记 → SARIF 导出）处理顺序与最终汇总披露行；README / AGENTS.md / CLAUDE.md / report-format / examples 同步契约描述（AGENTS 与 CLAUDE 正文逐行一致）；`tests/test_contract_docs.sh` 新增守卫——SKILL 必须含两个脚本的调用行、`REVIEW_BACKGROUND` 与 8000 上限，report-format 必须含 `（上轮已报）`，README 必须含 `SARIF`，AGENTS/CLAUDE 必须含两个脚本名。
+
+### 升级方式
+
+三端插件 manifest 已指向 1.6.6（`.claude-plugin/plugin.json`、`.claude-plugin/marketplace.json` 两处、`.codex-plugin/plugin.json`、`.zcode-plugin/plugin.json`，与 `VERSION` 单一真相源一致）。Claude Code / Codex / ZCode 用户重新加载插件即可（`/reload-plugins` 或对应入口）。
+
 ## 1.6.5 — 对标 OpenCodeReview：定向规则清单与批次可信治理
 
 ### 新增

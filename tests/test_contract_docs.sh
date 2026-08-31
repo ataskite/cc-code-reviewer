@@ -1219,4 +1219,19 @@ grep -q "脚本调用顺序" "$ROOT_DIR/skills/cc-code-fixer/SKILL.md" || { echo
 grep -q "scripts/core/detect-project.sh" "$SKILL_FILE" || { echo "FAIL: SKILL.md 应引用 core/detect-project.sh" >&2; exit 1; }
 grep -q "scripts/languages/java/project-scan.sh" "$SKILL_FILE" || { echo "FAIL: SKILL.md 应引用 languages/java/project-scan.sh" >&2; exit 1; }
 
+# === v1.6.6: 增量重复抑制 / 业务背景注入 / SARIF 导出 ===
+# SKILL 必须接线两个新脚本的实际调用行（单 agent 与批次路径共用同一命令形态）。
+require_match "SKILL 必须接线增量上轮已报标记脚本调用行" 'core/mark-repeat-findings\.sh" "\$REPORT_PATH" "\$REPEAT_PREV_REPORT_PATH"' "$SKILL_FILE"
+require_match "SKILL 必须接线 SARIF 导出脚本调用行" 'core/export-sarif\.sh" "\$REPORT_PATH".*\.sarif.*--project-name "\$PROJECT_NAME"' "$SKILL_FILE"
+# SKILL 必须采集并注入业务背景，且声明 8000 字符硬上限。
+require_literal "$SKILL_FILE" "REVIEW_BACKGROUND" "skill must collect and inject REVIEW_BACKGROUND"
+require_literal "$SKILL_FILE" "8000" "skill must document the 8000-character background cap"
+# 报告格式必须披露上轮已报标记语义。
+require_literal "$REPORT_FORMAT_FILE" "（上轮已报）" "report format must document the repeat-finding marker"
+# README 必须出现 SARIF 特性关键词。
+require_literal "$ROOT_DIR/README.md" "SARIF" "README must surface the SARIF export feature keyword"
+# AGENTS / CLAUDE 必须同步两个新脚本的契约描述。
+require_match "AGENTS/CLAUDE 必须描述增量上轮已报标记脚本" 'mark-repeat-findings\.sh' "$AGENTS_FILE" "$CLAUDE_FILE"
+require_match "AGENTS/CLAUDE 必须描述 SARIF 导出脚本" 'export-sarif\.sh' "$AGENTS_FILE" "$CLAUDE_FILE"
+
 echo "✅ 契约文档测试通过"

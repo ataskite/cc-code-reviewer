@@ -675,6 +675,7 @@ test -r "$REVIEW_UNITS_PATH"
 | 关联审查单元 | {REVIEW_UNITS_PATH} |
 | 项目审查规则解析结果 | {RUN_DIR/review-rules.json}（含文件类型专项清单映射，清单文档 content 已内嵌） |
 | 审查输出模式 | 仅发现清单 |
+| 业务背景（可选） | {REVIEW_BACKGROUND 或 未提供} |
 
 ### 本批审查边界
 请读取 `BATCH_PLAN_PATH`，按批次计划中的策略字段确定正式审查边界：
@@ -706,6 +707,9 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 
 ### 项目 ignore 规则（外部注入，直接使用）
 {IGNORE_RULES_CONTENT；未启用时写 "未配置"}
+
+### 业务背景（可选）
+{REVIEW_BACKGROUND 或 未提供}；未提供时按现状执行，不得虚构背景
 
 请基于以上审查参数，立即开始执行代码审查。不要进行任何用户交互或询问，直接从代码审查开始执行。
 ```
@@ -834,7 +838,7 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 
 **触发条件**：LARK_PLUGIN_INSTALLED=true。不满足时跳过，设 FEISHU_UPLOAD_OPTION=本地 Markdown 报告。
 
-报告保存方式为多选。用户可选择本地 Markdown 报告、飞书云文档和飞书多维表格中的任意一个或多个，支持任意组合多选。
+报告保存方式为多选。用户可选择本地 Markdown 报告、飞书云文档和飞书多维表格中的任意一个或多个，支持任意组合多选；此外可额外勾选 SARIF 文件用于本地 CI 对接。
 
 **必须调用 INTERACT 工具，参数如下**：
 - question: "请选择审查报告的保存方式"
@@ -846,12 +850,15 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
     description: "审查报告保存到飞书云文档，聊天中显示精简摘要"
   - label: "飞书多维表格"
     description: "问题清单录入飞书多维表格，聊天中显示精简摘要"
+  - label: "SARIF 文件（本地 .sarif，CI 对接）"
+    description: "在本地 Markdown 报告同目录导出同名 .sarif（P0→error / P1→warning / 其余→note），供 CI / 代码扫描平台对接"
 - multiSelect: true
 
 **用户响应后变量赋值**：
 - 将用户选择的 label 按选择顺序写入 `FEISHU_UPLOAD_OPTION`，多个值用 `, ` 分隔
 - 如果用户同时选择「飞书云文档」和「飞书多维表格」，后续执行云文档上传和多维表格创建两个步骤
 - 如果用户只选择「本地 Markdown 报告」，不执行飞书保存步骤
+- 选择「SARIF 文件（本地 .sarif，CI 对接）」时设置 `SARIF_EXPORT_ENABLED=true`，该选项不写入 `FEISHU_UPLOAD_OPTION`；SARIF 仅本地导出，与飞书上传互不影响，也不作为飞书上传的前置条件；未选择时 `SARIF_EXPORT_ENABLED=false`
 - 即使用户未选择「本地 Markdown 报告」，scan agent 仍必须先生成并保存本地 Markdown 完整报告文件，作为上传和降级复用源
 
 ### 步骤 3：选择审查入口
@@ -919,6 +926,21 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 - 最近 3 次 → `COMMIT_COUNT=3`，`REVIEW_SCOPE=最近 3 次提交`
 - 最近 5 次 → `COMMIT_COUNT=5`，`REVIEW_SCOPE=最近 5 次提交`
 - 最近 10 次 → `COMMIT_COUNT=10`，`REVIEW_SCOPE=最近 10 次提交`
+
+**增量对照历史报告（可选条件问题，仅增量审查时追加一次）**：确认 `COMMIT_COUNT` 之后（同一步骤序列内），必须再调用一次 INTERACT，参数如下：
+- question: "是否对照历史报告标记「上轮已报」发现？"
+- header: "上轮对照"
+- options:
+  - label: "跳过（默认）"
+    description: "不做上轮对照，本轮发现全部按新问题呈现"
+  - label: "对照历史报告标记重复"
+    description: "在 Other 中提供上一份审查报告的本地 Markdown 路径，命中上轮的发现标题追加「上轮已报」标记"
+- multiSelect: false
+
+**增量对照用户响应后变量赋值**：
+- 选择「跳过（默认）」或未提供路径 → `REPEAT_PREV_REPORT_PATH=""`
+- 提供了报告路径 → 转为绝对路径存入 `REPEAT_PREV_REPORT_PATH`，并校验文件存在且可读（`test -f` 且 `test -r`）；不存在或不可读时向用户提示一次，并按跳过处理（`REPEAT_PREV_REPORT_PATH=""`，fail-open，不阻塞审查）
+- 非增量审查不提出本问题，`REPEAT_PREV_REPORT_PATH` 保持为空
 
 **指定模块 + 多模块时，先展示模块树，再调用 INTERACT 工具**：
 
@@ -1217,9 +1239,29 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 - options:
   - label: "确认执行"
     description: "按以上配置开始审查"
+  - label: "确认执行（附业务背景）"
+    description: "开始审查，并先提供一段业务背景（需求意图/业务约束/变更目的）辅助判断"
   - label: "取消"
     description: "取消本次审查"
 - multiSelect: false
+
+**用户选择「确认执行（附业务背景）」时，追加一次条件 INTERACT（业务背景采集，multiSelect: false）**：
+- question: "请提供业务背景"
+- header: "业务背景"
+- options:
+  - label: "使用所审提交的 commit message（仅增量可选）"
+    description: "把本次增量已收集的提交记录文本作为业务背景注入"
+  - label: "跳过背景"
+    description: "不注入业务背景，按现状执行审查"
+- multiSelect: false
+- 用户也可以通过 Other/free-form 直接输入自定义业务背景文本
+
+**业务背景变量赋值（`REVIEW_BACKGROUND`，硬上限 8000 字符）**：
+- 自定义文本优先：用户通过 Other/free-form 输入时，以该文本作为 `REVIEW_BACKGROUND`
+- 选择「使用所审提交的 commit message」或增量审查且用户全程未提供背景时，默认注入本次增量已收集的提交记录文本（`GIT_LOG_OUTPUT` 对应的提交记录）作为 `REVIEW_BACKGROUND`
+- 全量/指定模块审查且未提供自定义文本时，`REVIEW_BACKGROUND=未提供`
+- 背景长度超过 8000 字符时截断到 8000 字符，并在最终汇总披露一行 `业务背景已截断至 8000 字符`
+- 该采集只在用户选择「确认执行（附业务背景）」时追加一次提问；背景只影响审查判断辅助，不改变审查范围、维度或 P0 门槛
 
 **用户确认后的启动提示**：
 
@@ -1462,6 +1504,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | source manifest | {MANIFEST 绝对路径}（所有语言均注入；正式范围以 REVIEW_INPUT_PATH 中 selected=true 为准） |
 | 本批审查文件列表 | {BATCH_FILE_LIST}（仅文件级分批模式，单 agent 模式不注入） |
 | 语义分组清单 | {SEMANTIC_GROUPS_PATH 或 未生成}（可选，仅增量审查时提供） |
+| 业务背景（可选） | {REVIEW_BACKGROUND 或 未提供} |
 
 ### 项目概况（预扫描结果）
 {PROJECT_SCAN_RESULT}
@@ -1480,6 +1523,9 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 
 ### 语义分组清单（可选，仅增量审查时提供）
 {SEMANTIC_GROUPS_PATH 或 未生成}；提供时逐组列出 group_key 与组内文件（仓库相对路径）
+
+### 业务背景（可选）
+{REVIEW_BACKGROUND 或 未提供}；增量审查未单独提供时默认为本次增量已收集的提交记录文本（≤8000 字符），与上方「增量提交记录」同源
 
 请基于以上审查参数，立即开始执行代码审查。不要进行任何用户交互或询问，直接从代码审查开始执行。
 ```
@@ -1521,6 +1567,8 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `SEMANTIC_GROUPS_PATH` | 增量审查时由 `scripts/core/prepare-semantic-groups.sh` 从冻结 review-input.json 元数据生成；单 agent 路径为 `${REVIEW_INPUT_PATH%.json}-semantic-groups.tsv`，文件级分批路径为 `$RUN_DIR/semantic-groups.tsv`；非增量或未分组时为 未生成 | `{group_key}\t{仓库相对路径}` 逐行 TSV |
 | `REVIEW_UNITS_PATH` | core/prepare-review-context.sh 输出；文件级分批复用 RUN_DIR/review-units.json | 只按 import/直接依赖形成的结构关联单元，不包含安全语义或候选结论 |
 | `REVIEW_RULES_RESOLVED_PATH` | core/resolve-review-rules.sh 基于 REVIEW_INPUT_PATH 的 selected 文件解析 | 当前正式范围逐文件命中的项目审查规则；不作为 ignore。文件内含文件类型专项清单映射（含 content 内嵌） |
+| `REVIEW_BACKGROUND` | 步骤 6「确认执行（附业务背景）」采集：自定义文本优先，增量未提供时默认注入本次增量已收集的提交记录文本；硬上限 8000 字符，超长截断并在最终汇总披露 | 需求意图/业务约束/本次变更目的的自然语言描述，或 `未提供` |
+| `REPEAT_PREV_REPORT_PATH` | 步骤 4 增量分支「上轮对照」条件问题采集；跳过或路径不存在时为空 | 上一份审查报告的本地 Markdown 绝对路径 |
 
 ### 增量审查预处理（仅增量审查时执行）
 
@@ -1579,6 +1627,25 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${PLUGIN_ROOT}/scripts/core/merge-batch-re
 #### 合并后输出
 
 使用 Write 工具将合并后的报告保存到 `{PROJECT_DIR}/code-review-report-{PROJECT_NAME}-{timestamp}.md`（与单 agent 模式一致的命名和路径）。
+
+#### 合并后上轮已报标记与 SARIF 导出（可选）
+
+merge 完成、`summary.json.report_title` 标题校验之后、飞书上传之前，按条件执行以下后处理（`REPORT_PATH` 指向合并后落盘的本地 Markdown 报告）：
+
+**上轮已报标记（仅 `REPEAT_PREV_REPORT_PATH` 非空时）**：
+```bash
+bash "${PLUGIN_ROOT}/scripts/core/mark-repeat-findings.sh" "$REPORT_PATH" "$REPEAT_PREV_REPORT_PATH"
+```
+- 默认 IoU 阈值 0.6 即可；需要调整时通过环境变量 `CC_CODE_REVIEWER_REPEAT_IOU_THRESHOLD` 覆盖，不新增交互步骤
+- 脚本输出恒 4 行（`REPEAT_REPORT_PATH=` / `REPEAT_TOTAL_BLOCKS=` / `REPEAT_PREV_BLOCKS=` / `REPEAT_MARKED=`），必须展示给用户
+- `REPEAT_MARKED>0` 时在合并后最终汇总追加一行 `🔁 上轮已报标记：N 条（对照 {PREV_REPORT basename}，IoU>0.6）`；`REVIEW_BACKGROUND` 超 8000 字符被截断时同样在合并后最终汇总追加一行 `业务背景已截断至 8000 字符`
+
+**SARIF 导出（仅 `SARIF_EXPORT_ENABLED=true` 时，且在上轮已报标记之后执行）**：
+```bash
+bash "${PLUGIN_ROOT}/scripts/core/export-sarif.sh" "$REPORT_PATH" "${REPORT_PATH%.md}.sarif" --project-name "$PROJECT_NAME"
+```
+- 向用户展示脚本输出的 `SARIF_EXPORTED=` 单行结果；`.sarif` 生成在报告同目录、同名去 `.md` 后缀
+- SARIF 仅本地导出，与飞书上传互不影响，也不作为飞书上传的前置条件；导出失败按 fail-open 处理，提示后继续后续流程
 
 #### 合并后报告保存
 
@@ -1643,6 +1710,27 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${PLUGIN_ROOT}/scripts/core/merge-batch-re
 **前置条件**：子 agent 已返回本地报告文件绝对路径（`REPORT_FILE_PATH`）+ 完整报告内容 + 结构化摘要。本地 Markdown 报告文件已由子 agent 落盘，主 skill 无需重新 Write。
 
 主 skill 按以下顺序处理报告保存与飞书上传，该流程与分批模式的「合并后报告保存」复用同一份 `references/feishu-integration.md` 操作规范：
+
+#### 步骤 0：报告产出后处理——上轮已报标记与 SARIF 导出（可选）
+
+本地 Markdown 报告持久化之后、标题校验与飞书上传之前，按条件执行（`REPORT_PATH` 即子 agent 返回的 `REPORT_FILE_PATH`，与批次路径的合并后处理同一套命令和披露口径）：
+
+**上轮已报标记（仅 `REPEAT_PREV_REPORT_PATH` 非空时）**：
+```bash
+bash "${PLUGIN_ROOT}/scripts/core/mark-repeat-findings.sh" "$REPORT_PATH" "$REPEAT_PREV_REPORT_PATH"
+```
+- 默认 IoU 阈值 0.6 即可；需要调整时通过环境变量 `CC_CODE_REVIEWER_REPEAT_IOU_THRESHOLD` 覆盖，不新增交互步骤
+- 脚本输出恒 4 行（`REPEAT_REPORT_PATH=` / `REPEAT_TOTAL_BLOCKS=` / `REPEAT_PREV_BLOCKS=` / `REPEAT_MARKED=`），必须展示给用户
+- `REPEAT_MARKED>0` 时在步骤 3 的最终汇总追加一行 `🔁 上轮已报标记：N 条（对照 {PREV_REPORT basename}，IoU>0.6）`
+
+**SARIF 导出（仅 `SARIF_EXPORT_ENABLED=true` 时，且在上轮已报标记之后执行）**：
+```bash
+bash "${PLUGIN_ROOT}/scripts/core/export-sarif.sh" "$REPORT_PATH" "${REPORT_PATH%.md}.sarif" --project-name "$PROJECT_NAME"
+```
+- 向用户展示脚本输出的 `SARIF_EXPORTED=` 单行结果；`.sarif` 生成在报告同目录、同名去 `.md` 后缀
+- SARIF 仅本地导出，与飞书上传互不影响，也不作为飞书上传的前置条件；导出失败按 fail-open 处理，提示后继续后续流程
+
+**业务背景截断披露（仅 `REVIEW_BACKGROUND` 超 8000 字符被截断时）**：在步骤 3 的最终汇总追加一行 `业务背景已截断至 8000 字符`。
 
 #### 步骤 1：标题校验（上传前置）
 
