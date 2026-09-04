@@ -48,6 +48,7 @@ maxTurns: 50
 | 审查文件数量 | {REVIEW_FILE_COUNT} |
 | 审查代码行数 | {REVIEW_LINE_COUNT} |
 | Python 审查框架路径 | {references/languages/python/review-framework.md 绝对路径} |
+| 企业级 Security 框架路径 | {references/security/enterprise-security-framework.md 绝对路径（仅 REVIEW_MODE=security）} |
 | Django 规则路径 | {references/languages/python/django-rules.md 绝对路径} |
 | FastAPI 规则路径 | {references/languages/python/fastapi-rules.md 绝对路径} |
 | 源码范围路径 | {references/languages/python/source-scope.md 绝对路径} |
@@ -79,6 +80,7 @@ maxTurns: 50
 - **项目类型**（`PROJECT_TYPE`）：`python-django`、`python-fastapi`、`python-generic`；若为 `python-unsupported`，主 agent 已在路由层停止，不会进入本 agent
 - **语言 ID**（`LANGUAGE_ID`）：固定 `python`
 - **审查模式**（`REVIEW_MODE`）：`fast` / `standard` / `deep` / `security`，启用维度见 Python 审查框架矩阵
+- **企业级 Security 框架路径**（`SECURITY_FRAMEWORK_PATH`）：`references/security/enterprise-security-framework.md` 的绝对路径。仅 `REVIEW_MODE=security` 时注入；该模式下必须读取并以其作为跨语言安全语义、取证、证据等级和分级规则的权威依据，Python 框架和 Django/FastAPI 规则只补充实现映射。
 - **语义增强**（`SEMANTIC_LEVEL`）：`pyright`、`pylsp`、`jedi`、`pyright-cli` 或 `none`。前三者必须用对应 LSP 查询 definition/references/diagnostics；`pyright-cli` 只运行 diagnostics，定义/引用使用静态检索；`none` 完全静态降级。结果必须如实披露实际能力，不得把 CLI 诊断描述为 LSP 查询
 - **审查输出模式**（`REVIEW_OUTPUT_MODE`）：`完整报告`（默认）或 `仅发现清单`（分批审查单批输出）
 - **审查范围**（`REVIEW_SCOPE`）：`全量代码`，或用户选定的 `src` 子目录/包目录相对路径列表（逗号分隔，如 `src/api,src/models`）。范围已由主 agent 收敛到 `source manifest`（单 agent）或 `BATCH_FILE_LIST`（分批）；本子 agent 直接使用注入清单，**不得再次按目录过滤，也不得外扩到未选目录**
@@ -88,7 +90,7 @@ maxTurns: 50
 - **项目审查规则解析结果**（`REVIEW_RULES_RESOLVED_PATH`）：只为本批正式文件附加检查重点，不屏蔽发现、不覆盖 Python 专项规则。
 
 **参考文件读取规则**：
-- 执行审查前，必须先读取：`Python 审查框架路径`、`Django 规则路径`、`FastAPI 规则路径`、`源码范围路径`、`报告格式路径`
+- 执行审查前，必须先读取：`Python 审查框架路径`、`Django 规则路径`、`FastAPI 规则路径`、`源码范围路径`、`报告格式路径`；`REVIEW_MODE=security` 时还必须读取 `企业级 Security 框架路径`。路径为空、不是绝对路径、文件不存在或不可读时立即停止并返回缺失路径。
 - 如果任一路径为空、不是绝对路径、文件不存在或不可读，立即停止并向主 agent 返回失败原因和缺失路径；不得使用猜测路径继续
 - 只有在主 agent 未注入这些字段的历史兼容场景，才允许回退读取当前 agent 文件相邻的 `../references/languages/python/*.md`
 
@@ -116,6 +118,8 @@ maxTurns: 50
 - **standard**（标准审查）：覆盖维度 1-12，但 11 只查核心测试缺失、12 只查 RESTful+错误处理。（11/12 部分启用。）
 - **deep**（深度审查）：全量 12 维度，含测试质量和技术债深挖。覆盖维度：1-12 全开。
 - **security**（安全专项）：聚焦安全核心（维度 6 全深度）及强相关交叉维度（配置安全、SQL 注入、敏感信息泄露、接口鉴权/错误信息）。类型安全在 security 关闭--类型问题是质量问题不是安全问题。覆盖维度：1、4（部分）、5（部分）、6、10（部分）、12（部分）。
+
+当 `REVIEW_MODE=security` 时，按 `企业级 Security 框架路径` 执行统一安全模型、漏洞域、静态取证、证据状态、越权最小证据字段和验证方案；本 Agent 的 Python/Django/FastAPI 规则只负责实现层映射，不得降低统一安全要求。
 
 ---
 
@@ -254,6 +258,8 @@ maxTurns: 50
 - `REVIEW_OUTPUT_MODE=完整报告`：按 `报告格式路径` 定义的格式生成报告，保存为 `code-review-report-{PROJECT_NAME}-{YYYYMMDD-HHmmss}.md`
 - `REVIEW_OUTPUT_MODE=仅发现清单`：只按批次发现格式写入 `BATCH_RESULT_PATH`，不得生成完整报告
 
+`REVIEW_MODE=security` 时，安全条目还必须补齐证据状态、主体/资源/决策链、未授权路径与防护、验证方案字段。
+
 ### 第六步：持久化报告文件
 
 - 完整报告模式：将报告保存到 `PROJECT_DIR`，返回报告文件绝对路径给主 agent
@@ -308,7 +314,7 @@ maxTurns: 50
 
 **安全问题分级规则（高危必为 P0）**：
 - 高危安全问题必为 P0：同时满足生产可达、证据完整且高置信、事故级安全影响、缺少有效防护的安全问题必须标为 P0 并阻断发布；不得以触发概率低、触发条件非攻击者可控、位于异常路径为由降级到 P1，反向降级必须证明触发路径生产不可达
-- 鉴权/安全开关 fail-open（认证装饰器、权限中间件、DEBUG/安全开关在异常/空值/默认放行）按认证绕过定级：仓库内代码链完整即视为满足"生产可达 + 证据完整"，运行时触发事件不构成降级理由
+- 鉴权/安全开关 fail-open（认证装饰器、权限中间件、DEBUG/安全开关在异常/空值/默认放行）按认证绕过候选定级：代码链闭合只能证明静态触发路径和缺少拒绝分支；只有入口注册、装配以及部署/运行配置也由仓库证据闭合时才满足生产可达，否则标记待确认/P0 待验证。运行时触发事件不构成低概率降级理由
 - 客户端可控输入（header、query 参数）直接成为身份来源属于认证绕过候选；最终攻击效果依赖部署或网关配置时归入待确认并标注"P0 待验证"，不得静默放入普通 P1
 
 ---

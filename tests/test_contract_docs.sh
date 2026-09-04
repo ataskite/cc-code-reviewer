@@ -6,6 +6,7 @@ AGENT_FILE="$ROOT_DIR/agents/cc-code-reviewer.md"
 FRONTEND_AGENT_FILE="$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 FEISHU_FILE="$ROOT_DIR/references/feishu-integration.md"
 REPORT_FORMAT_FILE="$ROOT_DIR/references/report-format.md"
+SECURITY_FRAMEWORK_FILE="$ROOT_DIR/references/security/enterprise-security-framework.md"
 SKILL_FILE="$ROOT_DIR/skills/cc-code-reviewer/SKILL.md"
 AGENTS_FILE="$ROOT_DIR/AGENTS.md"
 CLAUDE_FILE="$ROOT_DIR/CLAUDE.md"
@@ -33,7 +34,7 @@ require_literal() {
   local file="$1"
   local text="$2"
   local message="$3"
-  if ! grep -Fq "$text" "$file"; then
+  if ! grep -Fq -e "$text" "$file"; then
     echo "$message" >&2
     exit 1
   fi
@@ -105,6 +106,77 @@ grep -q "最近提交概览" "$SKILL_FILE"
 grep -q "prompt: 注入审查参数表 + 审查参考文件路径 + 项目概况 + 增量数据" "$SKILL_FILE"
 grep -q "| 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |" "$SKILL_FILE"
 grep -q "| 报告格式路径 | {REPORT_FORMAT_PATH} |" "$SKILL_FILE"
+if [ ! -r "$SECURITY_FRAMEWORK_FILE" ]; then
+  echo "enterprise Security framework must be readable: $SECURITY_FRAMEWORK_FILE" >&2
+  exit 1
+fi
+for security_framework_term in \
+  "# 企业级 Security 专项审查框架" \
+  "## 2. 安全模型：从入口到敏感效果" \
+  "## 3. 企业级漏洞域" \
+  "### 3.2 授权与越权（重点）" \
+  "水平越权 / BOLA / IDOR" \
+  "垂直越权 / BFLA" \
+  "跨租户/组织/商户/部门访问" \
+  "## 4. 静态取证流程" \
+  "## 5. 证据等级与输出" \
+  "静态已证实" \
+  "待确认项" \
+  "运行态已验证" \
+  "越权问题最小证据字段" \
+  "## 6. 安全问题分级" \
+  "P0 五项硬门槛" \
+  "## 7. 验证方案契约"; do
+  require_literal "$SECURITY_FRAMEWORK_FILE" "$security_framework_term" "enterprise Security framework missing required contract: $security_framework_term"
+done
+require_literal "$SECURITY_FRAMEWORK_FILE" "代码链闭合只能证明静态触发路径和缺少拒绝分支" "enterprise Security framework must separate static reachability from production reachability"
+require_literal "$SECURITY_FRAMEWORK_FILE" "只有入口注册、装配以及部署/运行配置也由仓库证据闭合时" "enterprise Security framework must require deployment evidence for production reachability"
+require_literal "$SECURITY_FRAMEWORK_FILE" "弱密码算法" "enterprise Security framework must cover cryptography and TLS"
+require_literal "$SECURITY_FRAMEWORK_FILE" "日志、告警与异常安全" "enterprise Security framework must cover security logging and exceptional conditions"
+require_literal "$SECURITY_FRAMEWORK_FILE" "不受限资源消耗" "enterprise Security framework must cover API resource consumption"
+require_literal "$SECURITY_FRAMEWORK_FILE" "OWASP API Security Top 10:2023" "enterprise Security framework must disclose API baseline mapping"
+require_literal "$SKILL_FILE" 'SECURITY_FRAMEWORK_PATH="未启用"' "scan skill must resolve the enterprise Security framework path"
+require_literal "$SKILL_FILE" 'SECURITY_FRAMEWORK_PATH="${PLUGIN_ROOT}/references/security/enterprise-security-framework.md"' "security mode must inject the enterprise Security framework path"
+require_literal "$SKILL_FILE" '| 企业级 Security 框架路径 | {SECURITY_FRAMEWORK_PATH}（仅 REVIEW_MODE=security） |' "review prompts must inject the enterprise Security framework path"
+require_literal "$SKILL_FILE" '- 统一框架：references/security/enterprise-security-framework.md  ← 仅 REVIEW_MODE=security 时显示' "execution plan must disclose the enterprise Security framework in security mode"
+require_literal "$SKILL_FILE" 'description: "安全专项，按企业级 Security 框架统一覆盖身份、授权/越权、注入、敏感数据等安全域"' "security mode option must describe the enterprise Security framework scope"
+for security_agent_file in "$AGENT_FILE" "$FRONTEND_AGENT_FILE" "$ROOT_DIR/agents/cc-code-reviewer-python.md"; do
+  require_literal "$security_agent_file" "企业级 Security 框架路径" "security agent must declare the enterprise Security framework path"
+  require_literal "$security_agent_file" "REVIEW_MODE=security" "security agent must conditionally consume the enterprise Security framework"
+  require_literal "$security_agent_file" "统一安全模型" "security agent must execute the unified enterprise Security model"
+  require_literal "$security_agent_file" "SECURITY_FRAMEWORK_PATH" "security agent must name the SECURITY_FRAMEWORK_PATH parameter"
+  require_literal "$security_agent_file" "主体/资源/决策链" "security agent must emit the authorization-chain evidence fields"
+done
+for lang_framework_file in \
+  "$ROOT_DIR/references/languages/java/review-framework.md" \
+  "$ROOT_DIR/references/languages/frontend/review-framework.md" \
+  "$ROOT_DIR/references/languages/python/review-framework.md"; do
+  require_literal "$lang_framework_file" "references/security/enterprise-security-framework.md" "language review framework must defer to the enterprise Security framework in security mode"
+done
+AUTHZ_EVAL_ROOT="$ROOT_DIR/tests/evals/authorization-contracts"
+for authz_eval_case in horizontal-unbound owner-bound; do
+  [ -r "$AUTHZ_EVAL_ROOT/$authz_eval_case/pom.xml" ] || {
+    echo "authorization evaluation fixture missing pom.xml: $authz_eval_case" >&2
+    exit 1
+  }
+  [ -n "$(find "$AUTHZ_EVAL_ROOT/$authz_eval_case/src/main/java" -type f -name '*.java' -print -quit)" ] || {
+    echo "authorization evaluation fixture missing production Java sources: $authz_eval_case" >&2
+    exit 1
+  }
+done
+require_literal "$AUTHZ_EVAL_ROOT/README.md" "horizontal-unbound" "authorization evaluation README must describe the vulnerable fixture"
+require_literal "$AUTHZ_EVAL_ROOT/README.md" "owner-bound" "authorization evaluation README must describe the control fixture"
+require_literal "$ROOT_DIR/README.md" "references/security/enterprise-security-framework.md" "README must link the enterprise Security framework"
+require_literal "$ROOT_DIR/README.md" "代码链闭合只能证明静态触发路径和缺少拒绝分支" "README must separate static reachability from production reachability"
+require_literal "$ROOT_DIR/references/report-format.md" "Security 模式问题条目附加字段" "report format must define security-specific evidence fields"
+require_literal "$ROOT_DIR/references/report-format.md" "主体/资源/决策链" "report format must require authorization chain evidence"
+require_literal "$ROOT_DIR/runtime/contract.md" "企业级安全框架路径" "runtime contract must carry the enterprise Security framework path"
+require_literal "$AUTHZ_EVAL_ROOT/owner-bound/src/main/java/eval/RecordFlow.java" "request.subject.id.equals(record.ownerId)" "owner-bound control must perform an explicit owner comparison"
+if grep -q "findOwned" "$AUTHZ_EVAL_ROOT/owner-bound/src/main/java/eval/RecordFlow.java" "$AUTHZ_EVAL_ROOT/owner-bound/src/main/java/eval/RecordStore.java"; then
+  echo "owner-bound control must not rely on a findOwned helper-name heuristic" >&2
+  exit 1
+fi
+require_literal "$EXAMPLES_FILE" "## Security 专项与越权证据边界" "scan examples must document the Security evidence boundary"
 require_literal "$SKILL_FILE" '| 审查输入清单 | {REVIEW_INPUT_PATH} |' "single-agent prompt must inject immutable review input"
 require_literal "$SKILL_FILE" '| 项目审查规则解析结果 | {REVIEW_RULES_RESOLVED_PATH} |' "single-agent prompt must inject resolved project rules"
 require_literal "$SKILL_FILE" 'scripts/core/resolve-review-rules.sh' "single-agent flow must resolve project review rules"
@@ -119,6 +191,11 @@ GLOBAL_REFERENCE_LINE="$(grep -n "### 第六步之前：准备审查参考文件
 TASK_LAUNCH_LINE="$(grep -n "### 第七步：调用子 agent 执行代码审查" "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
 if [ -z "$GLOBAL_REFERENCE_LINE" ] || [ -z "$TASK_LAUNCH_LINE" ] || [ "$GLOBAL_REFERENCE_LINE" -ge "$TASK_LAUNCH_LINE" ]; then
   echo "review reference path preparation must be a global pre-Task step before launching the reviewer agent" >&2
+  exit 1
+fi
+SECURITY_PATH_LINE="$(grep -n 'SECURITY_FRAMEWORK_PATH="\${PLUGIN_ROOT}/references/security/enterprise-security-framework.md"' "$SKILL_FILE" | head -1 | cut -d: -f1 || true)"
+if [ -z "$SECURITY_PATH_LINE" ] || [ "$SECURITY_PATH_LINE" -ge "$TASK_LAUNCH_LINE" ]; then
+  echo "enterprise Security framework path must be prepared before launching the reviewer agent" >&2
   exit 1
 fi
 

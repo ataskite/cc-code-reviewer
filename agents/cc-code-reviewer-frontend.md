@@ -48,6 +48,7 @@ maxTurns: 50
 | 审查文件数量 | {REVIEW_FILE_COUNT} |
 | 审查代码行数 | {REVIEW_LINE_COUNT} |
 | 前端审查框架路径 | {references/languages/frontend/review-framework.md 绝对路径} |
+| 企业级 Security 框架路径 | {references/security/enterprise-security-framework.md 绝对路径（仅 REVIEW_MODE=security）} |
 | React 规则路径 | {references/languages/frontend/react-rules.md 绝对路径} |
 | Vue 规则路径 | {references/languages/frontend/vue-rules.md 绝对路径} |
 | Node 规则路径 | {references/languages/frontend/node-rules.md 绝对路径} |
@@ -80,6 +81,7 @@ maxTurns: 50
 - **项目类型**（`PROJECT_TYPE`）：`frontend-react`、`frontend-vue2`、`frontend-vue3`、`node`；若为 `frontend-unsupported`，主 agent 已在路由层停止，不会进入本 agent
 - **语言 ID**（`LANGUAGE_ID`）：固定 `frontend`
 - **审查模式**（`REVIEW_MODE`）：`fast` / `standard` / `deep` / `security`，启用维度见前端审查框架矩阵
+- **企业级 Security 框架路径**（`SECURITY_FRAMEWORK_PATH`）：`references/security/enterprise-security-framework.md` 的绝对路径。仅 `REVIEW_MODE=security` 时注入；该模式下必须读取并以其作为跨语言安全语义、取证、证据等级和分级规则的权威依据，前端/Node 规则只补充实现映射。
 - **语义增强**（`SEMANTIC_LEVEL`）：`typescript-lsp` 或 `none`（静态降级）。当值为 `typescript-lsp` 时必须用 TS LSP 查询 definition/references/implementations/diagnostics 理解调用链，并在结果中披露「语义增强使用情况」
 - **审查输出模式**（`REVIEW_OUTPUT_MODE`）：`完整报告`（默认）或 `仅发现清单`（分批审查单批输出）
 - **审查范围**（`REVIEW_SCOPE`）：`全量代码`，或用户在步骤 4 选定的 `src` 子目录相对路径列表（逗号分隔，如 `src/components,src/pages`）。目录范围已由主 agent 收敛到 `source manifest`（单 agent）或 `BATCH_FILE_LIST`（分批）；本子 agent直接使用注入清单，**不得再次按目录过滤，也不得外扩到未选目录**
@@ -89,7 +91,7 @@ maxTurns: 50
 - **项目审查规则解析结果**（`REVIEW_RULES_RESOLVED_PATH`）：只为本批正式文件附加检查重点，不屏蔽发现、不覆盖前端专项规则。
 
 **参考文件读取规则**：
-- 执行审查前，必须先读取：`前端审查框架路径`、`React 规则路径`、`Vue 规则路径`、`Node 规则路径`、`源码范围路径`、`报告格式路径`
+- 执行审查前，必须先读取：`前端审查框架路径`、`React 规则路径`、`Vue 规则路径`、`Node 规则路径`、`源码范围路径`、`报告格式路径`；`REVIEW_MODE=security` 时还必须读取 `企业级 Security 框架路径`。路径为空、不是绝对路径、文件不存在或不可读时立即停止并返回缺失路径。
 - 如果任一路径为空、不是绝对路径、文件不存在或不可读，立即停止并向主 agent 返回失败原因和缺失路径；不得使用猜测路径继续
 - 只有在主 agent 未注入这些字段的历史兼容场景，才允许回退读取当前 agent 文件相邻的 `../references/languages/frontend/*.md`
 
@@ -117,6 +119,8 @@ maxTurns: 50
 - **standard**（标准审查）：覆盖维度 1-11，但 10 只查核心测试缺失、11 只查 RESTful+错误处理+分页。（10/11 部分启用；维度 12 设计系统一致性不启用。）
 - **deep**（深度审查）：全量 12 维度，含测试质量、技术债深挖和设计系统一致性。覆盖维度：1-12 全开。
 - **security**（安全专项）：聚焦安全核心（维度 6 全深度）及强相关交叉维度（配置安全、注入/越权、敏感信息泄露、接口鉴权/错误信息）。类型安全在 security 关闭——类型问题是质量问题不是安全问题。覆盖维度：1、4（部分）、5（部分）、6、9（部分）、11（部分）。
+
+当 `REVIEW_MODE=security` 时，按 `企业级 Security 框架路径` 执行统一安全模型、漏洞域、静态取证、证据状态、越权最小证据字段和验证方案；前端/Node 规则只负责实现层映射，前端展示控制不得被当作后端授权证据。
 
 ---
 
@@ -277,6 +281,8 @@ maxTurns: 50
 - `REVIEW_OUTPUT_MODE=完整报告`：按 `报告格式路径` 生成报告。报告第一条非空内容必须是一级标题 `# 代码审查报告 - {PROJECT_NAME}`；覆盖率分母为 source manifest 生产文件数，配置文件单独计数
 - `REVIEW_OUTPUT_MODE=仅发现清单`：只按「Batch 发现清单输出格式」写入 `BATCH_RESULT_PATH`，不得生成完整报告
 
+`REVIEW_MODE=security` 时，安全条目还必须补齐证据状态、主体/资源/决策链、未授权路径与防护、验证方案字段。
+
 **逐条完整输出（强制，禁止塌缩）**：先读取 `报告格式路径` 中「问题条目通用规则」章节。汇总表统计的每个问题（P0/P1/P2/P3/待确认）在正文中都必须独立展开为一条完整条目，并用三级标题 `### {问题编号} | [维度名称] {问题一句话标题}` 开头，后接位置/置信度/问题/证据/影响/建议完整字段。**禁止**把 P1/P2/P3/待确认问题压缩成 `- P1-1：xxx` 一句话列表。输出接近上限时优先缩短单条证据代码片段（保留 `// ←` 标注），**绝不**通过删减问题条目数量或合并多条为一句来省输出。
 
 **P0 空态输出（强制）**：P0 为 0 时也必须输出 P0 章节，并按 `报告格式路径` 中的空态规则写明 `本次未发现满足 P0 五项硬门槛的问题`。不得省略 P0 章节、不得直接从 P1 开始、不得生成 `### P0-0` 占位条目。
@@ -346,7 +352,7 @@ maxTurns: 50
 
 **安全问题分级规则（高危必为 P0）**：
 - 高危安全问题必为 P0：同时满足生产可达、证据完整且高置信、事故级安全影响、缺少有效防护的安全问题必须标为 P0 并阻断发布；不得以触发概率低、触发条件非攻击者可控、位于异常路径为由降级到 P1，反向降级必须证明触发路径生产不可达
-- 鉴权/安全开关 fail-open（路由守卫、权限拦截、安全开关在异常/空值/默认放行）按认证绕过定级：仓库内代码链完整即视为满足"生产可达 + 证据完整"，运行时触发事件不构成降级理由
+- 鉴权/安全开关 fail-open（路由守卫、权限拦截、安全开关在异常/空值/默认放行）按认证绕过候选定级：代码链闭合只能证明静态触发路径和缺少拒绝分支；只有入口注册、装配以及部署/运行配置也由仓库证据闭合时才满足生产可达，否则标记待确认/P0 待验证。运行时触发事件不构成低概率降级理由
 - 客户端可控输入（localStorage、URL query、postMessage data）直接成为身份来源属于认证绕过候选；最终攻击效果依赖部署或网关配置时归入待确认并标注"P0 待验证"，不得静默放入普通 P1
 
 **fast 模式输出规则**：仅输出 P0（含 P0 级安全问题）；P1 及以下不输出；置信度参与判断，P0 仅接受高置信度。

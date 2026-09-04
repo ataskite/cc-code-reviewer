@@ -748,6 +748,11 @@ write_batch() {
     printf '  "strategy": "%s",\n' "$(json_escape "$PLAN_STRATEGY")"
     printf '  "semantic_level": "%s",\n' "$(json_escape "$SEMANTIC_LEVEL")"
     printf '  "review_scope": "%s",\n' "$(json_escape "$REVIEW_SCOPE_INPUT")"
+    if [ "$REVIEW_MODE" = "security" ]; then
+      printf '  "security_companion_manifest": "%s",\n' "$(json_escape "$RUN_DIR/security-companion-manifest.txt")"
+    else
+      printf '  "security_companion_manifest": null,\n'
+    fi
     printf '  "selected_modules": '
     write_json_string_array "${SELECTED_MODULES[@]}"
     printf ',\n'
@@ -967,6 +972,18 @@ perl -MJSON::PP -e '
     -not -name '*.generated.*' -not -name '*.gen.java' -type f -print 2>/dev/null
 done | LC_ALL=C sort -u > "$SOURCE_MANIFEST"
 
+# Security 专项还需要检查构建、运行配置、CI 与容器边界。大仓库的 Java
+# scan_roots 只覆盖 src/main/java，因此单独冻结伴随文件清单，避免把配置
+# 文件混入 Java 覆盖率或成本统计。
+SECURITY_COMPANION_MANIFEST=""
+if [ "$REVIEW_MODE" = "security" ]; then
+  SECURITY_COMPANION_MANIFEST="$RUN_DIR/security-companion-manifest.txt"
+  COMPANION_ALL="$RUN_DIR/.security-companion-all.tmp"
+  bash "$(dirname "$0")/collect-source-files.sh" "$PROJECT_DIR" "$REVIEW_SCOPE_INPUT" > "$COMPANION_ALL"
+  awk '!/\/src\/main\/java\/.*\.java$/' "$COMPANION_ALL" | LC_ALL=C sort -u > "$SECURITY_COMPANION_MANIFEST"
+  rm -f "$COMPANION_ALL"
+fi
+
 REVIEW_INPUT_PATH="$RUN_DIR/review-input.json"
 bash "$(dirname "$0")/../../core/prepare-review-input.sh" \
   "$PROJECT_DIR" java full 0 "$SOURCE_MANIFEST" "$REVIEW_INPUT_PATH" >/dev/null
@@ -999,6 +1016,7 @@ cat > "$RUN_DIR/plan.json.tmp" <<JSON
   "review_input_sha256": "$(json_escape "$REVIEW_INPUT_SHA256")",
   "rules_snapshot_sha256": "$(json_escape "$RULES_SNAPSHOT_SHA256")",
   "review_rules_resolved_path": "$(json_escape "$REVIEW_RULES_RESOLVED_PATH")",
+  "security_companion_manifest": $(if [ -n "$SECURITY_COMPANION_MANIFEST" ]; then printf '"%s"' "$(json_escape "$SECURITY_COMPANION_MANIFEST")"; else printf 'null'; fi),
   "batch_count": $BATCH_COUNT,
   "budget": {
     "target_batch_cost": $TARGET_BATCH_COST,

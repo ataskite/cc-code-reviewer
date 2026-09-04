@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.6.7 — 企业级 Security 专项框架：统一安全契约、证据分级与授权评测
+
+### 新增
+
+- **企业级 Security 专项审查框架**：新增 `references/security/enterprise-security-framework.md`（框架版本 Security 1.0），作为 security 模式跨 Java / 前端 / Python 的权威审查依据。统一安全模型（入口 → 主体/身份 → 凭据/授权证据 → 动作 → 资源/标识 → 归属关系 → 授权决策点 → 防护 → 敏感效果，逐契约六问 + 主动构造反例）；企业级漏洞域以授权/越权为重点（水平越权 BOLA/IDOR、垂直越权 BFLA、跨租户、嵌套资源换绑、批量/间接入口绕过、TOCTOU），并覆盖密码学与 TLS、不受限资源消耗、日志告警与异常安全、配置依赖与 AI 集成，附 OWASP Top 10:2025 + API Security Top 10:2023 + ASVS 5.0.0 基线映射与覆盖缺口披露义务；八步静态取证流程；三态证据模型（静态已证实 / 待确认项 / 运行态已验证）；越权问题最小证据字段（十项）；非破坏性权限矩阵验证契约（未获授权不对生产系统发起攻击）。主 Skill 在 `REVIEW_MODE=security` 时解析并校验 `SECURITY_FRAMEWORK_PATH`，单 agent 与批次参数表注入「企业级 Security 框架路径」；三个审查 agent 必须读取并以其为权威依据，语言框架与语言规则只做维度与实现映射（三语言 review-framework 的 security 段落已加反向指针）；执行计划在 security 模式显示统一框架 / 覆盖重点 / 证据状态三行，模式选择选项描述同步。
+- **Security 模式报告附加字段**：`references/report-format.md` 新增「Security 模式问题条目附加字段」——每条安全条目（P0/P1/P2/P3 与待确认项）必填证据状态（三态枚举）；授权/越权类条目必填「主体/资源/决策链」与「未授权路径与防护」（口径与框架越权最小证据字段一致），其余安全条目不涉及主体—资源关系时写明「不适用」、不得编造决策链；`待确认项` 必填最小、非破坏性验证方案。
+- **Maven 大仓库 Security 伴随文件清单**：`languages/java/plan-large-batches.sh` 在 `REVIEW_MODE=security` 时额外冻结 `RUN_DIR/security-companion-manifest.txt`（构建描述符、`src/main/resources` 定向配置与 CI/容器白名单，即 collect-source-files 伴随层，与 `src/main/java` 主清单互斥），`plan.json` 与每个批次 json 声明 `security_companion_manifest`（非 security 模式为 null）。批次 agent 将清单内文件作为 Security 证据范围：不计入 Java 覆盖率与行数统计，但允许作为正式安全问题位置——`scan_roots` 边界的唯一例外；`tests/test_phase11_plan_large_batches.sh` 固化 plan/batch 声明一致性。
+- **越权语义评测样本**：新增 `tests/evals/authorization-contracts/`——`horizontal-unbound` 漏洞样本与 `owner-bound` 对照样本除 `RecordFlow` 归属绑定外逐字节一致（两样本的 `RecordStore` 接口统一为 `find(key)`，避免 `findOwned(...)` 类命名启发式），并各含 CLI 入口装配（`eval.Main` 读取外部资源键、组装 store/sink、携带已认证主体调用流程），使入口注册与装配由仓库证据闭合、漏洞样本可静态证实。五次运行目标：漏洞样本 ≥4 次命中「静态已证实」高置信越权发现、对照样本 ≤1 次误报——模型质量目标，非确定性测试断言。
+
+### 变更
+
+- **fail-open 定级标准收紧**：认证/鉴权/安全开关路径上的 fail-open 由「按认证绕过定级，仓库内代码链完整即视为生产可达且证据完整（直接 P0）」收紧为「按认证绕过候选定级：代码链闭合只证明静态触发路径与缺少拒绝分支，入口注册、装配与部署/运行配置也由仓库证据闭合时才满足生产可达，否则归入待确认并显式标注 P0 待验证」；运行时触发事件（依赖异常、配置缺失等常规运维事件）仍不构成降级理由，降级仍须反向证明生产不可达。security 框架 §6、三语言 review-framework、三个 agent 的分级规则与 README P0 段落同步落地。
+- `runtime/contract.md` 的 `DISPATCH_AGENT` 统一输入补记 Security 框架路径与 Security 大仓库伴随文件清单（如有）；AGENTS.md / CLAUDE.md 分批契约与测试覆盖描述同步伴随清单语义；`tests/test_contract_docs.sh` 新增安全契约断言群——框架章节与不变量（含 fail-open 候选语义、部署证据门槛、OWASP 基线）、SKILL 路径解析 / 参数表注入 / 执行计划行 / 模式选项描述、三 agent 参数名与证据字段、三语言框架反向指针、README 链接与评测样本存在性。
+
+### 升级方式
+
+三端插件 manifest 已指向 1.6.7（`.claude-plugin/plugin.json`、`.claude-plugin/marketplace.json` 两处、`.codex-plugin/plugin.json`、`.zcode-plugin/plugin.json`，与 `VERSION` 单一真相源一致）。Claude Code / Codex / ZCode 用户重新加载插件即可（`/reload-plugins` 或对应入口）。
+
 ## 1.6.6 — 对标 OpenCodeReview：增量重复抑制、业务背景与 SARIF 导出
 
 ### 新增

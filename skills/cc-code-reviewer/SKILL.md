@@ -201,7 +201,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 
 ### 第三步之后：读取项目级审查规则
 
-独立读取可选的 `.cc-code-reviewer/review-rules.yml`。它与 ignore 规则不同：**只附加路径审查重点，绝不屏蔽发现**。文件级 batch planner 会在创建 `RUN_DIR` 后自动将同一 source manifest 的规则解析到 `RUN_DIR/review-rules.json`；主 Skill 只注入该路径，不自行解释 YAML 内容。解析结果另含内置的文件类型专项清单映射（`filetype_checklists`，含 checklist 文档的 content 内嵌），按注入文件的路径逐个第一命中匹配。可达性边界：文件类型专项清单对文件级分批与单 Agent 路由全量可达；Maven 大仓模块分批路由由 planner 自建 `src/main/java` 清单、不含伴随文件，故仅覆盖模块内命中路径。前端与 Python 采集清单的扩展名与现有映射互斥，两路由的清单命中天然稀疏，完整性守卫测试已固化此语义。
+独立读取可选的 `.cc-code-reviewer/review-rules.yml`。它与 ignore 规则不同：**只附加路径审查重点，绝不屏蔽发现**。文件级 batch planner 会在创建 `RUN_DIR` 后自动将同一 source manifest 的规则解析到 `RUN_DIR/review-rules.json`；主 Skill 只注入该路径，不自行解释 YAML 内容。解析结果另含内置的文件类型专项清单映射（`filetype_checklists`，含 checklist 文档的 content 内嵌），按注入文件的路径逐个第一命中匹配。可达性边界：文件类型专项清单对文件级分批与单 Agent 路由全量可达；Maven 大仓模块分批路由由 planner 自建 `src/main/java` 清单，Security 模式另冻结构建/配置/CI/容器伴随文件清单并允许其作为正式安全证据。前端与 Python 采集清单的扩展名与现有映射互斥，两路由的清单命中天然稀疏，完整性守卫测试已固化此语义。
 
 ### 第五步：输出预扫描摘要（不允许跳过）
 
@@ -478,6 +478,13 @@ else
   test -r "$REVIEW_FRAMEWORK_PATH"
 fi
 test -r "$REPORT_FORMAT_PATH"
+
+# Security 专项使用跨语言企业级安全框架；其他模式保持各语言现有安全规则。
+SECURITY_FRAMEWORK_PATH="未启用"
+if [ "$REVIEW_MODE" = "security" ]; then
+  SECURITY_FRAMEWORK_PATH="${PLUGIN_ROOT}/references/security/enterprise-security-framework.md"
+  test -r "$SECURITY_FRAMEWORK_PATH"
+fi
 ```
 
 如果任一文件不存在或不可读，必须终止并输出缺失路径，不得调用子 agent。禁止只依赖 `../references/...` 这类相对路径启动子 agent。
@@ -653,6 +660,8 @@ test -r "$REVIEW_UNITS_PATH"
 | 审查文件数量 | {BATCH_FILE_COUNT} |
 | 审查代码行数 | {BATCH_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
+| 企业级 Security 框架路径 | {SECURITY_FRAMEWORK_PATH}（仅 REVIEW_MODE=security） |
+| Security 伴随文件清单 | 由 {BATCH_PLAN_PATH} 的 `security_companion_manifest` 指定（仅 Maven 大仓库 Security） |
 | React 规则路径 | {REACT_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Vue 规则路径 | {VUE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Node 规则路径 | {NODE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
@@ -823,7 +832,7 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
   - label: "deep"
     description: "深度审查，启用目标语言的全部审查维度（Java 15 维度；前端/Python 12 维度），适合大版本上线前"
   - label: "security"
-    description: "安全专项，聚焦安全核心维度"
+    description: "安全专项，按企业级 Security 框架统一覆盖身份、授权/越权、注入、敏感数据等安全域"
 - multiSelect: false
 
 **用户响应后变量赋值（必须归一化）**：
@@ -1225,6 +1234,9 @@ total_min = 将本轮批次按单批耗时贪心分配到 CONCURRENCY 条执行 
 - 审查类型：{REVIEW_TYPE}
 - 审查范围：{REVIEW_SCOPE}
 - 审查模式：{REVIEW_MODE}
+- 统一框架：references/security/enterprise-security-framework.md  ← 仅 REVIEW_MODE=security 时显示
+- 覆盖重点：身份、授权/越权、注入、文件与外部资源、敏感数据、业务安全、配置依赖、AI 集成  ← 仅 REVIEW_MODE=security 时显示
+- 证据状态：静态已证实 / 待确认项 / 运行态已验证  ← 仅 REVIEW_MODE=security 时显示
 - 输出级别：仅 P0  ← 仅 REVIEW_MODE=fast 时显示
 - 审查模型：{MODEL_PROFILE}（固定 1M 上下文）
 - 启用维度：{根据模式 × 维度矩阵列出具体维度名称}
@@ -1487,6 +1499,8 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | 审查文件数量 | {REVIEW_FILE_COUNT} |
 | 审查代码行数 | {REVIEW_LINE_COUNT} |
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
+| 企业级 Security 框架路径 | {SECURITY_FRAMEWORK_PATH}（仅 REVIEW_MODE=security） |
+| Security 伴随文件清单 | 由 {BATCH_PLAN_PATH} 的 `security_companion_manifest` 指定（仅 Maven 大仓库 Security） |
 | React 规则路径 | {REACT_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Vue 规则路径 | {VUE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Node 规则路径 | {NODE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |

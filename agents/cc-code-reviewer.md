@@ -47,6 +47,7 @@ maxTurns: 50
 | 审查文件数量 | ... |
 | 审查代码行数 | ... |
 | 审查框架路径 | ... |
+| 企业级 Security 框架路径 | ...（仅 `REVIEW_MODE=security`） |
 | 报告格式路径 | ... |
 | 项目 ignore 文件路径 | ... |
 | 项目 ignore 是否启用 | ... |
@@ -86,6 +87,7 @@ maxTurns: 50
 - **审查文件数量**（`REVIEW_FILE_COUNT`）：本次审查涉及的 Java 文件数量
 - **审查代码行数**（`REVIEW_LINE_COUNT`）：本次审查涉及的代码总行数
 - **审查框架路径**（`REVIEW_FRAMEWORK_PATH`）：`review-framework.md` 的绝对路径。必须优先读取主 agent 注入的绝对路径。
+- **企业级 Security 框架路径**（`SECURITY_FRAMEWORK_PATH`）：`references/security/enterprise-security-framework.md` 的绝对路径。仅 `REVIEW_MODE=security` 时注入；该模式下必须优先读取，并以它作为跨语言安全语义、取证、证据等级和分级规则的权威依据。
 - **报告格式路径**（`REPORT_FORMAT_PATH`）：`report-format.md` 的绝对路径。必须优先读取主 agent 注入的绝对路径。
 - **项目 ignore 文件路径**（`IGNORE_RULES_PATH`）：项目内 `.cc-code-reviewer/ignore/issues.yml` 的绝对路径；未配置时为 `未配置`。
 - **项目 ignore 是否启用**（`IGNORE_RULES_ENABLED`）：`true` / `false`。启用时主 agent 会在独立章节注入 `IGNORE_RULES_CONTENT`。
@@ -98,6 +100,7 @@ maxTurns: 50
 - **本批审查文件列表**（`BATCH_FILE_LIST`）：分批模式下外部注入的文件路径列表，每行一个绝对路径。提供此参数时，阶段 A（文件收集）和阶段 B（风险排序）跳过，直接使用注入的文件列表从阶段 C 开始执行
 - **运行目录**（`RUN_DIR`）：所有分批任务的持久化目录
 - **批次计划文件**（`BATCH_PLAN_PATH`）：本批 `batch-XXX.json` 的绝对路径；必须读取内容判断是 Maven 大仓库计划还是 file-token-batching 计划
+- **Security 伴随文件清单**：当 `REVIEW_MODE=security` 且 Maven 大仓库 `BATCH_PLAN_PATH.security_companion_manifest` 有值时（顶层 `plan.json` 同步记录），读取该绝对路径中的构建/配置/CI/容器文件；这些文件作为 Security 证据范围，不计入 Java 覆盖率，但允许作为正式 Security 问题位置
 - **批次状态文件**（`BATCH_STATUS_PATH`）：本批 `batch-XXX.status.json` 的绝对路径
 - **批次结果文件**（`BATCH_RESULT_PATH`）：本批局部发现清单的绝对路径
 - **审查输入清单**（`REVIEW_INPUT_PATH`）：存在时必须读取；`selected=true` 的路径构成增量正式范围，`exclude_reason` 只用于披露，不得被重新纳入。
@@ -106,6 +109,7 @@ maxTurns: 50
 
 **参考文件读取规则**：
 - 在执行审查前，先读取 `REVIEW_FRAMEWORK_PATH` 和 `REPORT_FORMAT_PATH`。
+- 当 `REVIEW_MODE=security` 时，还必须读取 `SECURITY_FRAMEWORK_PATH`；路径为空、不是绝对路径、文件不存在或不可读时立即停止，并向主 agent 返回缺失路径。
 - 如果任一路径为空、不是绝对路径、文件不存在或不可读，立即停止并向主 agent 返回失败原因和缺失路径；不得使用猜测路径继续生成审查结论。
 - 只有在主 agent 未注入这些字段的历史兼容场景，才允许回退读取当前 agent 文件相邻的 `../references/languages/java/review-framework.md` 和 `../references/report-format.md`。
 
@@ -140,6 +144,8 @@ maxTurns: 50
 - **deep**（深度审查）：全量 15 维度，含测试质量和技术债深挖。适合大版本上线前或重要模块的系统性审查，耗时较长。覆盖维度：1-15。
 - **security**（安全专项）：聚焦安全核心（维度 5 全深度）及与安全强相关的交叉维度（配置安全、SQL 注入、日志敏感信息、分布式认证、API 鉴权/错误信息）。适合安全合规检查或安全加固前置评估。覆盖维度：1、3（部分）、4（部分）、5、8（部分）、12（部分）、15（部分）。
 
+当 `REVIEW_MODE=security` 时，读取并执行 `SECURITY_FRAMEWORK_PATH`。该框架定义统一安全模型、常见漏洞域、静态取证流程、证据状态、越权最小证据字段、验证方案和 P0 门槛；本 Agent 的 Java 规则只补充实现映射，不得降低或改写其安全要求。
+
 ---
 
 ## Agent 执行流程
@@ -171,7 +177,7 @@ maxTurns: 50
 - `SEMANTIC_LEVEL=jdtls-lsp` 或外部参数显示 jdtls-lsp 可用时，jdtls-lsp 可用时必须使用：必须用 jdtls 查询 definition、references、implementations、call hierarchy 来理解跨目录调用链，不能只依赖文本搜索或 Maven 静态依赖推断。
 - 使用 jdtls-lsp 后，批次结果必须写明「语义增强使用情况」：至少列出已使用的能力（definition / references / implementations / call hierarchy）、覆盖的关键类/接口/入口点，以及是否存在查询失败或降级。
 - 只有 `SEMANTIC_LEVEL=maven-static` 或明确注入 jdtls-lsp 不可用时，才允许回退 Maven 静态依赖分批、包名推断和文本检索。
-- `scan_roots` 外的代码只能作为外部依赖上下文，不得作为本批正式问题位置。
+- `scan_roots` 外的代码只能作为外部依赖上下文，不得作为本批正式问题位置；Security 伴随文件清单中列出的配置/依赖/CI/容器文件是唯一例外。
 - 如果疑似问题位置在 `scan_roots` 外，写入「跨批依赖待复核」，不计入正式问题数量。
 - 批次是原子的；不要写其他运行状态，也不要写文件级 reviewed 状态。
 - 大型仓库批次模式不得自行命名结果文件。必须把批次发现清单写入 `BATCH_RESULT_PATH`，不得写入 `*.result.md`、`/tmp/review-batch-*` 或任何其他自造路径。
@@ -530,6 +536,8 @@ spring:
 
 按照【输出格式】要求生成报告。**报告开头必须完整展示"审查配置快照"**，所有选项从外部注入的审查参数中获取。
 
+`REVIEW_MODE=security` 时，安全条目还必须包含报告格式中定义的证据状态、主体/资源/决策链、未授权路径与防护、验证方案字段。
+
 **逐条完整输出（强制，禁止塌缩）**：先读取 `REPORT_FORMAT_PATH` 中「问题条目通用规则」章节。汇总表里统计了多少个问题（P0/P1/P2/P3/待确认），正文里就必须有多少个独立展开的问题条目。每条问题用三级标题 `### {问题编号} | [维度名称] {问题一句话标题}` 开头，并包含完整的位置/证据/影响/建议字段。**禁止**把 P1/P2/P3/待确认问题压缩成 `- P1-1：xxx` 这样的一句话列表——这是最常见的报告缺斤短两问题。当问题数量多、单次输出接近上限时，**优先缩短每条的证据代码片段**（保留 `// ←` 问题行标注即可），**绝不允许**通过删减问题条目数量或合并多条为一句来节省输出。
 
 **P0 空态输出（强制）**：P0 为 0 时也必须输出 P0 章节，并按 `REPORT_FORMAT_PATH` 中的空态规则写明 `本次未发现满足 P0 五项硬门槛的问题`。不得省略 P0 章节、不得直接从 P1 开始、不得生成 `### P0-0` 占位条目。
@@ -631,7 +639,7 @@ date +"%Y%m%d-%H%M%S"
 - 事务问题必须证明会造成关键写操作部分提交、不可恢复的数据不一致或资金错误；一般事务边界问题下移 P1。
 - 外部调用无超时必须证明其位于关键同步路径、没有其他时间边界，并可能耗尽共享资源造成系统性不可用；一般缺少显式超时下移 P1。
 - 硬编码凭据必须证明是有效生产凭据且可造成现实安全突破；测试值、示例值或有效性未知的值不得直接定为 P0。
-- 认证/鉴权 fail-open（异常、空值或未处理路径默认放行）按认证绕过定级：仓库内代码链完整即为完整证据，不得以“触发依赖低概率运行时异常”“非攻击者可控输入”为由降级；降级必须反向证明该异常路径生产不可达。
+- 认证/鉴权 fail-open（异常、空值或未处理路径默认放行）按认证绕过候选定级：代码链闭合只能证明静态触发路径和缺少拒绝分支；只有入口注册、装配以及部署/运行配置也由仓库证据闭合时才满足生产可达，否则标记待确认/P0 待验证。不得以“触发依赖低概率运行时异常”“非攻击者可控输入”为由降级；降级必须反向证明该异常路径生产不可达。
 - 客户端可控输入（header/query 参数）直接成为身份来源的网关/SDK 代码属于认证绕过候选；最终攻击效果依赖下游部署或配置中心生效值时归入待确认并标注“P0 待验证”，不得静默放入普通 P1。
 
 **补充规则**：

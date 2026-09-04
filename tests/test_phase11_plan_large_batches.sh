@@ -118,6 +118,19 @@ if grep -q 'files.txt\|reviewed_java_files\|remaining_files' "$RUN_DIR"/batches/
   exit 1
 fi
 
+# Security 大仓库额外冻结构建/配置/CI/容器伴随文件，不混入 Java 覆盖率。
+mkdir -p "$PROJECT_DIR/order-api/src/main/resources"
+printf 'server:\n  port: 8080\n' > "$PROJECT_DIR/order-api/src/main/resources/application.yml"
+SECURITY_OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-010204 bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$PROJECT_DIR" "security" "main" "maven-static" "全量代码" "module-sequential-batching")"
+SECURITY_RUN_DIR="$(printf '%s\n' "$SECURITY_OUTPUT" | sed -n 's/^RUN_DIR=//p')"
+test -s "$SECURITY_RUN_DIR/security-companion-manifest.txt"
+grep -q 'application.yml' "$SECURITY_RUN_DIR/security-companion-manifest.txt"
+jq -e '.security_companion_manifest | endswith("security-companion-manifest.txt")' "$SECURITY_RUN_DIR/plan.json" >/dev/null
+grep -q 'security_companion_manifest' "$SECURITY_RUN_DIR/batches/batch-001.json"
+PLAN_COMPANION="$(jq -r '.security_companion_manifest' "$SECURITY_RUN_DIR/plan.json")"
+BATCH_COMPANION="$(jq -r '.security_companion_manifest' "$SECURITY_RUN_DIR/batches/batch-001.json")"
+test "$PLAN_COMPANION" = "$BATCH_COMPANION"
+
 create_nested_module() {
   local root="$1"
   local module_path="$2"

@@ -75,7 +75,7 @@ preflight
 ## 5. 子 Agent 调度
 
 - 共享 `agents/*.md` 只保留角色、输入、边界和输出契约，不绑定平台专属 frontmatter。
-- `DISPATCH_AGENT` 输入统一：项目、语言、审查类型、审查范围、预扫描结果、ignore 规则、`agent_prompt` 路径、review framework 路径、source manifest 或 batch scan roots、batch plan/status/result 路径、semantic level、model profile。
+- `DISPATCH_AGENT` 输入统一：项目、语言、审查类型、审查范围、预扫描结果、ignore 规则、`agent_prompt` 路径、review framework 路径、Security 模式的企业级安全框架路径、source manifest 或 batch scan roots、Security 大仓库伴随文件清单（如有）、batch plan/status/result 路径、semantic level、model profile。
 - 子 Agent 不与用户交互、不上传飞书、不扩展正式扫描范围。
 - 三个平台的 batch agent 都必须写当前批次 status/result 文件，主流程统一调用现有 merge/status 脚本。
 - 平台没有可用 subagent 时，必须在最终确认前说明降级为串行或阻塞，不得静默改变并发计划或让主 Skill 接管实际审查。

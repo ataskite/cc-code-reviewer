@@ -108,7 +108,7 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 
 - 15 个审查维度：正确性、代码质量、异常处理、数据访问、安全、性能、资源管理、并发、缓存、消息队列、API 设计、架构、配置、测试、技术债等
 - 技术栈感知：Spring Boot、MyBatis / MyBatis Plus、JPA/Hibernate、Redis、Kafka/RocketMQ、Spring Security 等
-- 文件类型专项清单（v1.6.5）：`resolve-review-rules.sh` 按路径模式对命中文件叠加聚焦检查清单——pom.xml / mapper XML / Spring 与日志配置 / Dockerfile / CI workflow（Jenkinsfile、GitLab CI、GitHub Actions）/ npm package.json 等 11 类（清单文档 content 内嵌注入，逐文件第一命中唯一分组）；文件级分批与单 Agent 路由全量可达，Maven 大仓模块分批路由仅覆盖模块内命中路径
+- 文件类型专项清单（v1.6.5）：`resolve-review-rules.sh` 按路径模式对命中文件叠加聚焦检查清单——pom.xml / mapper XML / Spring 与日志配置 / Dockerfile / CI workflow（Jenkinsfile、GitLab CI、GitHub Actions）/ npm package.json 等 11 类（清单文档 content 内嵌注入，逐文件第一命中唯一分组）；文件级分批与单 Agent 路由全量可达，Maven 大仓模块分批路由由 Security 伴随文件清单补齐构建/配置/CI/容器文件
 - Maven 多模块大仓库：支持 `module-sequential` 和 `ai-planned` 分批，批次可恢复，合并报告区分阶段性/完整
 - 续跑准入门禁（v1.6.5）：恢复未完成 RUN_DIR 前必须先执行 `validate-resume-input.sh <RUN_DIR> <PROJECT_DIR> --rules` 校验冻结输入与规则快照未被改动；仅 `GATE_OK=<run_id>` 放行，`INPUT_CHANGED` / `RULES_CHANGED` / `FROZEN_INPUT_MISSING` 一律 fail-closed——禁止列出可调度批次，由用户确认重新规划并新建 RUN_DIR
 - 批次失败归因（v1.6.5）：失败批次状态 JSON 写入五值封闭 `failure_class` 枚举（`failed` / `partial` 必填、判不准写 `unknown`、`completed` 禁带）；批次表错误列显示 `[短标签] 原error` 前缀，`summary.json` 新增 `failed_by_class` 归因对象并输出「失败归因」统计行与分类重试提示
@@ -151,9 +151,9 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 | `fast` | 仅输出 P0（且必须满足全部 P0 硬门槛） | PR 合并前快速卡口 |
 | `standard` | 日常核心维度 | 常规迭代上线 |
 | `deep` | 全量维度 | 大版本发布前、重要模块审查 |
-| `security` | 安全核心 + 强相关交叉维度 | 安全合规、上线前安全检查 |
+| `security` | 企业级 Security 框架 + 安全核心交叉维度 | 安全合规、上线前安全检查 |
 
-P0 必须同时满足：生产可达、证据完整且置信度高、事故级影响、缺少有效防护、必须阻断发布。`fast` 模式不会输出 P1/P2/P3 或待确认项。高危安全问题满足前四项时必为 P0，不得以触发概率低、触发条件非攻击者可控为由降级；认证/鉴权路径上的 fail-open 按认证绕过定级，仓库内代码链完整即视为生产可达且证据完整。
+P0 必须同时满足：生产可达、证据完整且置信度高、事故级影响、缺少有效防护、必须阻断发布。`fast` 模式不会输出 P1/P2/P3 或待确认项。高危安全问题满足前四项时必为 P0，不得以触发概率低、触发条件非攻击者可控为由降级；认证/鉴权路径上的 fail-open 按认证绕过候选定级，代码链闭合只能证明静态触发路径和缺少拒绝分支，只有入口注册、装配以及部署/运行配置也由仓库证据闭合时才满足“生产可达”，否则标记为“待确认/P0 待验证”。`security` 模式另行读取 [企业级 Security 专项审查框架](references/security/enterprise-security-framework.md)，统一覆盖身份、授权/越权、注入、文件与外部资源、敏感数据、业务安全、配置依赖和 AI 集成，并区分“静态已证实 / 待确认项 / 运行态已验证”。无法由仓库闭合的网关、运行配置、策略中心或真实数据条件只输出最小验证方案，不自动对生产系统发起攻击。
 
 ## 审查范围
 
