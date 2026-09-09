@@ -18,8 +18,9 @@ set -euo pipefail
 #                                                未给 --rules 时完全跳过规则检查（向后兼容调用方）
 #   exit 4  FROZEN_INPUT_MISSING=<detail>        plan.json 自身缺失 / 不可读 / 非 JSON 对象（无法门禁 ⇒ 拒绝采纳）
 #
-# stderr 面向人：ERROR_*=诊断键 + 建议：*处置提示。哈希算法与 prepare-review-input.sh /
-# plan-file-batches.sh 一致：优先 shasum -a 256，回退 sha256sum，再回退 perl Digest::SHA；
+# stderr 面向人：ERROR_*=诊断键 + 建议：*处置提示。哈希算法统一来自共享库
+# scripts/core/lib/common.sh 的三级回退链（shasum -a 256 → sha256sum → perl
+# Digest::SHA），与 prepare-review-input.sh / 两个 planner 脚本同源；
 # 计算对象恒为文件字节本身（不规范化 JSON）。
 
 RUN_DIR=""
@@ -48,11 +49,10 @@ if [ ! -d "$PROJECT_DIR" ]; then
   exit 1
 fi
 
-sha256_file() {
-  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
-  elif command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
-  else perl -MDigest::SHA -e 'my $f = shift; my $d = Digest::SHA->new(256); $d->addfile($f); print $d->hexdigest, "\n"' "$1"; fi
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# sha256_file（三级回退链）统一来自共享库 scripts/core/lib/common.sh；
+# 本脚本历史上定义的那份实现即是该库的正文（逐字节同源）。
+. "$SCRIPT_DIR/lib/common.sh"
 
 short12() { printf '%s' "${1:-empty}" | cut -c1-12; }
 

@@ -57,6 +57,13 @@ require_match() {
   done
 }
 
+# Codex 工具交互约束必须贯通共享入口与面向用户/Agent 的文档。
+for codex_interaction_doc in "$AGENTS_FILE" "$CLAUDE_FILE" "$EXAMPLES_FILE" "$SKILL_FILE" "$FIX_SKILL_FILE" "$IGNORE_SKILL_FILE" "$ROOT_DIR/runtime/contract.md"; do
+  require_literal "$codex_interaction_doc" "禁止文本降级" "Codex native interaction contract missing: $codex_interaction_doc"
+done
+require_literal "$ROOT_DIR/README.md" "request_user_input_async" "README must explain Codex native option tools"
+require_literal "$AGENT_FILE" "原生选项交互与异步回答处理均由主 Skill" "review agents must not take over Codex user interaction"
+
 grep -q "### 第六步：持久化报告文件" "$AGENT_FILE"
 grep -q "REPORT_FILENAME" "$AGENT_FILE"
 grep -q "所有上传和本地输出都必须复用同一个 Markdown 文件" "$AGENT_FILE"
@@ -1310,5 +1317,26 @@ require_literal "$ROOT_DIR/README.md" "SARIF" "README must surface the SARIF exp
 # AGENTS / CLAUDE 必须同步两个新脚本的契约描述。
 require_match "AGENTS/CLAUDE 必须描述增量上轮已报标记脚本" 'mark-repeat-findings\.sh' "$AGENTS_FILE" "$CLAUDE_FILE"
 require_match "AGENTS/CLAUDE 必须描述 SARIF 导出脚本" 'export-sarif\.sh' "$AGENTS_FILE" "$CLAUDE_FILE"
+
+# === v1.6.8: 跨轮报告对比 / churn 注意力 / 规则引用加固 ===
+# SKILL 必须接线跨轮对比脚本（单 agent 传 review-input、批次传 run-manifest 两种覆盖来源）。
+require_match "SKILL 必须接线跨轮对比脚本（单 agent 路径）" 'core/compare-review-reports\.sh" "\$REPORT_PATH" "\$REPEAT_PREV_REPORT_PATH" --reviewed-from "\$REVIEW_INPUT_PATH"' "$SKILL_FILE"
+require_match "SKILL 必须接线跨轮对比脚本（批次路径）" 'core/compare-review-reports\.sh" "\$REPORT_PATH" "\$REPEAT_PREV_REPORT_PATH" --reviewed-from "\$RUN_DIR/run-manifest\.json"' "$SKILL_FILE"
+require_match "SKILL 必须披露对比 stdout 8 行契约" 'COMPARE_COVERAGE_SOURCE=' "$SKILL_FILE"
+require_match "SKILL 必须披露对比汇总行" '📊 与上轮对比：新增' "$SKILL_FILE"
+# AGENTS / CLAUDE 必须同步跨轮对比与 churn 注意力契约。
+require_match "AGENTS/CLAUDE 必须描述跨轮对比脚本" 'compare-review-reports\.sh' "$AGENTS_FILE" "$CLAUDE_FILE"
+require_match "AGENTS/CLAUDE 必须描述四桶语义" 'not_reviewed' "$AGENTS_FILE" "$CLAUDE_FILE"
+require_match "AGENTS/CLAUDE 必须描述 churn 注意力" 'insertions.*deletions' "$AGENTS_FILE" "$CLAUDE_FILE"
+# 三个审查 agent 必须携带 churn 注意力规则（+N/-M 深读优先级）。
+for churn_agent_file in "$AGENT_FILE" "$FRONTEND_AGENT_FILE" "$ROOT_DIR/agents/cc-code-reviewer-python.md"; do
+  require_match "审查 agent 必须携带 churn 注意力规则（${churn_agent_file}）" 'insertions.*deletions' "$churn_agent_file"
+done
+# 报告格式必须披露跨轮对比小节语义。
+require_literal "$REPORT_FORMAT_FILE" "## 📊 与上轮报告对比" "report format must document the cross-round compare section"
+require_literal "$REPORT_FORMAT_FILE" "compare-review-reports.sh" "report format must name the compare script"
+require_literal "$REPORT_FORMAT_FILE" "未复审" "report format must document the not_reviewed bucket"
+# README 必须出现跨轮对比特性关键词。
+require_literal "$ROOT_DIR/README.md" "与上轮报告对比" "README must surface the cross-round compare feature keyword"
 
 echo "✅ 契约文档测试通过"

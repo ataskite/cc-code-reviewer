@@ -14,7 +14,8 @@ set -euo pipefail
 #   2. 维度标签一致：表头第一个 [...] 内层文本（内部连续空白折叠为单空格）相等；
 #      单侧缺失方括号即不可比，双侧同时缺失才视为可比。
 #
-# 行区间（每条发现独立构造，口径与 relocate-findings.sh / merge-batch-results.sh 一致）：
+# 行区间（每条发现独立构造，证据归一 / 围栏扫描 / 块边界口径统一在
+# scripts/core/lib/CCR/Findings.pm 发现内核）：
 #   - 「路径:行号」点发现：[start, start + max(1, 非空归一化证据行数) - 1]，证据取块内
 #     第一个闭合围栏代码块（围栏行允许缩进/带语言标记），逐行按 norm_line 归一
 #     （去 CR → trim → 剥一个 +/- 前缀 → 再 trim → 丢弃空行）；无闭合围栏或全空时退化为
@@ -48,13 +49,16 @@ IOU_THRESHOLD="${3:-${CC_CODE_REVIEWER_REPEAT_IOU_THRESHOLD:-0.6}}"
 [ -r "$PREV_REPORT" ] || { echo "PREV_REPORT_NOT_READABLE=$PREV_REPORT" >&2; exit 1; }
 NEW_REPORT="$(cd "$(dirname "$NEW_REPORT")" && pwd -P)/$(basename "$NEW_REPORT")"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$SCRIPT_DIR/lib"
+
 # 阈值合法性：非负小数且不超过 1（“1” 合法但严格大于 ⇒ 永不命中，属合法配置）。
 if ! perl -e 'my $t = $ARGV[0]; exit 0 if $t =~ /^[0-9]+(?:\.[0-9]+)?$/ && $t + 0 <= 1; exit 1;' "$IOU_THRESHOLD"; then
   echo "ERROR_REPEAT_IOU_THRESHOLD=${IOU_THRESHOLD}（取值须为 0 到 1 之间的小数）" >&2
   exit 1
 fi
 
-perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -e '
+perl -I "$LIB_DIR" -MCCR::Findings=:all -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -e '
   use strict; use warnings;
   binmode STDOUT, ":utf8";
   my $MARKER = "（上轮已报）";
@@ -62,73 +66,15 @@ perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -e '
   END { unlink $tmpfile if length $tmpfile && -e $tmpfile; }
 
   # argv 按 UTF-8 解码，保证中文路径/标题可与报告内字符串正确拼接比较。
-  sub to_chars {
-    my $s = shift;
-    return $s if utf8::is_utf8($s);
-    my $t = eval { decode("UTF-8", $s, FB_CROAK | LEAVE_SRC) };
-    return defined $t ? $t : $s;
-  }
-  sub slurp_raw {
-    my $p = shift;
-    open my $fh, "<:raw", $p or return undef;
-    local $/; my $d = <$fh>; close $fh;
-    return defined $d ? $d : "";
-  }
-  sub read_text {
-    my ($p, $label) = @_;
-    my $raw = slurp_raw($p);
-    die "${label}_READ_ERROR=$p\n" unless defined $raw;
-    my $t = eval { decode("UTF-8", $raw, FB_CROAK | LEAVE_SRC) };
-    return defined $t ? $t : $raw;  # 非 UTF-8 输入按字节兜底：块头匹配不上即零标记（fail-open）
-  }
-  # 证据行归一化：与 relocate-findings.sh / merge-batch-results.sh 的 norm_line 完全一致
-  # （步骤顺序不得调整，保证同一线证据在两处归一结果逐字节相同）。
-  sub norm_line {
-    my $l = shift // "";
-    $l =~ s/\r$//;
-    $l =~ s/^\s+//;
-    $l =~ s/^[-+]?//;
-    $l =~ s/^\s+//;
-    $l =~ s/\s+$//;
-    return $l;
-  }
-  sub collapse_ws {
-    my $s = shift // "";
-    $s =~ s/\s+/ /g;
-    $s =~ s/^\s+//;
-    $s =~ s/\s+$//;
-    return $s;
-  }
-  # 表头维度信息：(是否含方括号, 折叠后标签)。缺失方括号返回 (0, "")。
-  sub dim_info {
-    my $hdr = shift // "";
-    return (0, "") unless $hdr =~ /\[([^\]]*)\]/;
-    return (1, collapse_ws($1));
-  }
+  # to_chars / slurp_raw / read_text / norm_line / collapse_ws / dim_info /
+  # evidence_count / 块边界判定 / atomic_write_text 统一来自
+  # scripts/core/lib/CCR/Findings.pm（发现内核唯一实现）；read_text 的 die 标签
+  # 传入完整历史标签（"<label>_READ_ERROR"），stderr 逐字节不变。
   # 维度可比：双方都有括号 ⇒ 标签相等；双方都无括号 ⇒ 可比；单侧缺失 ⇒ 不可比。
   sub dim_ok {
     my ($a, $b) = @_;
     return $a->[1] eq $b->[1] if $a->[0] && $b->[0];
     return ($a->[0] || $b->[0]) ? 0 : 1;
-  }
-  # 块内第一个闭合围栏代码块的非空归一化证据行数；无闭合围栏返回 0。
-  sub evidence_count {
-    my $blkr = shift;
-    my ($open, $close);
-    for my $i (1 .. $#$blkr) {
-      my $t = $blkr->[$i];
-      $t =~ s/^\s+//;
-      $t =~ s/\s+$//;
-      next unless $t =~ /^```/;
-      if (!defined $open) { $open = $i; }
-      else { $close = $i; last; }
-    }
-    return 0 unless defined $open && defined $close;
-    my $n = 0;
-    for my $i ($open + 1 .. $close - 1) {
-      $n++ if length norm_line($blkr->[$i]);
-    }
-    return $n;
   }
   # 位置可解析 = 第一条「- 文件：」行带数字锚点（:N / :N-M，半角或全角冒号）。
   # 返回 { path, s, e, dim }；不可解析返回 undef。
@@ -150,7 +96,7 @@ perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -e '
     $path =~ s!\\!/!g;                # 仅 trim（正则已保证）+ 反斜杠统一，保留原字节
     ($s, $e) = ($e, $s) if defined $e && $e < $s;
     if (!defined $e) {
-      my $n = evidence_count($blkr);
+      my $n = evidence_count(@$blkr[1 .. $#$blkr]);
       $n = 1 if $n < 1;
       $e = $s + $n - 1;
     }
@@ -167,16 +113,17 @@ perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -e '
     my $ue = $e1 > $e2 ? $e1 : $e2;
     return $inter / ($ue - $us + 1);
   }
-  # 块迭代口径与 relocate-findings.sh 相同：表头 ^### (P0-3|待确认)，块终于 ^## / ^###。
+  # 块迭代口径（is_issue_heading / is_block_terminator 统一在发现内核）：
+  # 表头 ^### (P0-3|待确认)，块终于 ^## / ^###。
   sub collect_findings {
     my $lr = shift;
     my (@found, $blk);
     for my $l (@$lr) {
-      if ($l =~ /^###\s+(?:P[0-3]|待确认)(?:\b|\s|\|)/) {
+      if (is_issue_heading($l)) {
         if (defined $blk) { my $f = parse_finding($blk); push @found, $f if defined $f; }
         $blk = [$l];
       } elsif (defined $blk) {
-        if ($l =~ /^##\s+/ || $l =~ /^###\s+/) {
+        if (is_block_terminator($l)) {
           my $f = parse_finding($blk); push @found, $f if defined $f;
           $blk = undef;
         } else {
@@ -216,13 +163,13 @@ perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -e '
   $threshold = $thr + 0;
 
   # 上轮报告：fail-open——解析失败/无有效块时得到空列表，本轮零标记照常输出。
-  my $prev_text = read_text($prev_report, "PREV_REPORT");
+  my $prev_text = read_text($prev_report, "PREV_REPORT_READ_ERROR");
   $prev_text =~ s/\r\n/\n/g;
   my @plines = split /\n/, $prev_text, -1;
   pop @plines if @plines && $plines[-1] eq "";
   @prev = collect_findings(\@plines);
 
-  my $text = read_text($new_report, "NEW_REPORT");
+  my $text = read_text($new_report, "NEW_REPORT_READ_ERROR");
   $text =~ s/\r\n/\n/g;
   my $had_nl = $text =~ /\n\z/ ? 1 : 0;
   my @lines = split /\n/, $text, -1;
@@ -230,10 +177,10 @@ perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -e '
 
   my (@out, $blk);
   for my $l (@lines) {
-    if ($l =~ /^###\s+(?:P[0-3]|待确认)(?:\b|\s|\|)/) {
+    if (is_issue_heading($l)) {
       if (defined $blk) { process_new_block($blk); push @out, @$blk; }
       $blk = [$l];
-    } elsif (defined $blk && ($l =~ /^##\s+/ || $l =~ /^###\s+/)) {
+    } elsif (defined $blk && is_block_terminator($l)) {
       process_new_block($blk);
       push @out, @$blk;
       push @out, $l;
@@ -246,17 +193,14 @@ perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -e '
   }
   if (defined $blk) { process_new_block($blk); push @out, @$blk; }
 
-  # 仅在发生修改时写出：内容先落同目录临时文件再原子 rename，零修改保持原字节。
+  # 仅在发生修改时写出：内容先落同目录临时文件再原子 rename，零修改保持原字节
+  # （atomic_write_text 统一在 scripts/core/lib/CCR/Findings.pm；$tmpfile 先行赋值
+  # 保证 END 钩子能清理异常中断留下的临时残片）。
   if ($changed) {
     my $newtext = join("\n", @out);
     $newtext .= "\n" if $had_nl;
     $tmpfile = "$new_report.repeat.$$";
-    my @st = stat($new_report);
-    open my $of, ">:raw", $tmpfile or die "TMP_WRITE_ERROR=$tmpfile: $!\n";
-    print {$of} encode("UTF-8", $newtext) or die "TMP_WRITE_ERROR=$tmpfile: $!\n";
-    close $of or die "TMP_WRITE_ERROR=$tmpfile: $!\n";
-    chmod((@st ? $st[2] & 07777 : 0644), $tmpfile);
-    rename($tmpfile, $new_report) or die "RENAME_ERROR=$new_report: $!\n";
+    atomic_write_text($new_report, $newtext, ".repeat.$$");
   }
 
   print "REPEAT_REPORT_PATH=$new_report\n";

@@ -16,7 +16,10 @@ MANIFEST_FILE="${3:?请输入审查范围 manifest 路径}"
 REPORT_MD="$(cd "$(dirname "$REPORT_MD")" && pwd -P)/$(basename "$REPORT_MD")"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd -P)"
 
-perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -MCwd=abs_path -MFile::Spec -e '
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$SCRIPT_DIR/lib"
+
+perl -I "$LIB_DIR" -MCCR::Findings=:all -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -MCwd=abs_path -MFile::Spec -e '
   use strict; use warnings;
   my $MAX_FILE_BYTES = 2 * 1024 * 1024;  # 超过 2MiB 的候选不参与匹配
   my $BINARY_SNIFF   = 8000;             # 前 8000 字节含 NUL 视为二进制
@@ -26,12 +29,8 @@ perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -MCwd=abs_path -MFile::Spe
   END { unlink $tmpfile if length $tmpfile && -e $tmpfile; }
 
   # argv/manifest 路径按 UTF-8 解码，保证中文路径可与报告内字符串拼接比较。
-  sub to_chars {
-    my $s = shift;
-    return $s if utf8::is_utf8($s);
-    my $t = eval { decode("UTF-8", $s, FB_CROAK | LEAVE_SRC) };
-    return defined $t ? $t : $s;
-  }
+  # to_chars / slurp_raw / norm_line / evidence_lines / 块边界判定统一来自
+  # scripts/core/lib/CCR/Findings.pm（发现内核唯一实现）。
   my ($report, $project, $manifest) = map { to_chars($_) } @ARGV;
   sub inside_project {
     my $ap = shift;
@@ -39,12 +38,6 @@ perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -MCwd=abs_path -MFile::Spe
   }
   my @cands;                              # 候选须在所有子过程定义前声明（闭包可见性）
   my ($total, $same, $refiled, $unresolved, $changed) = (0, 0, 0, 0, 0);
-  sub slurp_raw {
-    my $p = shift;
-    open my $fh, "<:raw", $p or return undef;
-    local $/; my $d = <$fh>; close $fh;
-    return defined $d ? $d : "";
-  }
   sub slurp_text {
     my $raw = slurp_raw(shift);
     return undef unless defined $raw;
@@ -60,17 +53,6 @@ perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -MCwd=abs_path -MFile::Spe
     my $buf = ""; my $got = read($bf, $buf, $BINARY_SNIFF); close $bf;
     return if defined($got) && index($buf, "\x00") >= 0;
     return 1;
-  }
-  # 归一化：去 CRLF、去缩进、剥掉一个 diff 前缀（+/-，空格前缀已随缩进去除）、再去首尾空白。
-  # 报告内证据行通常带缩进，必须先去缩进才能看到 diff 前缀；源文件行做同样处理保证口径一致。
-  sub norm_line {
-    my $l = shift;
-    $l =~ s/\r$//;
-    $l =~ s/^\s+//;
-    $l =~ s/^[-+]?//;
-    $l =~ s/^\s+//;
-    $l =~ s/\s+$//;
-    return $l;
   }
 
   my %seq_cache;
@@ -152,23 +134,11 @@ perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -MCwd=abs_path -MFile::Spe
       last;
     }
     return 0 unless defined $loc_idx && length $loc_path;
-    # 证据 = 块内第一个围栏代码块（围栏行允许缩进/带语言标记）；未闭合围栏视为无证据。
-    my ($open, $close);
-    for my $i (1 .. $#$blkr) {
-      my $t = $blkr->[$i];
-      $t =~ s/^\s+//;
-      $t =~ s/\s+$//;
-      if (!defined $open) { $open = $i if $t =~ /^```/; }
-      elsif (!defined $close && $t =~ /^```/) { $close = $i; last; }
-    }
-    return 0 unless defined $open && defined $close;
-    my @needle;
-    for my $i ($open + 1 .. $close - 1) {
-      my $n = norm_line($blkr->[$i]);
-      next unless length $n;
-      push @needle, $n;
-      last if @needle >= $MAX_NEEDLE;
-    }
+    # 证据 = 块内第一个闭合围栏代码块（围栏行允许缩进/带语言标记）的非空归一化行
+    # （evidence_lines / norm_line 口径统一在 scripts/core/lib/CCR/Findings.pm）；
+    # 未闭合围栏视为无证据；匹配针只取前 $MAX_NEEDLE 个非空行。
+    my @ev = evidence_lines(@$blkr[1 .. $#$blkr]);
+    my @needle = @ev[0 .. ($#ev > $MAX_NEEDLE - 1 ? $MAX_NEEDLE - 1 : $#ev)];
     return 0 unless @needle;
 
     $total++;
@@ -209,10 +179,10 @@ perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -MCwd=abs_path -MFile::Spe
 
   my (@out, $blk);
   for my $l (@lines) {
-    if ($l =~ /^###\s+(?:P[0-3]|待确认)(?:\b|\s|\|)/) {
+    if (is_issue_heading($l)) {
       if (defined $blk) { $changed += process_block($blk); push @out, @$blk; }
       $blk = [$l];
-    } elsif (defined $blk && ($l =~ /^##\s+/ || $l =~ /^###\s+/)) {
+    } elsif (defined $blk && is_block_terminator($l)) {
       $changed += process_block($blk);
       push @out, @$blk;
       push @out, $l;
@@ -225,17 +195,14 @@ perl -Mutf8 -MEncode=decode,encode,FB_CROAK,LEAVE_SRC -MCwd=abs_path -MFile::Spe
   }
   if (defined $blk) { $changed += process_block($blk); push @out, @$blk; }
 
-  # 仅在发生修改时写出：内容先落临时文件再原子 rename，崩溃不会留下半份报告。
+  # 仅在发生修改时写出：内容先落临时文件再原子 rename，崩溃不会留下半份报告
+  # （atomic_write_text 统一在 scripts/core/lib/CCR/Findings.pm；$tmpfile 先行赋值
+  # 保证 END 钩子能清理异常中断留下的临时残片）。
   if ($changed) {
     my $newtext = join("\n", @out);
     $newtext .= "\n" if $had_nl;
     $tmpfile = "$report.relocate.$$";
-    my @st = stat($report);
-    open my $of, ">:raw", $tmpfile or die "TMP_WRITE_ERROR=$tmpfile: $!\n";
-    print {$of} encode("UTF-8", $newtext) or die "TMP_WRITE_ERROR=$tmpfile: $!\n";
-    close $of or die "TMP_WRITE_ERROR=$tmpfile: $!\n";
-    chmod((@st ? $st[2] & 07777 : 0644), $tmpfile);
-    rename($tmpfile, $report) or die "RENAME_ERROR=$report: $!\n";
+    atomic_write_text($report, $newtext, ".relocate.$$");
   }
 
   print "RELOCATE_REPORT_PATH=$report\n";

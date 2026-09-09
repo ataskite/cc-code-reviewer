@@ -26,12 +26,12 @@ description: Java、前端与 Python 代码审查 — 支持增量/存量审查�
 
 本 Skill 的人工确认状态机在三端语义等价，差异只存在于交互呈现（见 `runtime/contract.md`「人工确认状态机」与各平台适配器）。本文中的 `INTERACT` 是逻辑动作，不是具体工具名：
 
-- **单选确认**：Claude Code adapter 映射为 `AskUserQuestion`（`multiSelect: false`）；Codex / ZCode 用平台结构化输入，不可用时逐轮单问。
-- **多选报告目标**：Claude Code 用 `multiSelect: true`；Codex 拆成组合选项或连续单选；ZCode 用原生多选，不可用时连续单选。
-- **4 个以上选项**：Claude Code 原样展示；Codex 分级菜单满足 2–3 选项上限；ZCode 原样或分级菜单。
+- **单选确认**：Claude Code adapter 映射为 `AskUserQuestion`（`multiSelect: false`）；Codex 必须按 `runtime/codex.md` 调用当前可用且允许使用的原生选项工具；ZCode 用平台结构化输入，不可用时逐轮单问。
+- **多选报告目标**：Claude Code 用 `multiSelect: true`；Codex 无原生多选时逐项连续单选，保留全部目标的任意组合；ZCode 用原生多选，不可用时连续单选。
+- **选项数量限制**：Claude Code 按原生 schema 展示；Codex 超出当前工具上限时使用分级菜单，保留全部选项；ZCode 原样或分级菜单。
 - **最终执行确认**：三端都必须单独一步，不得跳过。
 
-不变量（三端都必须保持）：预扫描先于交互、摘要先于问题、每步等待用户响应、禁止合并步骤、禁止命令行参数绕过确认。适配器可以改变交互呈现，但不得改变已确认范围、默认值或跳过最终确认。无结构化输入能力时，一次只问一个问题，必须等待响应，不得把多个步骤合并成一段文本。
+不变量（三端都必须保持）：预扫描先于交互、摘要先于问题、每步等待用户响应、禁止合并步骤、禁止命令行参数绕过确认。适配器可以改变交互呈现，但不得改变已确认范围、默认值或跳过最终确认。Codex 禁止文本降级：无可用且允许使用的原生选项工具时说明原因并阻塞当前步骤；异步提问必须收到用户实际回答后才继续，工具返回或预选项不代表确认。ZCode 无结构化输入能力时才逐轮单问。后文 INTERACT 参数是逻辑配置，实际调用必须按 adapter 转换为当前工具 schema。
 
 ### 第一步：提取项目路径（最先执行）
 
@@ -937,13 +937,13 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 - 最近 10 次 → `COMMIT_COUNT=10`，`REVIEW_SCOPE=最近 10 次提交`
 
 **增量对照历史报告（可选条件问题，仅增量审查时追加一次）**：确认 `COMMIT_COUNT` 之后（同一步骤序列内），必须再调用一次 INTERACT，参数如下：
-- question: "是否对照历史报告标记「上轮已报」发现？"
+- question: "是否对照历史报告标记「上轮已报」并生成跨轮对比？"
 - header: "上轮对照"
 - options:
   - label: "跳过（默认）"
     description: "不做上轮对照，本轮发现全部按新问题呈现"
-  - label: "对照历史报告标记重复"
-    description: "在 Other 中提供上一份审查报告的本地 Markdown 路径，命中上轮的发现标题追加「上轮已报」标记"
+  - label: "对照历史报告（标记 + 对比）"
+    description: "在 Other 中提供上一份审查报告的本地 Markdown 路径；命中上轮的发现标题追加「上轮已报」标记，并在报告末尾生成「与上轮报告对比」小节（新增 / 仍存在 / 已修复 / 未复审四桶计数）"
 - multiSelect: false
 
 **增量对照用户响应后变量赋值**：
@@ -1582,7 +1582,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `REVIEW_UNITS_PATH` | core/prepare-review-context.sh 输出；文件级分批复用 RUN_DIR/review-units.json | 只按 import/直接依赖形成的结构关联单元，不包含安全语义或候选结论 |
 | `REVIEW_RULES_RESOLVED_PATH` | core/resolve-review-rules.sh 基于 REVIEW_INPUT_PATH 的 selected 文件解析 | 当前正式范围逐文件命中的项目审查规则；不作为 ignore。文件内含文件类型专项清单映射（含 content 内嵌） |
 | `REVIEW_BACKGROUND` | 步骤 6「确认执行（附业务背景）」采集：自定义文本优先，增量未提供时默认注入本次增量已收集的提交记录文本；硬上限 8000 字符，超长截断并在最终汇总披露 | 需求意图/业务约束/本次变更目的的自然语言描述，或 `未提供` |
-| `REPEAT_PREV_REPORT_PATH` | 步骤 4 增量分支「上轮对照」条件问题采集；跳过或路径不存在时为空 | 上一份审查报告的本地 Markdown 绝对路径 |
+| `REPEAT_PREV_REPORT_PATH` | 步骤 4 增量分支「上轮对照」条件问题采集；跳过或路径不存在时为空 | 上一份审查报告的本地 Markdown 绝对路径（上轮已报标记与跨轮四桶对比共用） |
 
 ### 增量审查预处理（仅增量审查时执行）
 
@@ -1642,7 +1642,7 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${PLUGIN_ROOT}/scripts/core/merge-batch-re
 
 使用 Write 工具将合并后的报告保存到 `{PROJECT_DIR}/code-review-report-{PROJECT_NAME}-{timestamp}.md`（与单 agent 模式一致的命名和路径）。
 
-#### 合并后上轮已报标记与 SARIF 导出（可选）
+#### 合并后上轮已报标记、跨轮对比与 SARIF 导出（可选）
 
 merge 完成、`summary.json.report_title` 标题校验之后、飞书上传之前，按条件执行以下后处理（`REPORT_PATH` 指向合并后落盘的本地 Markdown 报告）：
 
@@ -1654,7 +1654,16 @@ bash "${PLUGIN_ROOT}/scripts/core/mark-repeat-findings.sh" "$REPORT_PATH" "$REPE
 - 脚本输出恒 4 行（`REPEAT_REPORT_PATH=` / `REPEAT_TOTAL_BLOCKS=` / `REPEAT_PREV_BLOCKS=` / `REPEAT_MARKED=`），必须展示给用户
 - `REPEAT_MARKED>0` 时在合并后最终汇总追加一行 `🔁 上轮已报标记：N 条（对照 {PREV_REPORT basename}，IoU>0.6）`；`REVIEW_BACKGROUND` 超 8000 字符被截断时同样在合并后最终汇总追加一行 `业务背景已截断至 8000 字符`
 
-**SARIF 导出（仅 `SARIF_EXPORT_ENABLED=true` 时，且在上轮已报标记之后执行）**：
+**跨轮报告对比（仅 `REPEAT_PREV_REPORT_PATH` 非空时，且在上轮已报标记之后、SARIF 导出之前执行）**：
+```bash
+bash "${PLUGIN_ROOT}/scripts/core/compare-review-reports.sh" "$REPORT_PATH" "$REPEAT_PREV_REPORT_PATH" --reviewed-from "$RUN_DIR/run-manifest.json"
+```
+- `run-manifest.json` 由 merge 生成、覆盖口径只采信 completed / reused（含 rename old_path）：阶段性报告里遗留批次未覆盖的上轮发现判为「未复审」而非「已修复」；文件缺失时省略 `--reviewed-from`，按三桶降级执行
+- 脚本输出恒 8 行（`COMPARE_REPORT_PATH=` / `COMPARE_CURR_FINDINGS=` / `COMPARE_PREV_FINDINGS=` / `COMPARE_NEW=` / `COMPARE_PERSISTING=` / `COMPARE_RESOLVED=` / `COMPARE_NOT_REVIEWED=` / `COMPARE_COVERAGE_SOURCE=`），必须展示给用户
+- 匹配口径与跨批次去重同族（文件 × 维度 × 证据代码指纹，行号不入键）：优先级升级/标题重写/行号漂移不影响「仍存在」判定；合并报告末尾自动追加（或幂等刷新）「## 📊 与上轮报告对比」小节
+- `COMPARE_PREV_FINDINGS>0` 时在合并后最终汇总追加一行 `📊 与上轮对比：新增 {COMPARE_NEW} / 仍存在 {COMPARE_PERSISTING} / 已修复 {COMPARE_RESOLVED} / 未复审 {COMPARE_NOT_REVIEWED}（对照 {PREV_REPORT basename}）`；上轮零有效块时静默跳过（fail-open）
+
+**SARIF 导出（仅 `SARIF_EXPORT_ENABLED=true` 时，且在上轮已报标记与跨轮对比之后执行）**：
 ```bash
 bash "${PLUGIN_ROOT}/scripts/core/export-sarif.sh" "$REPORT_PATH" "${REPORT_PATH%.md}.sarif" --project-name "$PROJECT_NAME"
 ```
@@ -1725,7 +1734,7 @@ bash "${PLUGIN_ROOT}/scripts/core/export-sarif.sh" "$REPORT_PATH" "${REPORT_PATH
 
 主 skill 按以下顺序处理报告保存与飞书上传，该流程与分批模式的「合并后报告保存」复用同一份 `references/feishu-integration.md` 操作规范：
 
-#### 步骤 0：报告产出后处理——上轮已报标记与 SARIF 导出（可选）
+#### 步骤 0：报告产出后处理——上轮已报标记、跨轮对比与 SARIF 导出（可选）
 
 本地 Markdown 报告持久化之后、标题校验与飞书上传之前，按条件执行（`REPORT_PATH` 即子 agent 返回的 `REPORT_FILE_PATH`，与批次路径的合并后处理同一套命令和披露口径）：
 
@@ -1737,7 +1746,16 @@ bash "${PLUGIN_ROOT}/scripts/core/mark-repeat-findings.sh" "$REPORT_PATH" "$REPE
 - 脚本输出恒 4 行（`REPEAT_REPORT_PATH=` / `REPEAT_TOTAL_BLOCKS=` / `REPEAT_PREV_BLOCKS=` / `REPEAT_MARKED=`），必须展示给用户
 - `REPEAT_MARKED>0` 时在步骤 3 的最终汇总追加一行 `🔁 上轮已报标记：N 条（对照 {PREV_REPORT basename}，IoU>0.6）`
 
-**SARIF 导出（仅 `SARIF_EXPORT_ENABLED=true` 时，且在上轮已报标记之后执行）**：
+**跨轮报告对比（仅 `REPEAT_PREV_REPORT_PATH` 非空时，且在上轮已报标记之后、SARIF 导出之前执行）**：
+```bash
+bash "${PLUGIN_ROOT}/scripts/core/compare-review-reports.sh" "$REPORT_PATH" "$REPEAT_PREV_REPORT_PATH" --reviewed-from "$REVIEW_INPUT_PATH"
+```
+- `REVIEW_INPUT_PATH` 存在且可读时传 `--reviewed-from`（本轮已审范围，用于把范围外消失的上轮发现判为「未复审」而非「已修复」）；缺失时省略该参数，按三桶降级执行
+- 脚本输出恒 8 行（`COMPARE_REPORT_PATH=` / `COMPARE_CURR_FINDINGS=` / `COMPARE_PREV_FINDINGS=` / `COMPARE_NEW=` / `COMPARE_PERSISTING=` / `COMPARE_RESOLVED=` / `COMPARE_NOT_REVIEWED=` / `COMPARE_COVERAGE_SOURCE=`），必须展示给用户
+- 匹配口径与跨批次去重同族（文件 × 维度 × 证据代码指纹，行号不入键）：优先级升级/标题重写/行号漂移不影响「仍存在」判定；报告末尾自动追加（或幂等刷新）「## 📊 与上轮报告对比」小节
+- `COMPARE_PREV_FINDINGS>0` 时在步骤 3 的最终汇总追加一行 `📊 与上轮对比：新增 {COMPARE_NEW} / 仍存在 {COMPARE_PERSISTING} / 已修复 {COMPARE_RESOLVED} / 未复审 {COMPARE_NOT_REVIEWED}（对照 {PREV_REPORT basename}）`；上轮零有效块时静默跳过（fail-open）
+
+**SARIF 导出（仅 `SARIF_EXPORT_ENABLED=true` 时，且在上轮已报标记与跨轮对比之后执行）**：
 ```bash
 bash "${PLUGIN_ROOT}/scripts/core/export-sarif.sh" "$REPORT_PATH" "${REPORT_PATH%.md}.sarif" --project-name "$PROJECT_NAME"
 ```

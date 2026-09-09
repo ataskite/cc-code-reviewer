@@ -68,7 +68,7 @@ maxTurns: 50
 ```
 
 **你必须**：
-- 直接使用这些参数，**不得再次询问用户或调用任何交互工具**（如文本选项交互工具）
+- 直接使用这些参数，**不得再次询问用户或调用任何交互工具**；原生选项交互与异步回答处理均由主 Skill 按 runtime adapter 完成
 - 从「第一步：执行代码审查」开始，立即开始执行
 - 执行完成后返回结构化汇总结果给主agent
 
@@ -103,7 +103,7 @@ maxTurns: 50
 - **Security 伴随文件清单**：当 `REVIEW_MODE=security` 且 Maven 大仓库 `BATCH_PLAN_PATH.security_companion_manifest` 有值时（顶层 `plan.json` 同步记录），读取该绝对路径中的构建/配置/CI/容器文件；这些文件作为 Security 证据范围，不计入 Java 覆盖率，但允许作为正式 Security 问题位置
 - **批次状态文件**（`BATCH_STATUS_PATH`）：本批 `batch-XXX.status.json` 的绝对路径
 - **批次结果文件**（`BATCH_RESULT_PATH`）：本批局部发现清单的绝对路径
-- **审查输入清单**（`REVIEW_INPUT_PATH`）：存在时必须读取；`selected=true` 的路径构成增量正式范围，`exclude_reason` 只用于披露，不得被重新纳入。
+- **审查输入清单**（`REVIEW_INPUT_PATH`）：存在时必须读取；`selected=true` 的路径构成增量正式范围，`exclude_reason` 只用于披露，不得被重新纳入。清单 items 同时携带每文件变更规模 `insertions` / `deletions`（+N/-M churn 统计）：安排深读顺序时优先处理高 churn 文件（新增行数远超删除行数的文件通常是本次变更重心），证据引用优先取自变更行本身而非远处的稳定代码。
 - **关联审查单元**（`REVIEW_UNITS_PATH`）：存在时必须读取。它只按 import/直接依赖把正式文件组织成结构单元，用于保持跨文件语义上下文；它不标注风险、不定义安全候选，也不改变 `REVIEW_INPUT_PATH` / `BATCH_FILE_LIST` / `scan_roots` 的正式边界。
 - **项目审查规则解析结果**（`REVIEW_RULES_RESOLVED_PATH`）：存在时只读取本批正式文件命中的规则，作为补充检查点；不得把它当作 ignore 或改变严重级别门槛。
 
@@ -118,7 +118,7 @@ maxTurns: 50
 - **项目 ignore 规则**（`IGNORE_RULES_CONTENT`）：主 agent 读取 `.cc-code-reviewer/ignore/issues.yml` 后注入的 AI 指令型 ignore 文件。启用时必须先应用项目 ignore 规则，再生成问题清单；凡是语义上命中 `ignore.skip_when` 的同类问题，不得输出到 P0/P1/P2/P3/待确认清单。
 - **增量提交记录**（`GIT_LOG_OUTPUT`）：仅增量审查时提供，包含最近 N 次提交的 `git log --oneline` 输出。若未单独提供业务背景，上述提交记录即视为业务背景的默认来源（由主 Skill 注入，无需自行拼接）。
 - **变更文件列表**（`CHANGED_FILES_OUTPUT`）：仅增量审查时提供，`git diff --name-only` 的输出。**直接使用此列表作为审查主输入，禁止重新执行 git diff**。
-- **变更统计**（`DIFF_STATS_OUTPUT`）：仅增量审查时提供，`git diff --stat` 的输出。据此判断每个文件的改动规模，优先审查改动量大的文件。
+- **变更统计**（`DIFF_STATS_OUTPUT`）：仅增量审查时提供，`git diff --stat` 的输出。据此判断每个文件的改动规模，优先审查改动量大的文件；逐文件精确规模以 `REVIEW_INPUT_PATH` items 的 `insertions` / `deletions`（+N/-M）为准。
 - **语义分组清单**（可选，仅增量审查时提供）：变更文件的语义关联分组（同模块同功能、接口+实现+调用点、测试+被测、i18n/配置变体）。提供时，阶段 C 应把同组文件安排在一起评估（同组文件互相作为上下文）；未提供时按原顺序执行。
 
 ### 本批审查文件列表（仅分批模式时提供）
@@ -282,7 +282,7 @@ maxTurns: 50
   - ⚠️ **删除文件处理**：变更列表可能包含已删除的文件，需要先检查文件是否存在再read
     - 对于已删除的文件，只能通过 `git show` 获取删除前的内容进行分析
     - 如果无法获取删除文件的内容，标记为"待确认项"
-  - 根据 `DIFF_STATS_OUTPUT` 中的改动规模，优先审查改动量大的文件
+  - 根据 `DIFF_STATS_OUTPUT` 中的改动规模，优先审查改动量大的文件；逐文件规模以 `REVIEW_INPUT_PATH` items 的 `insertions` / `deletions`（+N/-M）为准，高 churn 文件优先深读
   - 再按需外扩 1-2 层关联文件：直接调用者 / 被调用者 / 相关配置 / 相关测试
   - 不要在增量审查中默认回退成全库扫描
   - **维度覆盖策略（增量专用）**：

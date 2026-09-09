@@ -10,6 +10,9 @@ RUN_DIR="${1:?请输入运行目录 RUN_DIR}"
 PLAN_PATH="$RUN_DIR/plan.json"
 [ -f "$PLAN_PATH" ] || { echo "PLAN_JSON_NOT_FOUND=$PLAN_PATH" >&2; exit 1; }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$SCRIPT_DIR/lib"
+
 json_escape() { printf '%s' "$1" | perl -0pe 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g; s/\t/\\t/g; s/\r/\\r/g'; }
 json_get() {
   perl -MJSON::PP -e '
@@ -105,9 +108,9 @@ batch_modules() {
 #     半角/全角 ":数字" 行号（行号跨批次漂移且已由上游重归档钩子修正）；无该行则 ""
 #   - 维度标签：表头第一个 [...] 内层文本（内部连续空白折叠为单空格）；缺失为 ""
 #   - 证据代码：块内第一个闭合围栏代码块的内容（围栏行允许缩进/带语言标记）；每行
-#     按 relocate-findings.sh 的 norm_line 同口径归一（去 CR → trim → 剥一个 +/- 前缀
-#     → 再 trim → 去尾空白），完全丢弃空行后按原顺序以 "\n" 连接；无闭合围栏或内容
-#     全空时为 ""
+#     按发现内核（scripts/core/lib/CCR/Findings.pm 的 norm_line）归一（去 CR →
+#     trim → 剥一个 +/- 前缀 → 再 trim → 去尾空白），完全丢弃空行后按原顺序以
+#     "\n" 连接；无闭合围栏或内容全空时为 ""
 # 兜底（防误吞）：块既无 "- 文件：" 行又无围栏证据时无法构成稳定身份，退回旧的
 # 整块空白折叠键。两类键命名空间独立，绝不互相命中；相同键位置序首个命中者胜出。
 # 存续块逐字节原样输出；`### batch-XXX - 模块` 分隔行不含 P0-P3/待确认前缀，
@@ -115,79 +118,39 @@ batch_modules() {
 # 统计文件（第 3 参，可选；两行十进制），供 summary.json 的 dedup 对象与报告
 # “跨批次去重”行披露；写文件失败即中断（调用方先 rm 保证干净起点）。
 dedupe_issue_blocks() {
-  CC_MERGE_DEDUP_STATS_FILE="${3:-}" perl -CS -Mutf8 -MEncode=encode_utf8 -MDigest::SHA=sha256_hex -e '
+  # 发现内核模块目录解析：优先用脚本顶部已解析的 LIB_DIR；当本函数被测试
+  # sed 抽取 + eval 到外来 shell（tests/core/test_core_export_sarif.sh 方案 (b)，
+  # 不复制代码直接调真函数）时，从调用方位置向上回溯定位 scripts/core/lib。
+  local lib_dir="${LIB_DIR:-}"
+  if [ -z "$lib_dir" ] || [ ! -f "$lib_dir/CCR/Findings.pm" ]; then
+    local probe
+    probe="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || probe=""
+    while [ -n "$probe" ] && [ ! -f "$probe/scripts/core/lib/CCR/Findings.pm" ]; do
+      probe="${probe%/*}"
+    done
+    [ -n "$probe" ] && lib_dir="$probe/scripts/core/lib"
+  fi
+  CC_MERGE_DEDUP_STATS_FILE="${3:-}" perl -I "$lib_dir" -MCCR::Findings=:all -CS -Mutf8 -MEncode=encode_utf8 -MDigest::SHA=sha256_hex -e '
     use strict; use warnings;
     binmode STDIN, ":utf8"; binmode STDOUT, ":utf8";
     my $stats_file = $ENV{CC_MERGE_DEDUP_STATS_FILE} // "";
     my (%seen, @block, $in_issue);
     my ($input_blocks, $merged_dups) = (0, 0);
-    sub collapse_ws {
-      my $s = shift // "";
-      $s =~ s/\s+/ /g;
-      $s =~ s/^\s+//;
-      $s =~ s/\s+$//;
-      return $s;
-    }
-    # 证据行归一化：与 scripts/core/relocate-findings.sh 的 norm_line 完全一致口径
-    # （步骤顺序不得调整，保证两处对同一行的归一结果逐字节相同）。
-    sub norm_evidence_line {
-      my $l = shift // "";
-      $l =~ s/\r$//;
-      $l =~ s/^\s+//;
-      $l =~ s/^[-+]?//;
-      $l =~ s/^\s+//;
-      $l =~ s/\s+$//;
-      return $l;
-    }
-    sub parse_dim_tag {
-      my ($hdr) = @_;
-      return "" unless $hdr =~ /\[([^\]]*)\]/;
-      my $tag = collapse_ws($1);
-      return $tag // "";
-    }
-    sub first_location_path {
-      for (@_) {
-        next unless /^-\s*文件：\s*(.*)$/;
-        my $p = $1;
-        $p =~ s/^\s+//;
-        $p =~ s/\s+$//;
-        return "" unless length $p;
-        $p =~ s!\\!/!g;
-        ($p =~ s/:([0-9]+)$//) || ($p =~ s/：([0-9]+)$//);
-        return $p;
-      }
-      return "";
-    }
-    sub evidence_block {
-      my ($open, $close);
-      for my $i (0 .. $#_) {
-        my $t = $_[$i];
-        $t =~ s/^\s+//;
-        $t =~ s/\s+$//;
-        next unless $t =~ /^```/;
-        if (!defined $open) { $open = $i; }
-        else { $close = $i; last; }
-      }
-      return () unless defined $open && defined $close && $close > $open;
-      my @ev;
-      for my $i (($open + 1) .. ($close - 1)) {
-        my $n = norm_evidence_line($_[$i]);
-        push @ev, $n if length $n;
-      }
-      return @ev;
-    }
+    # collapse_ws / norm_line / parse_dim_tag / first_location_path / evidence_lines /
+    # finding_fingerprint / 块边界判定统一来自 scripts/core/lib/CCR/Findings.pm
+    # （发现内核唯一实现，与 export-sarif / compare / relocate / mark-repeat 同源）。
     sub identity_key {
       my @all = @_;
       my @rest = @all; shift @rest;
       my @locs = grep { /^-\s*文件：/ } @rest;
-      my @ev = evidence_block(@rest);
+      my @ev = evidence_lines(@rest);
       if (!@locs && !@ev) {
         return ("legacy", collapse_ws(join("", @all)));
       }
       my $dim  = parse_dim_tag($all[0]);
       my $path = first_location_path(@rest);
       my $evid = @ev ? join("\n", @ev) : "";
-      return ("fp", sha256_hex(encode_utf8(join("\x00", $path, $dim, $evid))));
+      return ("fp", finding_fingerprint($path, $dim, $evid));
     }
     sub flush_block {
       return unless @block;
@@ -200,12 +163,12 @@ dedupe_issue_blocks() {
       $in_issue = 0;
     }
     while (my $line = <STDIN>) {
-      if ($line =~ /^###\s+(?:P[0-3]|待确认)(?:\b|\s|\|)/) {
+      if (is_issue_heading($line)) {
         flush_block();
         @block = ($line); $in_issue = 1; next;
       }
       if ($in_issue) {
-        if ($line =~ /^##\s+/ || $line =~ /^###\s+/) { flush_block(); print $line; }
+        if (is_block_terminator($line)) { flush_block(); print $line; }
         else { push @block, $line; }
         next;
       }

@@ -7,7 +7,7 @@ description: 扫描后沉淀项目级 ignore 规则，从飞书 Base 或本地 M
 
 你负责把扫描后的误报或项目特有设计沉淀为项目级 ignore 规则。ignore 文件是 **AI 指令型 ignore 文件**，供后续 scan agent 读取并跳过同类问题。
 
-> **跨平台运行**：本文件由 Claude Code / Codex / ZCode 三端共同发现。开始前根据当前宿主身份固定 `RUNTIME_ID`，以本 Skill 资源目录为基准向上两级解析 `PLUGIN_ROOT`，再完整读取对应 runtime adapter；若宿主或根目录不明确，在任何读取/写入项目文件前失败。`INTERACT` 是逻辑动作，由 adapter 映射到宿主结构化输入；不可用时才逐轮单问。
+> **跨平台运行**：本文件由 Claude Code / Codex / ZCode 三端共同发现。开始前根据当前宿主身份固定 `RUNTIME_ID`，以本 Skill 资源目录为基准向上两级解析 `PLUGIN_ROOT`，再完整读取对应 runtime adapter；若宿主或根目录不明确，在任何读取/写入项目文件前失败。`INTERACT` 是逻辑动作，由 adapter 映射到宿主结构化输入。Codex 必须按 `runtime/codex.md` 调用当前可用且允许使用的原生选项工具，禁止文本降级；工具受限时说明原因并阻塞当前步骤，异步提问须收到用户实际回答后才继续。仅 ZCode 无结构化工具时可逐轮单问。后文参数必须按 adapter 转换为当前工具 schema。
 
 ## 入口参数
 

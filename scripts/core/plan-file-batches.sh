@@ -14,11 +14,11 @@ BATCH_TOKEN_BUDGET="${CC_CODE_REVIEWER_BATCH_TOKEN_BUDGET:-500000}"
 LINE_TOKEN_ESTIMATE=3
 FILE_TOKEN_OVERHEAD=500
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# sha256_file（三级回退链）统一来自共享库 scripts/core/lib/common.sh。
+. "$SCRIPT_DIR/lib/common.sh"
+
 json_escape() { printf '%s' "$1" | perl -0pe 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g; s/\t/\\t/g; s/\r/\\r/g'; }
-sha256_file() {
-  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
-  else sha256sum "$1" | awk '{print $1}'; fi
-}
 branch_slug() {
   local s; s="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g; s/-\{2,\}/-/g; s/^-//; s/-$//' | cut -c1-40)"
   [ -n "$s" ] || s="no-branch"; printf '%s' "$s"

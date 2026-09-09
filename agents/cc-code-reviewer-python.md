@@ -85,7 +85,7 @@ maxTurns: 50
 - **审查输出模式**（`REVIEW_OUTPUT_MODE`）：`完整报告`（默认）或 `仅发现清单`（分批审查单批输出）
 - **审查范围**（`REVIEW_SCOPE`）：`全量代码`，或用户选定的 `src` 子目录/包目录相对路径列表（逗号分隔，如 `src/api,src/models`）。范围已由主 agent 收敛到 `source manifest`（单 agent）或 `BATCH_FILE_LIST`（分批）；本子 agent 直接使用注入清单，**不得再次按目录过滤，也不得外扩到未选目录**
 - **source manifest**：不可变生产源码清单（绝对路径，每行一个）。单 agent 模式下从该清单确定文件集合；文件级分批模式从 `BATCH_FILE_LIST` 确定本批源码，不得改用 `scan_roots`
-- **审查输入清单**（`REVIEW_INPUT_PATH`）：存在时是增量 selected / excluded 的审计依据；不得重新运行 git diff 扩展正式范围。
+- **审查输入清单**（`REVIEW_INPUT_PATH`）：存在时是增量 selected / excluded 的审计依据；不得重新运行 git diff 扩展正式范围。清单 items 同时携带每文件变更规模 `insertions` / `deletions`（+N/-M churn 统计）：高 churn 文件优先安排深读，证据引用优先取自变更行本身。
 - **关联审查单元**（`REVIEW_UNITS_PATH`）：存在时必须读取。它只按 import/直接依赖组织相关生产文件，用于保持跨文件语义上下文；它不标注风险、不定义安全候选，也不改变 source manifest / `BATCH_FILE_LIST` 的正式边界。
 - **项目审查规则解析结果**（`REVIEW_RULES_RESOLVED_PATH`）：只为本批正式文件附加检查重点，不屏蔽发现、不覆盖 Python 专项规则。
 
@@ -161,7 +161,7 @@ maxTurns: 50
 - **只读上下文定位**：测试目录与迁移目录从 `PROJECT_SCAN_RESULT` 的 `CONTEXT_ROOT:` 行读取，**不得重复执行 find 统计**。上下文可用于测试质量/迁移质量判断，但不得成为正式问题位置
 - 若注入了 `REVIEW_UNITS_PATH`，优先按其中的结构单元安排读取顺序，使直接关联的入口、状态、权限和下游实现处于同一推理窗口。结构单元只提供阅读邻接关系，不代表其中存在问题。
 
-**Phase B - 风险优先级排序**：按以下优先级排序文件，确保高风险文件优先审查：
+**Phase B - 风险优先级排序**：按以下优先级排序文件，确保高风险文件优先审查（增量审查在同优先级内再按 `REVIEW_INPUT_PATH` items 的 `insertions` / `deletions`（+N/-M）从高 churn 到低 churn 排序）：
 - P0 热点（优先级 0）：`settings.py`、`urls.py`、`wsgi.py`/`asgi.py`、`models.py`、`views.py`/`controllers`、`serializers.py`/`schemas.py`、`middleware.py`、`permissions.py`、`auth.py`/`authentication.py`、`tasks.py`（Celery）、`pyproject.toml`、`requirements.txt`、`manage.py`、含 `eval`/`exec`/`pickle`/`subprocess`/`os.system` 的文件
 - P1 热点（优先级 1）：`services.py`、`forms.py`、`signals.py`、`admin.py`、`api.py`/`routes.py`/`endpoints.py`、`database.py`/`db.py`、`cache.py`、`config.py`、含 `@app.route`/`@router`/`@task`/`@shared_task` 的文件
 - 其他（优先级 2）：剩余生产源码

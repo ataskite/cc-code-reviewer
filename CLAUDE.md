@@ -145,6 +145,9 @@ references/
   └── examples.md                     # Complete example dialogues
 scripts/
   ├── core/                              # Language-neutral shared kernel (no phase numbering)
+  │   ├── lib/                            # 发现内核（共享库）：发现指纹与块解析的唯一实现
+  │   │   ├── common.sh                   # 共享 shell 助手（sha256 三级回退链）
+  │   │   └── CCR/Findings.pm             # 发现块共享 Perl 模块（边界/归一化/维度/路径口径/指纹）
   │   ├── detect-project.sh              # Project identification
   │   ├── detect-branches.sh             # Branch detection
   │   ├── switch-branch.sh               # Branch switching
@@ -171,6 +174,7 @@ scripts/
   │   ├── relocate-findings.sh            # Cross-file finding re-filing (evidence-unique-match relocation, fail-open)
   │   ├── merge-batch-results.sh         # Batch result merge (dedup + coverage)
   │   ├── mark-repeat-findings.sh        # Incremental repeat-finding marker (（上轮已报） suffix, path+dimension+IoU)
+  │   ├── compare-review-reports.sh     # Cross-round report compare (new/persisting/resolved/not_reviewed, fingerprint identity)
   │   ├── export-sarif.sh                # SARIF v2.1.0 export (P0→error/P1→warning/else note, dedup-parity fingerprints)
   │   └── show-batch-status.sh           # User-visible batch status and dynamic execution plan
   ├── languages/
@@ -228,6 +232,7 @@ The suite runs every `tests/test_*.sh` file and then `git diff --check`. It cove
 - `tests/core/test_core_merge_batch_results.sh`: fingerprint dedup keyspace isolation (`fp\0` vs `legacy\0`, evidence normalization shared with relocate-findings), `dedup` disclosure including N=0/M=0 omission rules, closed five-value failure_class resolution order (explicit → keyword fallback → unknown), and `failed_by_class` five-key zero-filled steady state omitted on zero failures
 - `tests/core/test_core_plan_file_batches.sh` (+ `tests/test_phase11_plan_large_batches.sh`): both planners must persist `rules_snapshot_sha256` equal to the sha256 of review-rules.json bytes, and a real RUN_DIR produced by the planner must pass `validate-resume-input.sh <RUN_DIR> <PROJECT_DIR> --rules`; phase11 also freezes the security companion manifest in security mode with consistent `security_companion_manifest` declarations in plan.json and batch json
 - `tests/core/test_core_mark_repeat_findings.sh`: incremental repeat-finding marker contract — same path + dimension tag + line-interval IoU > threshold appends `（上轮已报）`, 4-line stdout counters, zero-mark byte stability, idempotency, threshold/env precedence, and fail-open semantics
+- `tests/core/test_core_compare_review_reports.sh`: cross-round compare contract — four buckets (new/persisting/resolved/not_reviewed) via fingerprint identity (priority drift and anchor point/range drift stay persisting; dimension drift does not), multiset min(N,M), reviewed-coverage gating from manifest / review-input.json / run-manifest.json (completed+reused incl. old_path), fail-open degradation, section idempotency, and usage/IO error exits
 - `tests/core/test_core_export_sarif.sh`: SARIF v2.1.0 export contract — level mapping (P0→error / P1→warning / P2/P3/待确认→note), ruleId from dimension tags, partialFingerprints parity with merge dedup fingerprints, single-line `SARIF_EXPORTED=` stdout, and usage/IO error exits
 - `tests/test_phase15_business_background.sh`: business-background contract across the three review agents — parameter-table row, `### 业务背景使用规则`, incremental commit-message default source, and background-directed alertness
 - `core/detect-fix-input.sh`: local Markdown path validation only; Feishu Doc/Base inputs are read through `lark-doc` / `lark-base`
@@ -295,7 +300,9 @@ Verify installation by triggering the skill with a Java review request such as `
 - The flow confirms review mode and report handling before review entry; after entry, scope, and optional Maven stock strategy, it confirms the model before any batch decision, followed by optional batch execution count, optional concurrency, and final execution.
 - After scope selection, the Skill must recalculate file/line counts from the current-scope manifest and call `core/decide-batch-mode.sh`. Reviews with `estimated_tokens <= 1000000` stay single-agent; Maven multi-module reviews in that range skip step 4B. Full reviews must say "all modules", never "selected modules".
 - Module selection for large Maven projects must keep INTERACT payloads bounded: show module trees as normal text, keep fixed options small, and collect module paths through Other/free-form when needed.
-- Incremental repeat suppression (v1.6.6): after the incremental `COMMIT_COUNT` confirmation, the Skill asks one optional single-select INTERACT (跳过（默认） / 对照历史报告标记重复 via Other path input) and stores `REPEAT_PREV_REPORT_PATH`; missing/unreadable paths degrade to skip (fail-open). When set, the main skill runs `core/mark-repeat-findings.sh "$REPORT_PATH" "$REPEAT_PREV_REPORT_PATH"` after the local report is persisted (batch path: after merge and `report_title` validation, before Feishu upload), shows the 4-line stdout counters, and appends `🔁 上轮已报标记：N 条（对照 {PREV_REPORT basename}，IoU>0.6）` to the final summary when `REPEAT_MARKED>0`; default IoU threshold 0.6 is tunable via `CC_CODE_REVIEWER_REPEAT_IOU_THRESHOLD`.
+- Incremental repeat suppression (v1.6.6): after the incremental `COMMIT_COUNT` confirmation, the Skill asks one optional single-select INTERACT (跳过（默认） / 对照历史报告（标记 + 对比） via Other path input) and stores `REPEAT_PREV_REPORT_PATH`; missing/unreadable paths degrade to skip (fail-open). When set, the main skill runs `core/mark-repeat-findings.sh "$REPORT_PATH" "$REPEAT_PREV_REPORT_PATH"` after the local report is persisted (batch path: after merge and `report_title` validation, before Feishu upload), shows the 4-line stdout counters, and appends `🔁 上轮已报标记：N 条（对照 {PREV_REPORT basename}，IoU>0.6）` to the final summary when `REPEAT_MARKED>0`; default IoU threshold 0.6 is tunable via `CC_CODE_REVIEWER_REPEAT_IOU_THRESHOLD`.
+- Cross-round report compare (v1.6.8, absorbed from OpenCodeReview session compare): with `REPEAT_PREV_REPORT_PATH` set, the main skill runs `core/compare-review-reports.sh "$REPORT_PATH" "$REPEAT_PREV_REPORT_PATH" --reviewed-from <coverage>` after the repeat marking and before SARIF export. Findings are matched by content fingerprint (file ␀ dimension ␀ normalized evidence, line numbers excluded — same family as merge dedup; point/range anchors are both stripped so cross-round quoting drift never splits identity) into new / persisting / resolved / not_reviewed (multiset min(N,M) semantics; priority changes stay persisting). `--reviewed-from` supplies the current run's reviewed paths so prev-round findings outside scope count as not_reviewed instead of falsely resolved: single-agent passes `REVIEW_INPUT_PATH` (selected=true items), batch passes `$RUN_DIR/run-manifest.json` (coverage_sets.completed + reused, rename old_path included); missing/unreadable sources fail-open to three buckets. stdout is 8 lines (`COMPARE_*` counters), the report gains an idempotent `## 📊 与上轮报告对比` tail section, and `COMPARE_PREV_FINDINGS>0` appends `📊 与上轮对比：新增 X / 仍存在 Y / 已修复 Z / 未复审 W（对照 {PREV_REPORT basename}）` to the final summary.
+- Churn-aware attention (v1.6.8, absorbed from OpenCodeReview churn stats): all three review agents read per-file `insertions`/`deletions` (+N/-M) from `REVIEW_INPUT_PATH` items and prioritize deep reads by churn; evidence quoting prefers changed lines over distant stable code.
 - Business background injection (v1.6.6): the final confirmation step offers `确认执行（附业务背景）`; selecting it appends exactly one single-select INTERACT (使用所审提交的 commit message（仅增量可选） / 跳过背景, custom text via Other). `REVIEW_BACKGROUND` prefers custom text, falls back to the incremental commit-message text by default (incremental reviews with no background at all also default to it), and is `未提供` for stock reviews without input; hard cap 8000 characters with truncation disclosed in the final summary. Both the single-agent and batch prompt tables inject `| 业务背景（可选） | {REVIEW_BACKGROUND 或 未提供} |`.
 - SARIF export (v1.6.6): the multi-select report-handling step gains `SARIF 文件（本地 .sarif，CI 对接）`; when selected the main skill runs `bash "${PLUGIN_ROOT}/scripts/core/export-sarif.sh" "$REPORT_PATH" "${REPORT_PATH%.md}.sarif" --project-name "$PROJECT_NAME"` after the local Markdown report is persisted (batch path: after the merged report is generated) and shows the `SARIF_EXPORTED=` line. SARIF is local-only, never affects or gates Feishu uploads.
 - Do not preserve command-line compatibility that bypasses interaction.
@@ -336,11 +343,13 @@ Verify installation by triggering the skill with a Java review request such as `
 
 Each interaction step must:
 - Call INTERACT exactly once
-- Set `multiSelect: false`, except the scan report-handling step and the multi-module stock-review scope step where selecting multiple values is allowed
+- Treat `multiSelect` as logical configuration; translate it to the current adapter's tool schema. Claude Code uses `multiSelect: false`, except steps that allow selecting multiple values.
 - Present clear options with descriptions
 - Wait for user response before proceeding
 
 **Never**: Merge multiple steps into one message, or use plain text questions.
+
+Codex must follow `runtime/codex.md`: prefer the available asynchronous native option tool, otherwise use the synchronous tool only when its mode and purpose restrictions permit. Codex 禁止文本降级; explain and block the affected step if no allowed native tool is available. Tool return and preselected options are not user confirmation; wait for the actual answer before advancing. Multi-select choices must preserve every allowed combination through consecutive single-select questions when necessary.
 
 ### Parameter Injection
 

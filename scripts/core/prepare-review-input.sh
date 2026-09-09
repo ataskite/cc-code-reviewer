@@ -19,19 +19,15 @@ OUTPUT_PATH="${6:-}"
 [ -d "$PROJECT_DIR" ] || { echo "PROJECT_DIR_NOT_FOUND=$PROJECT_DIR" >&2; exit 1; }
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd -P)"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# sha256_file / sha256_text（三级回退链）统一来自共享库 scripts/core/lib/common.sh。
+. "$SCRIPT_DIR/lib/common.sh"
+
 case "$MODE" in incremental|full|scoped) ;; *) echo "REVIEW_INPUT_MODE_INVALID=$MODE" >&2; exit 1 ;; esac
 case "$COMMIT_COUNT" in ''|*[!0-9]*) echo "COMMIT_COUNT_INVALID=$COMMIT_COUNT" >&2; exit 1 ;; esac
 [ -z "$SOURCE_MANIFEST" ] || [ -r "$SOURCE_MANIFEST" ] || { echo "SOURCE_MANIFEST_NOT_READABLE=$SOURCE_MANIFEST" >&2; exit 1; }
 
 json_escape() { printf '%s' "$1" | perl -0pe 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g; s/\t/\\t/g; s/\r/\\r/g'; }
-sha256_file() {
-  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
-  else sha256sum "$1" | awk '{print $1}'; fi
-}
-sha256_text() {
-  if command -v shasum >/dev/null 2>&1; then shasum -a 256 | awk '{print $1}'
-  else sha256sum | awk '{print $1}'; fi
-}
 relative_path() {
   local candidate="$1" canonical
   if [ -e "$candidate" ]; then

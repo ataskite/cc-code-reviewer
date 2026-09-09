@@ -13,7 +13,7 @@
 |---|---|---|
 | `RUNTIME_ID` | 宿主平台标识，由入口固定，不自动猜测 | `claude-code` / `codex` / `zcode` |
 | `PLUGIN_ROOT` | 当前插件实际根目录的绝对路径 | 必须可读；支持空格、符号链接、Marketplace 缓存目录 |
-| `INTERACTION_MODE` | 人工确认呈现方式 | `structured`（结构化提问） / `sequential-text`（逐轮单问降级） |
+| `INTERACTION_MODE` | 人工确认呈现方式 | `structured`（结构化提问，Codex 必需） / `sequential-text`（仅 ZCode 无结构化工具时逐轮单问降级） |
 | `AGENT_DISPATCH_MODE` | 子 Agent 调度方式 | `native-agent`（插件原生 Agent） / `generic-subagent`（通用 subagent + Prompt 注入） |
 | `MODEL_PROFILE` | 模型档位，默认继承宿主 | `inherit` / `economy` / `balanced` / `maximum` |
 | `OPTIONAL_CAPABILITIES` | 可选能力集合 | lark-cli、Superpowers 等；缺失只能影响对应可选路径 |
@@ -60,7 +60,7 @@ preflight
 - `final_confirmation` 必须独立存在。
 - fix 只执行确认后的问题集合。
 
-共享流程统一使用逻辑动作 `INTERACT`。各入口必须把 `INTERACT` 映射为宿主可用的结构化输入；不可用时才逐轮单问。适配器可以改变交互呈现，但不得改变已确认范围、默认值或跳过最终确认。
+共享流程统一使用逻辑动作 `INTERACT`。各入口必须把 `INTERACT` 映射为宿主可用且允许使用的结构化输入。Codex 禁止文本降级：工具不可用时说明原因并阻塞当前步骤；仅 ZCode 可按 adapter 逐轮单问。适配器可以改变交互呈现，但不得改变已确认范围、默认值或跳过最终确认。异步提问必须收到用户实际回答后才推进状态；工具调用返回、预选项或超时均不代表确认。具体工具名、schema 与模式/用途限制只在 adapter 中定义。
 
 ## 4. 模型档位
 
@@ -85,7 +85,7 @@ preflight
 | 场景 | 行为 |
 |---|---|
 | 插件根目录无法解析 | 预扫描前失败，给出宿主与 Skill 路径 |
-| 宿主没有结构化提问工具 | 逐轮单问降级（`sequential-text`），不能跳步 |
+| 宿主没有可用且允许使用的结构化提问工具 | Codex 说明原因并阻塞当前步骤，禁止文本降级；ZCode 按 adapter 逐轮单问（`sequential-text`）；Claude Code 保持原生工具要求 |
 | 宿主没有 subagent | 最终确认前阻塞，不由主 Skill 接管审查 |
 | 并发能力不足 | 展示实际并发数，用户重新确认后串行/低并发执行 |
 | lark-cli 不可用 | 仅禁用飞书输出，本地报告继续 |

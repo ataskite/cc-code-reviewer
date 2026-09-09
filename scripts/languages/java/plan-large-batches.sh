@@ -32,10 +32,9 @@ json_escape() {
   printf '%s' "$1" | perl -0pe 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g; s/\t/\\t/g; s/\r/\\r/g'
 }
 
-sha256_file() {
-  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
-  else sha256sum "$1" | awk '{print $1}'; fi
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# sha256_file（三级回退链）统一来自共享库 scripts/core/lib/common.sh。
+. "$SCRIPT_DIR/../../core/lib/common.sh"
 
 branch_slug() {
   local slug

@@ -11,7 +11,7 @@ description: 审查问题修复 - 基于人工确认的问题清单，支持直�
 
 > **插件根目录**：本文件由 Claude Code / Codex / ZCode 三端共同发现。开始前根据当前宿主身份固定 `RUNTIME_ID` 并读取对应 adapter；若宿主不明确，在预扫描前失败。以本 Skill 资源目录为基准向上两级解析 `PLUGIN_ROOT`，禁止使用当前工作目录或 shell 入口参数。未解析出可读 `${PLUGIN_ROOT}/VERSION`、`${PLUGIN_ROOT}/scripts/core/detect-project.sh` 与本共享 Skill 时必须立即失败。
 
-> **跨平台人工确认**：本 Skill 的人工确认状态机在三端语义等价（见 `runtime/contract.md`「人工确认状态机」）。`INTERACT` 是逻辑动作，由 runtime adapter 映射到宿主结构化输入；不可用时才逐轮单问。不变量：预扫描先于交互、每步等待、禁止合并步骤、禁止命令行参数绕过、最终执行单独确认、fix 只执行确认后的问题集合。
+> **跨平台人工确认**：本 Skill 的人工确认状态机在三端语义等价（见 `runtime/contract.md`「人工确认状态机」）。`INTERACT` 是逻辑动作，由 runtime adapter 映射到宿主结构化输入。Codex 必须按 `runtime/codex.md` 调用当前可用且允许使用的原生选项工具，禁止文本降级；工具受限时说明原因并阻塞当前步骤，异步提问须收到用户实际回答后才继续。仅 ZCode 无结构化工具时可逐轮单问。后文参数必须按 adapter 转换为当前工具 schema。不变量：预扫描先于交互、每步等待、禁止合并步骤、禁止命令行参数绕过、最终执行单独确认、fix 只执行确认后的问题集合。
 
 ### 第零步：模式判定（固定交互式）
 

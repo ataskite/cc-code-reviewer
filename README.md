@@ -64,6 +64,8 @@ codex plugin add cc-code-reviewer@cc-code-reviewer
 
 安装后开启新会话即可发现三个 Skill。Codex 插件主要面向 CLI/Desktop；IDE Extension 场景当前以项目级 Skill 降级说明为准，不承诺 IDE 插件安装。
 
+Codex 的扫描、修复和 ignore 流程通过原生工具展示可点击选项：优先使用宿主提供的 `request_user_input_async`，否则使用当前模式和用途允许的 `request_user_input`。每步收到实际回答后才继续，多选目标可拆成逐项单选。工具不可用时明确提示并暂停该步骤，不退回文本菜单。各版本能力以当前宿主为准，具体映射见 [Codex 适配器](runtime/codex.md#3-人工确认映射)。
+
 ### ZCode（Beta）
 
 ZCode 插件体系仍为 Beta。通过 **Settings → Plugins → Marketplace** 添加同一 GitHub/Git source（`ataskite/cc-code-reviewer`），然后安装插件。ZCode 通过原生 `.zcode-plugin/plugin.json` 清单发现三个 Skill。
@@ -106,7 +108,7 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 
 ### Java 审查
 
-- 15 个审查维度：正确性、代码质量、异常处理、数据访问、安全、性能、资源管理、并发、缓存、消息队列、API 设计、架构、配置、测试、技术债等
+- 15 个审查维度：正确性、代码质量、异常处理、数据访问、安全、性能、资源管理、并发、缓存、消息队列、API 设计、架构、配置、测试、技术债
 - 技术栈感知：Spring Boot、MyBatis / MyBatis Plus、JPA/Hibernate、Redis、Kafka/RocketMQ、Spring Security 等
 - 文件类型专项清单（v1.6.5）：`resolve-review-rules.sh` 按路径模式对命中文件叠加聚焦检查清单——pom.xml / mapper XML / Spring 与日志配置 / Dockerfile / CI workflow（Jenkinsfile、GitLab CI、GitHub Actions）/ npm package.json 等 11 类（清单文档 content 内嵌注入，逐文件第一命中唯一分组）；文件级分批与单 Agent 路由全量可达，Maven 大仓模块分批路由由 Security 伴随文件清单补齐构建/配置/CI/容器文件
 - Maven 多模块大仓库：支持 `module-sequential` 和 `ai-planned` 分批，批次可恢复，合并报告区分阶段性/完整
@@ -128,9 +130,11 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 - **组内次要文件覆盖义务（v1.6.4）**：批次结果必须以 `## 覆盖情况` 逐文件披露已审 N/M 与跳过原因，次要文件不得静默跳过
 - **fail-open**：自校验失败的问题保留原状，只会让结果变好或不变，绝不会让结果变没
 
-### 增量对照与输出增强（v1.6.6）
+### 增量对照与输出增强（v1.6.6 / v1.6.8）
 
 - 增量重复抑制：增量审查可选择对照上一份本地 Markdown 报告，同文件 + 同维度 + 行区间 IoU > 0.6 的发现标题追加「上轮已报」标记（fail-open，只标记不删除）
+- 跨轮报告对比（v1.6.8）：同一份历史报告同时生成四桶对比——新增 / 仍存在 / 已修复 / 未复审；匹配按 文件 × 维度 × 证据代码 内容指纹（行号与优先级不入键，升级/标题重写/行号漂移不拆散身份），本轮已审范围之外消失的上轮问题判为「未复审」而非「已修复」（单 agent 用 review-input、批次用 run-manifest completed+reused 口径）；报告末尾幂等追加「📊 与上轮报告对比」小节
+- churn 注意力注入（v1.6.8）：三个审查 agent 读取审查输入清单中的每文件 `insertions`/`deletions`（+N/-M），高 churn 文件优先深读、证据优先引用变更行
 - 业务背景注入：最终确认可选「附业务背景」，自定义文本或默认使用所审提交的 commit message（≤8000 字符）注入三个审查 agent，辅助判断变更是有意为之还是缺陷
 - SARIF 导出：报告保存方式新增「SARIF 文件（本地 .sarif，CI 对接）」，在本地 Markdown 报告旁生成同名 `.sarif`（P0→error / P1→warning / 其余→note，指纹与跨批次去重同源），可直接接入 GitHub Code Scanning 等 CI 平台
 
@@ -143,6 +147,13 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 - 正式源码范围：只统计受支持 package 的 `src` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`，排除测试、构建产物、配置脚本、`.d.ts`
 - Monorepo 范围选择：`src/components` 或 `components` 会匹配所有前端族群 package-local `*/src/components/`；`apps/web/src/components` 只匹配指定 package
 - TypeScript LSP 可用时用于语义增强；不可用时降级到 import graph + 配置 + 文本检索
+
+### Python 审查
+
+- 12 个 Python 维度：正确性、类型安全、代码质量、框架规范、数据访问与 ORM、安全、性能、异步与并发、资源管理、错误处理与可观测性、测试质量、接口与类型契约
+- 技术栈感知：Django / FastAPI / SQLAlchemy / Celery 专项规则，覆盖 ORM N+1、反序列化 RCE、async 阻塞、CSRF / middleware 配置等 Python 高频事故点
+- 正式源码范围：src layout 与 flat layout（含 namespace package）加根级入口（`app.py` / `main.py` / `wsgi.py` / `asgi.py` / `manage.py`）；测试与 migrations 只作上下文
+- pyright / pylsp / jedi LSP 可用时用于语义增强，pyright CLI 仅提供类型诊断；均不可用时降级到配置 + 文本检索静态分析
 
 ## 审查模式
 
@@ -157,13 +168,13 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 
 ## 审查范围
 
-| 入口 | Java | Frontend |
-|------|------|----------|
-| 增量审查 | 最近 N 次提交的变更及必要关联上下文 | 最近 N 次提交的前端变更及必要关联上下文 |
-| 全量审查 | 全部 `src/main/java` 生产源码 | 全部受支持 package-local `src` 生产源码 |
-| 指定模块 | Maven 模块相对路径 | `src` 顶层目录或 package-local `src` 子目录 |
+| 入口 | Java | Frontend | Python |
+|------|------|----------|--------|
+| 增量审查 | 最近 N 次提交的变更及必要关联上下文 | 最近 N 次提交的前端变更及必要关联上下文 | 最近 N 次提交的 Python 变更及必要关联上下文 |
+| 全量审查 | 全部 `src/main/java` 生产源码 | 全部受支持 package-local `src` 生产源码 | 全部 Python 生产源码（src / flat 布局包 + 根级入口；测试与迁移只作上下文） |
+| 指定模块 | Maven 模块相对路径 | `src` 顶层目录或 package-local src 子目录 | Python 包目录（未识别到包目录时自动回退全量） |
 
-范围选择会在分批、覆盖率、报告和子 agent 参数中保持一致。前端指定目录通过不可变 source manifest 收敛，不会误扫测试文件或构建产物。
+范围选择会在分批、覆盖率、报告和子 agent 参数中保持一致。前端 / Python 指定目录均通过不可变 source manifest 收敛，不会误扫测试文件或构建产物。
 
 单 Agent 与分批 Agent 都接收同一冻结输入派生的关联审查单元。关联单元只保持跨文件语义上下文，不预判风险，也不改变正式扫描边界。
 
@@ -183,6 +194,7 @@ P0 必须同时满足：生产可达、证据完整且置信度高、事故级�
 - 分批合并报告：支持 `[阶段性]` 与 `[合并阻塞]` 标题，明确已纳入批次、遗留批次和覆盖率；合并前对纳入批次自动执行跨文件重归档（fail-open），partial 批次发现标注入纳但报告保持阶段性
 - 跨批次指纹去重（v1.6.5）：合并时按 文件路径 ␀ 维度标签 ␀ 归一化证据行 的 sha256 内容指纹（即按文件 × 维度 × 证据代码）确定性合并措辞漂移的重复发现；证据归一与跨文件重归档同口径，路径按原字节保留，行号与措辞不入键，无文件行且无闭合围栏的块退回整块折叠键兜底；`summary.json` 的 `dedup` 对象与报告「跨批次去重」行披露统计
 - SARIF 导出（v1.6.6）：报告保存方式勾选「SARIF 文件（本地 .sarif，CI 对接）」时，在本地 Markdown 报告同目录生成同名 `.sarif`（P0→error / P1→warning / 其余→note；指纹与跨批次去重同源）；仅本地导出，与飞书上传互不影响
+- 跨轮报告对比（v1.6.8）：`core/compare-review-reports.sh` 对照上一份报告生成 新增 / 仍存在 / 已修复 / 未复审 四桶计数并在报告末尾追加对比小节；未复审桶由 `--reviewed-from` 已审范围豁免，防止把范围外未审文件误报为已修复
 
 ## 项目级审查规则
 
@@ -229,6 +241,7 @@ rules:
 | [Node 专项规则](references/languages/frontend/node-rules.md) | Node runtime / HTTP API / BFF / 模块系统专项审查规则 |
 | [Django 专项规则](references/languages/python/django-rules.md) | Django ORM / middleware / signals / admin / CSRF / migration 专项审查规则 |
 | [FastAPI 专项规则](references/languages/python/fastapi-rules.md) | FastAPI DI / Pydantic / async / OpenAPI 专项审查规则 |
+| [企业级 Security 专项审查框架](references/security/enterprise-security-framework.md) | Security 模式跨 Java / Python / Frontend 统一安全契约、证据分级与输出规范 |
 | [源码范围契约](references/languages/frontend/source-scope.md) | 前端正式源码、上下文和排除项 |
 | [Python 源码范围契约](references/languages/python/source-scope.md) | Python 正式源码、上下文和排除项 |
 | [语言适配器契约](references/language-adapter-contract.md) | Java / Frontend / Python 与共享内核之间的 PROFILE_SCHEMA |

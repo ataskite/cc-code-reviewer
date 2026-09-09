@@ -392,6 +392,21 @@ fi
 jq -e 'has("filetype_checklists") | not' "$TMP_DIR/rules-broken.json" >/dev/null || fail "broken map must omit filetype_checklists"
 cmp -s "$TMP_DIR/rules-broken.json" "$TMP_DIR/rules-absent.json" || fail "broken vs absent map outputs must match"
 
+# ---- [9] checklist slug 引用约束（对标 OpenCodeReview 规则文件任意读取加固）----
+# 越权 slug（路径分隔符 / ..）整条忽略：分组缺省、输出回到 absent 基线，
+# 映射文件永远拼不出 review-checklists 目录之外的 doc 路径。
+cat > "$TMP_DIR/map-escape.json" <<'JSON'
+{"schema_version":1,"match":"first","patterns":[
+  {"pattern":"**/pom.xml","checklist":"../../secrets/leak"},
+  {"pattern":"**/*.xml","checklist":"sub/mapper-xml"}
+]}
+JSON
+CC_CODE_REVIEWER_FILETYPE_MAP_PATH="$TMP_DIR/map-escape.json" \
+  bash "$RESOLVER" "$APP" "$MANIFEST" "$TMP_DIR/rules-escape.json" >/dev/null
+jq -e 'has("filetype_checklists") | not' "$TMP_DIR/rules-escape.json" >/dev/null || fail "traversal checklist slug must be ignored"
+grep -q 'secrets' "$TMP_DIR/rules-escape.json" && fail "traversal slug leaked into resolved rules"
+cmp -s "$TMP_DIR/rules-escape.json" "$TMP_DIR/rules-absent.json" || fail "escape-map output must equal absent-map baseline"
+
 # ---- [6+确定性] 同一输入连跑两次输出逐字节一致 ----
 bash "$RESOLVER" "$APP" "$MANIFEST" "$TMP_DIR/rules-run1.json" >/dev/null
 bash "$RESOLVER" "$APP" "$MANIFEST" "$TMP_DIR/rules-run2.json" >/dev/null

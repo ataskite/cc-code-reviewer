@@ -7,12 +7,15 @@ set -euo pipefail
 #   bash scripts/core/export-sarif.sh <REPORT_MD> <OUTPUT_SARIF> [--project-name <name>]
 #
 # 契约：
-# - 发现块切分与 merge-batch-results.sh / relocate-findings.sh 同一套边界：
-#   表头 `^###\s+(?:P[0-3]|待确认)(?:\b|\s|\|)`，块在下一个 `^##`/`^###` 处结束。
-# - partialFingerprints["ccCodeReviewer/v1"] 与 merge 跨批次去重指纹完全同公式：
-#   sha256_hex(encode_utf8(文件路径 \0 维度标签 \0 归一化证据行))——路径仅 trim 并统一
-#   "\\" 为 "/" 再剥结尾一个半/全角 ":数字"（区间行号不剥，与 merge 口径一致）；证据行
-#   归一 = 去 CR → trim → 剥一个 +/- 前缀 → 再 trim → 去尾空白，空行全弃后按 "\n" 连接。
+# - 发现块切分与证据/路径/指纹口径统一在发现内核 scripts/core/lib/CCR/Findings.pm
+#   （与 merge-batch-results.sh / relocate-findings.sh / compare-review-reports.sh /
+#   mark-repeat-findings.sh 同源）：表头 `^###\s+(?:P[0-3]|待确认)(?:\b|\s|\|)`，
+#   块在下一个 `^##`/`^###` 处结束。
+# - partialFingerprints["ccCodeReviewer/v1"] = finding_fingerprint，与 merge 跨批次
+#   去重指纹同一实现：sha256_hex(encode_utf8(文件路径 \0 维度标签 \0 归一化证据行))
+#   ——路径仅 trim 并统一 "\\" 为 "/" 再剥结尾一个半/全角 ":数字"（区间行号不剥，
+#   与 merge 口径一致）；证据行归一 = 去 CR → trim → 剥一个 +/- 前缀 → 再 trim →
+#   去尾空白，空行全弃后按 "\n" 连接。
 #   两处对同一发现块必须产出同一身份键（tests/core/test_core_export_sarif.sh 交叉验证）。
 # - level 映射：P0→error、P1→warning、P2/P3/待确认→note。
 # - ruleId = 维度标签内层文本（空白折叠）；缺失为 unknown-dimension；rules 数组为实际
@@ -80,31 +83,25 @@ if [ ! -w "$OUTPUT_DIR" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$SCRIPT_DIR/lib"
 VERSION_FILE="$(cd "$SCRIPT_DIR/../.." && pwd)/VERSION"
 TOOL_VERSION="unknown"
 if [ -r "$VERSION_FILE" ]; then
   TOOL_VERSION="$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//' < "$VERSION_FILE")"
 fi
 
-perl -Mutf8 -MEncode=decode,encode,encode_utf8,FB_CROAK,LEAVE_SRC -MJSON::PP -MDigest::SHA=sha256_hex -MCwd=abs_path -e '
+perl -I "$LIB_DIR" -MCCR::Findings=:all -Mutf8 -MEncode=decode,encode,encode_utf8,FB_CROAK,LEAVE_SRC -MJSON::PP -MDigest::SHA=sha256_hex -MCwd=abs_path -e '
   use strict; use warnings;
 
   my $tmpfile = "";
   END { unlink $tmpfile if length $tmpfile && -e $tmpfile; }
 
+  # 发现内核（scripts/core/lib/CCR/Findings.pm）：to_chars / slurp_raw /
+  # collapse_ws / norm_line / parse_dim_tag / first_location_path / evidence_lines /
+  # 块边界判定 / finding_fingerprint 的唯一实现，与 merge 去重 / compare 对比 /
+  # relocate / mark-repeat 同源同口径（本脚本传入的是已去换行的块体行；
+  # merge 传入带换行的行，各正则对二者等价）。
   # argv 中的自由文本（--project-name / VERSION）按 UTF-8 解码；文件路径保持原字节。
-  sub to_chars {
-    my $s = shift;
-    return $s if utf8::is_utf8($s);
-    my $t = eval { decode("UTF-8", $s, FB_CROAK | LEAVE_SRC) };
-    return defined $t ? $t : $s;
-  }
-  sub slurp_raw {
-    my $p = shift;
-    open my $fh, "<:raw", $p or return undef;
-    local $/; my $d = <$fh>; close $fh;
-    return defined $d ? $d : "";
-  }
 
   my ($report_path, $output_path, $project_name, $tool_version) = @ARGV;
   ($project_name, $tool_version) = map { to_chars($_) } ($project_name, $tool_version);
@@ -117,63 +114,7 @@ perl -Mutf8 -MEncode=decode,encode,encode_utf8,FB_CROAK,LEAVE_SRC -MJSON::PP -MD
   my @lines = split /\n/, $text, -1;
   pop @lines if @lines && $lines[-1] eq "";
 
-  # ---- 以下五个子程序与 merge-batch-results.sh 的 dedupe_issue_blocks 逐句同口径 ----
-  # （本脚本传入的是已去换行的块体行；merge 传入带换行的行，各正则对二者等价。）
-  sub collapse_ws {
-    my $s = shift // "";
-    $s =~ s/\s+/ /g;
-    $s =~ s/^\s+//;
-    $s =~ s/\s+$//;
-    return $s;
-  }
-  sub norm_evidence_line {
-    my $l = shift // "";
-    $l =~ s/\r$//;
-    $l =~ s/^\s+//;
-    $l =~ s/^[-+]?//;
-    $l =~ s/^\s+//;
-    $l =~ s/\s+$//;
-    return $l;
-  }
-  sub parse_dim_tag {
-    my ($hdr) = @_;
-    return "" unless $hdr =~ /\[([^\]]*)\]/;
-    my $tag = collapse_ws($1);
-    return $tag // "";
-  }
-  sub first_location_path {
-    for (@_) {
-      next unless /^-\s*文件：\s*(.*)$/;
-      my $p = $1;
-      $p =~ s/^\s+//;
-      $p =~ s/\s+$//;
-      return "" unless length $p;
-      $p =~ s!\\!/!g;
-      ($p =~ s/:([0-9]+)$//) || ($p =~ s/：([0-9]+)$//);
-      return $p;
-    }
-    return "";
-  }
-  sub evidence_block {
-    my ($open, $close);
-    for my $i (0 .. $#_) {
-      my $t = $_[$i];
-      $t =~ s/^\s+//;
-      $t =~ s/\s+$//;
-      next unless $t =~ /^```/;
-      if (!defined $open) { $open = $i; }
-      else { $close = $i; last; }
-    }
-    return () unless defined $open && defined $close && $close > $open;
-    my @ev;
-    for my $i (($open + 1) .. ($close - 1)) {
-      my $n = norm_evidence_line($_[$i]);
-      push @ev, $n if length $n;
-    }
-    return @ev;
-  }
-
-  # ---- 发现块切分：与 merge/relocate 相同的边界状态机 ----
+  # ---- 发现块切分：块边界状态机统一在 scripts/core/lib/CCR/Findings.pm ----
   my @blocks;
   my (@block, $in_issue);
   sub flush_block {
@@ -183,12 +124,12 @@ perl -Mutf8 -MEncode=decode,encode,encode_utf8,FB_CROAK,LEAVE_SRC -MJSON::PP -MD
     $in_issue = 0;
   }
   for my $l (@lines) {
-    if ($l =~ /^###\s+(?:P[0-3]|待确认)(?:\b|\s|\|)/) {
+    if (is_issue_heading($l)) {
       flush_block();
       @block = ($l); $in_issue = 1; next;
     }
     if ($in_issue) {
-      if ($l =~ /^##\s+/ || $l =~ /^###\s+/) { flush_block(); next; }
+      if (is_block_terminator($l)) { flush_block(); next; }
       push @block, $l; next;
     }
   }
@@ -259,11 +200,12 @@ perl -Mutf8 -MEncode=decode,encode,encode_utf8,FB_CROAK,LEAVE_SRC -MJSON::PP -MD
       }
     }
 
-    # 指纹：与 merge 去重键完全同公式（维度缺失时指纹内为空串，不代入 unknown-dimension）。
+    # 指纹：finding_fingerprint（发现内核唯一实现，与 merge 去重键同公式；
+    # 维度缺失时指纹内为空串，不代入 unknown-dimension）。
     my $fp_path = first_location_path(@body);
-    my @ev = evidence_block(@body);
+    my @ev = evidence_lines(@body);
     my $evid = @ev ? join("\n", @ev) : "";
-    my $fp = sha256_hex(encode_utf8(join("\x00", $fp_path, $dim, $evid)));
+    my $fp = finding_fingerprint($fp_path, $dim, $evid);
 
     push @results, {
       rule_id => $rule_id,

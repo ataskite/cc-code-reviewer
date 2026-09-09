@@ -32,7 +32,10 @@ set -euo pipefail
 # "filetype_checklists" — only groups with >= 1 matched file appear, ordered
 # deterministically by first pattern occurrence in the map.  Each group
 # carries the absolute checklist doc path plus the inline doc text as
-# "content", so sub-agents stay single-read.  Missing/broken map file,
+# "content", so sub-agents stay single-read.  Checklist slugs are confined
+# to the plugin's review-checklists directory: any value containing a path
+# separator or ".." is ignored outright, so a tampered map can never turn
+# the resolver into an arbitrary-file reader.  Missing/broken map file,
 # unreadable doc, disabled patterns or zero matches all fail open: the field
 # is omitted and every legacy output byte stays exactly what pre-overlay runs
 # produced.
@@ -163,6 +166,11 @@ perl -MJSON::PP -MCwd=abs_path -e '
       $pat =~ s/\s+$//; $pat =~ s/^\s+//;
       next unless length $pat && length $checklist;
       next if defined $ent->{enabled} && !$ent->{enabled};
+      # 引用约束（对标 OpenCodeReview 规则文件任意读取加固）：checklist 必须是
+      # references/review-checklists/ 内的单层 slug，含路径分隔符或 ".." 的取值
+      # 整条忽略（fail-open），绝不借映射文件读取清单目录之外的文件。
+      next if $checklist =~ m![/\\]!;
+      next if $checklist =~ /\.\./;
       push @compiled,{pattern=>$pat,checklist=>$checklist,res=>compile_ft_globs($pat)};
     }
     return () unless @compiled;

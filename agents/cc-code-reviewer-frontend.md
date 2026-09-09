@@ -86,7 +86,7 @@ maxTurns: 50
 - **审查输出模式**（`REVIEW_OUTPUT_MODE`）：`完整报告`（默认）或 `仅发现清单`（分批审查单批输出）
 - **审查范围**（`REVIEW_SCOPE`）：`全量代码`，或用户在步骤 4 选定的 `src` 子目录相对路径列表（逗号分隔，如 `src/components,src/pages`）。目录范围已由主 agent 收敛到 `source manifest`（单 agent）或 `BATCH_FILE_LIST`（分批）；本子 agent直接使用注入清单，**不得再次按目录过滤，也不得外扩到未选目录**
 - **source manifest**：不可变生产源码清单（绝对路径，每行一个）。单 agent 模式从该清单确定文件集合；文件级分批模式必须从 `BATCH_FILE_LIST` 确定本批文件，不得查找 `scan_roots`
-- **审查输入清单**（`REVIEW_INPUT_PATH`）：存在时是增量 selected / excluded 的审计依据；不得重新运行 git diff 扩展正式范围。
+- **审查输入清单**（`REVIEW_INPUT_PATH`）：存在时是增量 selected / excluded 的审计依据；不得重新运行 git diff 扩展正式范围。清单 items 同时携带每文件变更规模 `insertions` / `deletions`（+N/-M churn 统计）：高 churn 文件优先安排深读，证据引用优先取自变更行本身。
 - **关联审查单元**（`REVIEW_UNITS_PATH`）：存在时必须读取。它只按 import/直接依赖组织相关生产文件，用于保持跨文件语义上下文；它不标注风险、不定义安全候选，也不改变 source manifest / `BATCH_FILE_LIST` 的正式边界。
 - **项目审查规则解析结果**（`REVIEW_RULES_RESOLVED_PATH`）：只为本批正式文件附加检查重点，不屏蔽发现、不覆盖前端专项规则。
 
@@ -178,7 +178,7 @@ maxTurns: 50
 
 先确定文件集合：
 - **存量审查**：单 agent 以 source manifest、分批以 `BATCH_FILE_LIST` 为扫描范围
-- **增量审查**：直接使用注入的变更文件列表作为审查主输入，禁止重新执行 git diff；对已删除文件先检查存在性再 read，无法获取内容则标记为"待确认项"；按改动规模优先审查，再按需外扩 1-2 层关联文件（调用者/被调用者/配置/测试）
+- **增量审查**：直接使用注入的变更文件列表作为审查主输入，禁止重新执行 git diff；对已删除文件先检查存在性再 read，无法获取内容则标记为"待确认项"；按改动规模优先审查（逐文件规模以 `REVIEW_INPUT_PATH` items 的 `insertions` / `deletions`，即 +N/-M 为准），再按需外扩 1-2 层关联文件（调用者/被调用者/配置/测试）
 
 若注入了 `REVIEW_UNITS_PATH`，优先按其中的结构单元安排读取顺序，使直接关联的入口、状态、请求和下游实现处于同一推理窗口。结构单元只提供阅读邻接关系，不代表其中存在问题。
 

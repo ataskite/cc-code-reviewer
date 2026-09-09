@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.6.8 — 对标 OpenCodeReview v1.10.1-v1.11.6：跨轮报告对比、churn 注意力与规则引用加固
+
+### 新增
+
+- **跨轮报告对比（吸收 OpenCodeReview session compare，v1.10.2 #946）**：新增 `scripts/core/compare-review-reports.sh <CURR_REPORT> <PREV_REPORT> [--reviewed-from <coverage>]`。修复-复审闭环里把两份本地 Markdown 报告的发现分为四桶——新增 / 仍存在 / 已修复 / 未复审；身份键 = sha256(文件路径 ␀ 维度标签 ␀ 归一化证据行)，与跨批次去重 / SARIF 指纹同族但行号锚（点 `:N` 与区间 `:N-M`）全剥：优先级升级、标题重写、行号漂移、缩进/± 前缀重排版都不拆散「仍存在」判定（维度变化不算同一问题）；多重集语义 min(N,M)（同键 N 条上轮 × M 条本轮 → min 条仍存在，多出侧归新增/已修复）。`--reviewed-from` 提供本轮已审范围，把上轮发现所在文件不在范围内的情况判为「未复审」而非「已修复」（对照全量报告 vs 差量复审时唯一能给错的答案）：支持 run-manifest.json（coverage_sets.completed + reused，rename old_path 计入）、review-input.json（selected=true）与纯文本清单；缺失/不可读/不可解析 fail-open 降级三桶。stdout 恒 8 行（`COMPARE_REPORT_PATH=` / `COMPARE_CURR_FINDINGS=` / `COMPARE_PREV_FINDINGS=` / `COMPARE_NEW=` / `COMPARE_PERSISTING=` / `COMPARE_RESOLVED=` / `COMPARE_NOT_REVIEWED=` / `COMPARE_COVERAGE_SOURCE=`）；报告末尾幂等追加「## 📊 与上轮报告对比」小节（已存在先移除再重写，重复运行字节稳定；上轮零有效块且原本无小节时报告字节不动）；原子落盘保留权限位；用法/读入错误 exit 1。主 Skill 步骤 4 增量对照选项升级为「对照历史报告（标记 + 对比）」，单 agent 路径在 mark-repeat 之后传 `--reviewed-from "$REVIEW_INPUT_PATH"`，批次路径在合并后传 `--reviewed-from "$RUN_DIR/run-manifest.json"`，`COMPARE_PREV_FINDINGS>0` 时最终汇总追加 `📊 与上轮对比：新增 X / 仍存在 Y / 已修复 Z / 未复审 W（对照 {PREV_REPORT basename}）`；`tests/core/test_core_compare_review_reports.sh` 固化 12 组契约。
+- **churn 注意力注入（吸收 OpenCodeReview churn stats，v1.11.0 #1082）**：三个审查 agent（Java / Frontend / Python）的「审查输入清单」说明扩展——清单 items 携带每文件变更规模 `insertions` / `deletions`（+N/-M churn 统计，prepare-review-input.sh 冻结输入时已按 `git diff --numstat` 采集），高 churn 文件优先安排深读（新增行数远超删除行数的文件通常是本次变更重心），证据引用优先取自变更行本身；Java 增量阶段 B 与前端/Python 的优先级排序同步逐文件 churn 口径。
+
+### 变更
+
+- **发现内核提取（`scripts/core/lib/`）——五脚本共享的发现块/指纹实现收敛为单一来源，sha256 回退链统一三级，行为字节级不变**：新增 `scripts/core/lib/CCR/Findings.pm`（发现内核唯一实现：块边界 / 证据归一 norm_line / 维度标签 / 同轮与跨轮两条有意不同的路径口径 / 内容指纹 finding_fingerprint / 报告 IO），`relocate-findings.sh` / `mark-repeat-findings.sh` / `merge-batch-results.sh` / `compare-review-reports.sh` / `export-sarif.sh` 的同名复制实现全部删除并改为 `-I lib -MCCR::Findings=:all` 导入；新增 `scripts/core/lib/common.sh` 统一 sha256 三级回退链（shasum -a 256 → sha256sum → perl Digest::SHA），`prepare-review-input.sh` / `validate-resume-input.sh` / `plan-file-batches.sh` / `languages/java/plan-large-batches.sh` 的本地副本删除改为 source；新增 `tests/core/test_core_lib_findings.sh` 与 `tests/core/test_core_lib_common.sh` 守护模块单元契约。
+- **规则引用路径加固（对标 OpenCodeReview rule.json 任意读取修复，v1.11.1 #1100）**：`core/resolve-review-rules.sh` 的文件类型清单映射增加 slug 约束——`checklist` 必须是 `references/review-checklists/` 内的单层 slug，含路径分隔符（`/` 或 `\`）或 `..` 的取值整条忽略（fail-open 跳过该 pattern），被篡改的映射文件永远无法把解析器变成任意文件读取器；`tests/core/test_core_filetype_rule_map.sh` 新增越权 slug 用例（分组缺省、输出回到 absent 基线）。
+- 同步 README / AGENTS / CLAUDE / examples / report-format 契约文档：报告格式新增「与上轮报告对比小节」后处理说明（第 7 条），README 特性段新增跨轮对比与 churn 注意力条目，AGENTS/CLAUDE 交互契约新增 Cross-round report compare 与 Churn-aware attention 两条及测试覆盖描述。
+
+### 升级方式
+
+三端插件 manifest 已指向 1.6.8（`.claude-plugin/plugin.json`、`.claude-plugin/marketplace.json` 两处、`.codex-plugin/plugin.json`、`.zcode-plugin/plugin.json`，与 `VERSION` 单一真相源一致）。Claude Code / Codex / ZCode 用户重新加载插件即可（`/reload-plugins` 或对应入口）。
+
 ## 1.6.7 — 企业级 Security 专项框架：统一安全契约、证据分级与授权评测
 
 ### 新增
