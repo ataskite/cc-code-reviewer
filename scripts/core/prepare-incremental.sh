@@ -6,6 +6,8 @@ set -e
 
 PROJECT_DIR="${1:?请输入项目路径}"
 COMMIT_COUNT="${2:?请输入提交次数}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/lib/common.sh"
 
 # 防止 HEAD~N 越界：获取实际提交数
 TOTAL_COMMITS=$(git -C "$PROJECT_DIR" rev-list --count HEAD 2>/dev/null || echo "0")
@@ -26,7 +28,8 @@ echo "# === 变更文件列表 ==="
 if [ "$COMMIT_COUNT" -eq 0 ]; then
   echo "（无提交记录）"
 elif [ "$COMMIT_COUNT" -ge "$TOTAL_COMMITS" ]; then
-  git -C "$PROJECT_DIR" diff --name-only 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD
+  EMPTY_TREE_REF="$(git_empty_tree_oid "$PROJECT_DIR")"
+  git -C "$PROJECT_DIR" diff --name-only "$EMPTY_TREE_REF" HEAD
 elif [ "$TOTAL_COMMITS" -eq 1 ]; then
   git -C "$PROJECT_DIR" show --format="" --name-only HEAD
 else
@@ -38,7 +41,8 @@ echo "# === 变更统计 ==="
 if [ "$COMMIT_COUNT" -eq 0 ]; then
   echo "（无变更）"
 elif [ "$COMMIT_COUNT" -ge "$TOTAL_COMMITS" ]; then
-  git -C "$PROJECT_DIR" diff --stat 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD
+  EMPTY_TREE_REF="${EMPTY_TREE_REF:-$(git_empty_tree_oid "$PROJECT_DIR")}"
+  git -C "$PROJECT_DIR" diff --stat "$EMPTY_TREE_REF" HEAD
 elif [ "$TOTAL_COMMITS" -eq 1 ]; then
   git -C "$PROJECT_DIR" show --stat --format="" HEAD
 else

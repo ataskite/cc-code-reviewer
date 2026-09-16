@@ -120,4 +120,17 @@ done
   [ "$C" = "$D" ] || exit 1
 ) || fail "combined smoke under set -euo pipefail"
 
-echo "PASS: core lib common.sh sha256 三级回退链"
+# ============ 7) 空 tree OID 随 Git 对象格式变化 ==========
+SHA1_REPO="$TMP_DIR/git-sha1"
+git init -q "$SHA1_REPO"
+SHA1_EMPTY="$(git_empty_tree_oid "$SHA1_REPO")"
+expect_eq "$SHA1_EMPTY" "4b825dc642cb6eb9a060e54bf8d69288fbee4904" "SHA-1 empty tree oid"
+
+SHA256_REPO="$TMP_DIR/git-sha256"
+if git init -q --object-format=sha256 "$SHA256_REPO" 2>/dev/null; then
+  SHA256_EMPTY="$(git_empty_tree_oid "$SHA256_REPO")"
+  [ "${#SHA256_EMPTY}" -eq 64 ] || fail "SHA-256 empty tree oid must have 64 hex chars"
+  [ "$SHA256_EMPTY" != "$SHA1_EMPTY" ] || fail "SHA-256 empty tree oid must differ from SHA-1"
+fi
+
+echo "PASS: core lib common.sh sha256 回退链与 Git 空 tree OID"

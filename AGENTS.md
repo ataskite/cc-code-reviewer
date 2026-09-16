@@ -149,12 +149,12 @@ scripts/
   │   │   ├── common.sh                   # 共享 shell 助手（sha256 三级回退链）
   │   │   └── CCR/Findings.pm             # 发现块共享 Perl 模块（边界/归一化/维度/路径口径/指纹）
   │   ├── detect-project.sh              # Project identification
-  │   ├── detect-branches.sh             # Branch detection
+  │   ├── detect-branches.sh             # Branch detection (+ git >= 2.41 version preflight warning)
   │   ├── switch-branch.sh               # Branch switching
   │   ├── detect-lark-plugin.sh          # lark-cli detection
   │   ├── preview-recent-commits.sh      # Recent commit preview for incremental scope choices
   │   ├── prepare-incremental.sh         # Incremental review preparation
-  │   ├── prepare-review-input.sh        # Immutable review input snapshot
+  │   ├── prepare-review-input.sh        # Immutable review input snapshot (secret-path force-exclusion)
   │   ├── prepare-review-context.sh      # Structural review units from immutable selected input
   │   ├── prepare-semantic-groups.sh     # Deterministic incremental semantic-group sidecar from review-input metadata
   │   ├── detect-fix-input.sh            # Local Markdown fix input path validation
@@ -212,12 +212,12 @@ bash tests/run_all.sh > /tmp/test.log 2>&1; echo $?; tail /tmp/test.log
 
 The suite runs every `tests/test_*.sh` file and then `git diff --check`. It covers:
 - `core/detect-project.sh`: local path detection and missing-path failures
-- `core/detect-branches.sh` / `core/switch-branch.sh`: branch discovery, clean local checkout, dirty local workspace protection
+- `core/detect-branches.sh` / `core/switch-branch.sh`: branch discovery, clean local checkout, dirty local workspace protection, git >= 2.41 version preflight warning (stderr `WARN_GIT_VERSION=`, fail-open)
 - `languages/java/project-scan.sh`: Maven multi-module scans, module paths with spaces, unknown-project line counts
 - `core/detect-lark-plugin.sh`: lark-cli detection output contract
 - `core/preview-recent-commits.sh`: recent commit preview for incremental INTERACT choices
 - `core/prepare-incremental.sh`: incremental diff ranges that include the root commit
-- `core/prepare-review-input.sh`: immutable selected/excluded input, Git refs and content fingerprints
+- `core/prepare-review-input.sh`: immutable selected/excluded input, Git refs and content fingerprints, secret-path force-exclusion (`env` family with env-only template exemption (a template under another secret rule, e.g. `.ssh/**`, stays excluded), `.ssh/**`, id_* keys, netrc/npmrc/pypirc/dockercfg → `exclude_reason=secret-path` at the highest precedence, rename old_path checked, never re-included by manifest)
 - `core/prepare-review-context.sh`: derives name-independent structural review units from the same immutable selected input; it never classifies security findings
 - `core/decide-batch-mode.sh`: current-scope size gate; small Maven multi-module reviews skip step 4B and remain single-agent
 - `languages/java/detect-code-intelligence.sh`: jdtls-lsp availability and fallback messaging
@@ -291,6 +291,10 @@ After making changes, reload the plugin:
 
 Verify installation by triggering the skill with a Java review request such as `帮我审查这个项目 /path/to/project`.
 
+### Tracking Upstream (OpenCodeReview)
+
+When researching OpenCodeReview (`alibaba/open-code-review`) updates for absorption, do not query the GitHub API. Use the user's local clone at `/Users/jiangkun/Documents/github-project/open-code-review`: run `git pull --ff-only` there first, then inspect new commits (`git log <last-absorbed-tag>..HEAD --oneline`) and release tags locally. Last absorbed baseline: v1.12.3 (implemented in v1.6.9).
+
 ## Important Notes
 
 ### Scan Interaction Contract
@@ -303,6 +307,7 @@ Verify installation by triggering the skill with a Java review request such as `
 - Incremental repeat suppression (v1.6.6): after the incremental `COMMIT_COUNT` confirmation, the Skill asks one optional single-select INTERACT (跳过（默认） / 对照历史报告（标记 + 对比） via Other path input) and stores `REPEAT_PREV_REPORT_PATH`; missing/unreadable paths degrade to skip (fail-open). When set, the main skill runs `core/mark-repeat-findings.sh "$REPORT_PATH" "$REPEAT_PREV_REPORT_PATH"` after the local report is persisted (batch path: after merge and `report_title` validation, before Feishu upload), shows the 4-line stdout counters, and appends `🔁 上轮已报标记：N 条（对照 {PREV_REPORT basename}，IoU>0.6）` to the final summary when `REPEAT_MARKED>0`; default IoU threshold 0.6 is tunable via `CC_CODE_REVIEWER_REPEAT_IOU_THRESHOLD`.
 - Cross-round report compare (v1.6.8, absorbed from OpenCodeReview session compare): with `REPEAT_PREV_REPORT_PATH` set, the main skill runs `core/compare-review-reports.sh "$REPORT_PATH" "$REPEAT_PREV_REPORT_PATH" --reviewed-from <coverage>` after the repeat marking and before SARIF export. Findings are matched by content fingerprint (file ␀ dimension ␀ normalized evidence, line numbers excluded — same family as merge dedup; point/range anchors are both stripped so cross-round quoting drift never splits identity) into new / persisting / resolved / not_reviewed (multiset min(N,M) semantics; priority changes stay persisting). `--reviewed-from` supplies the current run's reviewed paths so prev-round findings outside scope count as not_reviewed instead of falsely resolved: single-agent passes `REVIEW_INPUT_PATH` (selected=true items), batch passes `$RUN_DIR/run-manifest.json` (coverage_sets.completed + reused, rename old_path included); missing/unreadable sources fail-open to three buckets. stdout is 8 lines (`COMPARE_*` counters), the report gains an idempotent `## 📊 与上轮报告对比` tail section, and `COMPARE_PREV_FINDINGS>0` appends `📊 与上轮对比：新增 X / 仍存在 Y / 已修复 Z / 未复审 W（对照 {PREV_REPORT basename}）` to the final summary.
 - Churn-aware attention (v1.6.8, absorbed from OpenCodeReview churn stats): all three review agents read per-file `insertions`/`deletions` (+N/-M) from `REVIEW_INPUT_PATH` items and prioritize deep reads by churn; evidence quoting prefers changed lines over distant stable code.
+- Secret-path protection & evidence masking (v1.6.9, absorbed from OpenCodeReview v1.12.3): `core/prepare-review-input.sh` force-excludes credential-looking paths (`.env` / `.env.*` with `.env.example`/`.env.sample`/`.env.template` exempt only when no unconditional secret rule also matches, `.ssh/**`, id_rsa/id_dsa/id_ecdsa/id_ed25519, `.netrc`/`_netrc`/`.npmrc`/`.pypirc`/`.dockercfg`, case-insensitive, path-only) as `exclude_reason=secret-path` at the highest precedence — manifest membership never re-includes them and rename old_path is checked too. All three review agents plus `references/report-format.md` and the security framework enforce 敏感值脱敏: evidence and advice never reproduce credential values verbatim; quote the key name and location with `***` masking and still emit the finding (e.g. 疑似硬编码密钥) — reports are uploaded to collaborative docs, so verbatim secrets are a second leak.
 - Business background injection (v1.6.6): the final confirmation step offers `确认执行（附业务背景）`; selecting it appends exactly one single-select INTERACT (使用所审提交的 commit message（仅增量可选） / 跳过背景, custom text via Other). `REVIEW_BACKGROUND` prefers custom text, falls back to the incremental commit-message text by default (incremental reviews with no background at all also default to it), and is `未提供` for stock reviews without input; hard cap 8000 characters with truncation disclosed in the final summary. Both the single-agent and batch prompt tables inject `| 业务背景（可选） | {REVIEW_BACKGROUND 或 未提供} |`.
 - SARIF export (v1.6.6): the multi-select report-handling step gains `SARIF 文件（本地 .sarif，CI 对接）`; when selected the main skill runs `bash "${PLUGIN_ROOT}/scripts/core/export-sarif.sh" "$REPORT_PATH" "${REPORT_PATH%.md}.sarif" --project-name "$PROJECT_NAME"` after the local Markdown report is persisted (batch path: after the merged report is generated) and shows the `SARIF_EXPORTED=` line. SARIF is local-only, never affects or gates Feishu uploads.
 - Do not preserve command-line compatibility that bypasses interaction.

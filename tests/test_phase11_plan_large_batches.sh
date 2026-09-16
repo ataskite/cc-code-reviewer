@@ -79,7 +79,35 @@ mkdir -p "$PROJECT_DIR/order-api/src/test/java/com/example/orderapi"
   echo "}"
 } > "$PROJECT_DIR/order-api/src/test/java/com/example/orderapi/OrderApiTest.java"
 
-OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-010203 bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$PROJECT_DIR" "standard" "main" "jdtls-lsp")"
+# java_loc/java_files 必须复用一次批量行数索引；行数统计完全在进程内完成，
+# 整个规划管线（含 review-input 冻结）不得再 fork 任何 wc（旧实现逐文件 wc）。
+REAL_WC="$(command -v wc)"
+REAL_PERL="$(command -v perl)"
+WC_WRAPPER_DIR="$TMP_DIR/wc-wrapper"; mkdir -p "$WC_WRAPPER_DIR"
+cat > "$WC_WRAPPER_DIR/wc" <<'SH'
+#!/bin/bash
+printf '%s\n' "$*" >> "$WC_CALLS"
+exec "$REAL_WC" "$@"
+SH
+chmod +x "$WC_WRAPPER_DIR/wc"
+cat > "$WC_WRAPPER_DIR/perl" <<'SH'
+#!/bin/bash
+for arg in "$@"; do
+  case "$arg" in
+    */java-metrics.nul) printf '%s\n' "$arg" >> "$PERL_METRICS_CALLS"; break ;;
+  esac
+done
+exec "$REAL_PERL" "$@"
+SH
+chmod +x "$WC_WRAPPER_DIR/perl"
+: > "$TMP_DIR/wc.calls"
+: > "$TMP_DIR/perl-metrics.calls"
+OUTPUT="$(PATH="$WC_WRAPPER_DIR:$PATH" REAL_WC="$REAL_WC" REAL_PERL="$REAL_PERL" \
+  WC_CALLS="$TMP_DIR/wc.calls" PERL_METRICS_CALLS="$TMP_DIR/perl-metrics.calls" \
+  CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-010203 \
+  bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$PROJECT_DIR" "standard" "main" "jdtls-lsp")"
+[ "$(wc -l < "$TMP_DIR/wc.calls" | tr -d ' ')" -eq 0 ]
+[ "$(wc -l < "$TMP_DIR/perl-metrics.calls" | tr -d ' ')" -eq 1 ]
 RUN_DIR="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_DIR=//p')"
 RUN_ID="$(printf '%s\n' "$OUTPUT" | sed -n 's/^RUN_ID=//p')"
 
@@ -337,6 +365,34 @@ grep -q '"semantic_level": "maven-static"' "$RUN_DIR/plan.json"
 STATUS_COUNT="$(find "$RUN_DIR/results" -name 'batch-*.status.json' | wc -l | tr -d ' ')"
 BATCH_COUNT="$(sed -n 's/.*"batch_count": \([0-9][0-9]*\).*/\1/p' "$RUN_DIR/plan.json" | head -1)"
 test "$STATUS_COUNT" = "$BATCH_COUNT"
+
+# Maven 允许模块路径包含 ./ 或可归一化的相对片段；规划输出应稳定使用
+# 仓库相对规范化路径，且 LOC/file_count 不得因字符串前缀不一致归零。
+DOT_MODULE_DIR="$TMP_DIR/dot-module-project"
+mkdir -p "$DOT_MODULE_DIR/module-a/src/main/java/com/example"
+cat > "$DOT_MODULE_DIR/pom.xml" <<'XML'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId><artifactId>root</artifactId><version>1</version>
+  <packaging>pom</packaging>
+  <modules><module>./module-a</module></modules>
+</project>
+XML
+cat > "$DOT_MODULE_DIR/module-a/pom.xml" <<'XML'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId><artifactId>module-a</artifactId><version>1</version>
+</project>
+XML
+{
+  printf 'package com.example;\npublic class A {\n'
+  seq 1 6000 | sed 's/.*/  public void m&() {}/'
+  printf '}\n'
+} > "$DOT_MODULE_DIR/module-a/src/main/java/com/example/A.java"
+DOT_OUTPUT="$(CC_CODE_REVIEWER_RUN_TIMESTAMP=20260528-025000 bash "$ROOT_DIR/scripts/languages/java/plan-large-batches.sh" "$DOT_MODULE_DIR" "standard" "main" "maven-static")"
+DOT_RUN_DIR="$(printf '%s\n' "$DOT_OUTPUT" | sed -n 's/^RUN_DIR=//p')"
+jq -e '.total_java_loc == 6003 and .total_java_file_count == 1 and .selected_modules == ["module-a"] and .batch_count == 1' "$DOT_RUN_DIR/plan.json" >/dev/null
+jq -e '.scan_roots == ["module-a"] and .planned_java_loc == 6003 and .planned_java_file_count == 1' "$DOT_RUN_DIR"/batches/batch-*.json >/dev/null
 
 MISSING_PROJECT_DIR="$TMP_DIR/missing-modules"
 mkdir -p "$MISSING_PROJECT_DIR"

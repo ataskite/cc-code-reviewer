@@ -1339,4 +1339,23 @@ require_literal "$REPORT_FORMAT_FILE" "未复审" "report format must document t
 # README 必须出现跨轮对比特性关键词。
 require_literal "$ROOT_DIR/README.md" "与上轮报告对比" "README must surface the cross-round compare feature keyword"
 
+# === v1.6.9: 敏感路径保护 / 证据脱敏 / git 版本预检 ===
+# 冻结输入层必须强制排除密钥样路径（模板豁免 + rename old_path 同判 + manifest 不可恢复）。
+require_match "prepare-review-input 必须实现 secret-path 强制排除" 'exclude_reason=secret-path' "$ROOT_DIR/scripts/core/prepare-review-input.sh"
+require_match "prepare-review-input 必须豁免 .env 模板" '\.env\.example' "$ROOT_DIR/scripts/core/prepare-review-input.sh"
+require_match "prepare-review-input 必须 rename old_path 同判" 'is_secret_path\(\$3\)' "$ROOT_DIR/scripts/core/prepare-review-input.sh"
+# 三个审查 agent + 报告格式 + Security 框架必须携带敏感值脱敏契约。
+for mask_file in "$AGENT_FILE" "$FRONTEND_AGENT_FILE" "$ROOT_DIR/agents/cc-code-reviewer-python.md"; do
+  require_match "审查 agent 必须携带敏感值脱敏契约（${mask_file}）" '敏感值脱敏' "$mask_file"
+done
+require_match "报告格式必须携带敏感值脱敏契约" '敏感值脱敏' "$REPORT_FORMAT_FILE"
+require_match "Security 框架必须携带报告脱敏契约" '报告脱敏' "$SECURITY_FRAMEWORK_FILE"
+# git 版本预检：detect-branches 必须 stderr 警告且 fail-open。
+require_match "detect-branches 必须携带 git 版本预检警告" 'WARN_GIT_VERSION=' "$ROOT_DIR/scripts/core/detect-branches.sh"
+require_match "AGENTS/CLAUDE 必须描述 secret-path 保护" 'secret-path' "$AGENTS_FILE" "$CLAUDE_FILE"
+require_match "AGENTS/CLAUDE 必须描述敏感值脱敏" '敏感值脱敏' "$AGENTS_FILE" "$CLAUDE_FILE"
+require_literal "$ROOT_DIR/README.md" "证据脱敏" "README must surface the evidence masking feature keyword"
+require_literal "$ROOT_DIR/README.md" "secret-path" "README must surface the secret-path exclusion feature keyword"
+require_literal "$ROOT_DIR/README.md" "敏感路径强制排除（v1.6.9）" "README must attribute secret-path exclusion to v1.6.9"
+
 echo "✅ 契约文档测试通过"

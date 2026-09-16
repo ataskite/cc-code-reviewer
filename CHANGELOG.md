@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.6.9 — 敏感路径保护、证据脱敏与大 manifest 规划性能修复
+
+### 新增
+
+- **敏感路径强制排除（吸收 OpenCodeReview secret exclude，v1.12.3 #1262/#1279）**：`core/prepare-review-input.sh` 与上游同口径（大小写不敏感、纯路径判定、不看内容）把凭据样路径强制排除出正式审查范围——`.env` 与 `.env.*`（`.env.example` / `.env.sample` / `.env.template` 仅在未命中其他敏感路径规则时豁免）、`.ssh/**` 下任意文件、`id_rsa`/`id_dsa`/`id_ecdsa`/`id_ed25519`、`.netrc`/`_netrc`/`.npmrc`/`.pypirc`/`.dockercfg`，一律 `selected=false, exclude_reason=secret-path` 且优先级最高：source manifest 命中不可恢复（include 不可覆盖）、rename 的 old_path 同样参与判定（密钥文件改名后不得进入范围）；增量 / 全量 / 指定范围三种模式同判，密钥内容从此不再流入 agent 上下文与报告。`tests/core/test_core_prepare_review_input.sh` 新增第 7 组用例（增量逐类排除 + 根目录模板豁免 + `.ssh` 内模板仍强制排除 + 大小写组合 + rename 逃逸 + full 模式 manifest 覆盖优先级）。
+- **证据脱敏契约**：三个审查 agent（Java / Frontend / Python）、`references/report-format.md` 证据规则与 Security 框架 §5 统一强制——证据代码、配置片段与建议中不得原样复制密钥/口令/令牌/私钥值（password、secret、token、api key、连接串内嵌凭据等），引用键名与位置、值以 `***` 掩码并描述值形态即可；「疑似硬编码密钥」类发现照常定级输出，不因脱敏省略或降级。报告会上传飞书等协作文档，原样搬运等于二次泄露。Java agent 原示例中明文 `password: admin123` 同步改为掩码示范。
+- **git 版本预检（吸收 OpenCodeReview safe git，v1.12.1 #865）**：`core/detect-branches.sh` 预检 `git --version`，低于声明最低支持 2.41 时输出单行 stderr 警告 `WARN_GIT_VERSION=<版本> 低于最低支持版本 2.41…`（fail-open，stdout 契约与退出码不变）；README 前置条件同步「建议 ≥ 2.41」。`tests/test_phase2_git_branches.sh` 用 PATH 版本 shim（仅伪造 `--version`，其余转发真实 git）覆盖新旧两向。
+
+### 修复
+
+- **消除审查输入 O(N²) 热点**：`prepare-review-input.sh` 将 source manifest 建成一次性索引，Git `numstat` / raw blob identity 各只计算一次，并以单 Perl 进程批量统计选中文件换行数；800 文件 × 800 行 manifest 回归用例限制在 60 秒内完成。
+- **Maven 大仓目录指标一次性预聚合**：`plan-large-batches.sh` 只扫描一次 `src/main/java`，单进程读取文件并按祖先目录累计 LOC / file_count，写入以规范化目录 SHA-256 寻址的 SDBM 索引；模块/package 查询为 O(1)，不再逐目录重扫完整 manifest 或逐文件 fork `wc`。
+- **相对模块路径规范化**：POM 内 `./module` 与仍位于项目根内的 `parent/../sibling` 统一转换为稳定仓库相对物理路径，避免合法 Maven 模块 LOC 归零或错误触发 `NO_MAVEN_MODULES`；越出项目根的选择仍被拒绝。
+- **SHA-1 / SHA-256 根提交兼容**：raw diff 固定使用 `--abbrev=64`（SHA-1 自动封顶 40 位），全历史增量审查通过当前仓库对象格式动态计算空 tree OID；`prepare-review-input.sh` 与 `prepare-incremental.sh` 不再硬编码 SHA-1 空树。
+- **路径安全批量计数**：共享 `batch_wc_lines_nul` 使用 NUL 记录协议和单进程二进制分块读取，保持 `wc -l` 语义，并覆盖空格、中文、换行符、`total` 文件名和大于 1 MiB 读取边界。
+
+### 升级方式
+
+三端插件 manifest 已指向 1.6.9（`.claude-plugin/plugin.json`、`.claude-plugin/marketplace.json` 两处、`.codex-plugin/plugin.json`、`.zcode-plugin/plugin.json`，与 `VERSION` 单一真相源一致）。Claude Code / Codex / ZCode 用户重新安装或重新加载插件即可。
+
 ## 1.6.8 — 对标 OpenCodeReview v1.10.1-v1.11.6：跨轮报告对比、churn 注意力与规则引用加固
 
 ### 新增

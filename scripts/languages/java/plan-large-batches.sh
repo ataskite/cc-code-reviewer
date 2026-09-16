@@ -45,25 +45,73 @@ branch_slug() {
   printf '%s' "$slug"
 }
 
-java_loc() {
-  local dir="$1"
-  local total=0
-  local file lines
-  while IFS= read -r -d '' file; do
-    lines="$(wc -l < "$file" | tr -d ' ')"
-    total=$((total + lines))
-  done < <(find "$dir" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' \
+JAVA_STATS_DB=""
+
+# 整个规划 run 只扫描一次 Java 文件并批量统计行数。随后在同一个 Perl
+# 进程内把每个文件的 loc/file_count 累加到 PROJECT_DIR 以内的全部祖先目录，
+# 写入按规范化目录 SHA-256 寻址的 SDBM 索引。目录查询为 O(1)，避免在模块
+# 或 package 数量随文件数增长时重新扫描完整 manifest（O(D×F)）。
+build_java_metrics() {
+  local files_nul="$1" raw_metrics="$2" stats_db="$3"
+  find "$PROJECT_DIR" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' \
     -not -path '*/__snapshots__/*' -not -path '*/testdata/*' -not -path '*/fixtures/*' \
-    -not -name '*.generated.*' -not -name '*.gen.java' -print0 2>/dev/null)
-  printf '%s\n' "$total"
+    -not -name '*.generated.*' -not -name '*.gen.java' -type f -print0 2>/dev/null > "$files_nul"
+  batch_wc_lines_nul < "$files_nul" > "$raw_metrics"
+  perl -MSDBM_File -MDigest::SHA=sha256_hex -MFcntl=:DEFAULT -e '
+    my ($root, $metrics, $db_path) = @ARGV;
+    open(my $fh, "<", $metrics) or die "JAVA_METRICS_READ_FAILED: $metrics: $!\n";
+    binmode($fh);
+    my $raw = do { local $/; <$fh> };
+    close($fh);
+    my (%loc, %files);
+    for my $rec (grep { length } split(/\0/, defined($raw) ? $raw : "", -1)) {
+      $rec =~ /\A(.*)\x1e(\d+)\z/s or die "JAVA_METRICS_RECORD_MALFORMED\n";
+      my ($path, $lines) = ($1, $2);
+      $path =~ s{/[^/]*\z}{} or die "JAVA_METRICS_PATH_INVALID=$path\n";
+      my $dir = $path;
+      while ($dir eq $root || index($dir, "$root/") == 0) {
+        $loc{$dir} += $lines;
+        $files{$dir}++;
+        last if $dir eq $root;
+        $dir =~ s{/[^/]*\z}{} or last;
+      }
+    }
+    tie(my %db, "SDBM_File", $db_path, O_RDWR|O_CREAT|O_TRUNC, 0600)
+      or die "JAVA_STATS_DB_CREATE_FAILED: $db_path: $!\n";
+    for my $dir (keys %files) {
+      $db{sha256_hex($dir)} = "$loc{$dir}\x1e$files{$dir}";
+    }
+    untie(%db);
+  ' "$PROJECT_DIR" "$raw_metrics" "$stats_db"
+  rm -f "$files_nul" "$raw_metrics"
 }
 
-java_files() {
-  local dir="$1"
-  find "$dir" -path '*/src/main/java/*' -name '*.java' -not -path '*/target/*' \
-    -not -path '*/__snapshots__/*' -not -path '*/testdata/*' -not -path '*/fixtures/*' \
-    -not -name '*.generated.*' -not -name '*.gen.java' -print0 2>/dev/null | tr '\0' '\n' | wc -l | tr -d ' '
+java_stat_value() {
+  local dir="$1" field="$2" canonical stats loc files
+  if [ ! -d "$dir" ]; then
+    printf '0\n'
+    return
+  fi
+  canonical="$(cd "$dir" 2>/dev/null && pwd -P)" || {
+    printf '0\n'
+    return
+  }
+  stats="$(perl -e '
+    use SDBM_File;
+    use Digest::SHA qw(sha256_hex);
+    use Fcntl qw(O_RDONLY);
+    my ($db_path, $dir) = @ARGV;
+    tie(my %db, "SDBM_File", $db_path, O_RDONLY, 0)
+      or die "JAVA_STATS_DB_READ_FAILED: $db_path: $!\n";
+    print($db{sha256_hex($dir)} // "0\x1e0");
+    untie(%db);
+  ' "$JAVA_STATS_DB" "$canonical")"
+  IFS="$(printf '\036')" read -r loc files <<< "$stats"
+  if [ "$field" = "loc" ]; then printf '%s\n' "$loc"; else printf '%s\n' "$files"; fi
 }
+
+java_loc() { java_stat_value "$1" loc; }
+java_files() { java_stat_value "$1" files; }
 
 review_cost() {
   local loc="$1"
@@ -108,10 +156,20 @@ dependencies_for_pom() {
 path_join() {
   local parent="$1"
   local child="$2"
+  local joined absolute
   if [ -z "$parent" ]; then
-    printf '%s\n' "$child"
+    joined="$child"
   else
-    printf '%s/%s\n' "$parent" "$child"
+    joined="$parent/$child"
+  fi
+  if [ -d "$PROJECT_DIR/$joined" ]; then
+    absolute="$(cd "$PROJECT_DIR/$joined" && pwd -P)"
+    case "$absolute" in
+      "$PROJECT_DIR"/*) printf '%s\n' "${absolute#"$PROJECT_DIR"/}" ;;
+      *) echo "SELECTED_MODULE_OUTSIDE_PROJECT=$joined" >&2; return 1 ;;
+    esac
+  else
+    printf '%s\n' "$joined"
   fi
 }
 
@@ -237,6 +295,7 @@ parse_selected_modules() {
   if scope_is_full; then
     while IFS= read -r module; do
       [ -n "$module" ] || continue
+      module="$(path_join "" "$module")"
       add_selected_module "$module"
     done < <(extract_modules_from_pom "$PROJECT_DIR/pom.xml")
     return
@@ -834,7 +893,7 @@ if [ ! -f "$PROJECT_DIR/pom.xml" ]; then
   exit 1
 fi
 
-PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd -P)"
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
 PLAN_STRATEGY="$(normalize_strategy)"
 parse_selected_modules
@@ -853,12 +912,15 @@ mkdir -p "$RUN_DIR/batches" "$RUN_DIR/results" "$DRAFT_DIR"
 : > "$UNITS_TSV"
 : > "$CONTEXT_TSV"
 : > "$EDGES_TSV"
+JAVA_STATS_DB="$DRAFT_DIR/java-stats"
+build_java_metrics "$DRAFT_DIR/java-files.nul" "$DRAFT_DIR/java-metrics.nul" "$JAVA_STATS_DB"
 
 TOTAL_JAVA_LOC=0
 TOTAL_JAVA_FILE_COUNT=0
 if ! scope_is_full; then
   while IFS= read -r module; do
     [ -n "$module" ] || continue
+    module="$(path_join "" "$module")"
     collect_support_context_candidate "$module"
   done < <(extract_modules_from_pom "$PROJECT_DIR/pom.xml")
 fi

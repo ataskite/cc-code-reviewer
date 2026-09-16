@@ -61,3 +61,37 @@ echo "$MANY_OUTPUT" | grep -q "IS_GIT_REPO=true"
 test "$(echo "$MANY_OUTPUT" | grep -c '^BRANCH: ')" -eq 5
 # 总数提示：9 个本地分支（master + 8）
 echo "$MANY_OUTPUT" | grep -q "共 9 个本地分支，仅展示最近 5 个"
+
+# git 版本预检（吸收自 OpenCodeReview v1.12.1）：PATH 上放只伪造 --version 的包装器
+#（其余命令转发真实 git）。旧版本必须 stderr 警告 + stdout 契约不变 + exit 0；
+# 新版本必须零警告。
+REAL_GIT="$(command -v git)"
+VER_DIR="$TMP_DIR/git-ver-shim"; mkdir -p "$VER_DIR"
+make_ver_shim() { # $1=版本串
+  cat > "$VER_DIR/git" <<SH
+#!/bin/bash
+if [ "\$1" = "--version" ]; then echo "git version $1"; exit 0; fi
+exec "$REAL_GIT" "\$@"
+SH
+  chmod +x "$VER_DIR/git"
+}
+make_ver_shim "2.17.1"
+set +e
+OLD_OUT="$(PATH="$VER_DIR:$PATH" bash "$ROOT_DIR/scripts/core/detect-branches.sh" "$MANY_DIR" 2>"$TMP_DIR/old-git.err")"
+OLD_RC=$?
+set -e
+test "$OLD_RC" -eq 0
+echo "$OLD_OUT" | grep -q "IS_GIT_REPO=true"
+grep -q '^WARN_GIT_VERSION=2\.17\.1 低于最低支持版本 2\.41' "$TMP_DIR/old-git.err"
+
+make_ver_shim "2.50.1"
+set +e
+NEW_OUT="$(PATH="$VER_DIR:$PATH" bash "$ROOT_DIR/scripts/core/detect-branches.sh" "$MANY_DIR" 2>"$TMP_DIR/new-git.err")"
+NEW_RC=$?
+set -e
+test "$NEW_RC" -eq 0
+echo "$NEW_OUT" | grep -q "IS_GIT_REPO=true"
+if grep -q '^WARN_GIT_VERSION=' "$TMP_DIR/new-git.err"; then
+  echo "FAIL: 新版 git（2.50.1）不应触发版本警告" >&2
+  exit 1
+fi
