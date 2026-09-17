@@ -27,7 +27,19 @@ vulnerable case is expected to be statically provable.
   not a helper-name heuristic.
   Expected: no horizontal authorization finding; the model may still report
   unrelated issues only if independently evidenced.
+- `matrix-unbound`: one entry exposes four authorization failures through
+  separate actions: another subject's object can be read, a mixed-tenant batch
+  can be exported, a regular subject can invoke a privileged operation, and a
+  client-controlled privileged property is applied. Expected: findings cover
+  horizontal/object-level, cross-tenant batch, function-level, and
+  property-level authorization with the relevant subject/action/resource/sink
+  evidence.
+- `matrix-bound`: the same four actions enforce owner and tenant binding for
+  the single object, validate every item in the batch, require the privileged
+  role, and allowlist the mutable property. Expected: no authorization
+  finding; the model may still report unrelated issues only if independently
+  evidenced.
 
-Run each case five times. The vulnerable case should be found at least four
-times and the control should produce at most one false positive. This is a
-model-quality target, not a deterministic test-suite assertion.
+Run each case five times. Each expected vulnerability class should be found at
+least four times and each control should produce at most one false positive.
+This is a model-quality target, not a deterministic test-suite assertion.

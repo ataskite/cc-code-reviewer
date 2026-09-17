@@ -480,6 +480,7 @@ fi
 test -r "$REPORT_FORMAT_PATH"
 
 # Security 专项使用跨语言企业级安全框架；其他模式保持各语言现有安全规则。
+# Security agent 在逐文件覆盖后必须按该框架执行授权面二次扫描，并在完整报告或批次发现清单中披露授权面台账；文件覆盖率不得替代授权面覆盖率。
 SECURITY_FRAMEWORK_PATH="未启用"
 if [ "$REVIEW_MODE" = "security" ]; then
   SECURITY_FRAMEWORK_PATH="${PLUGIN_ROOT}/references/security/enterprise-security-framework.md"

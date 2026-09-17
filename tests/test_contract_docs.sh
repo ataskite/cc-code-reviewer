@@ -126,6 +126,13 @@ for security_framework_term in \
   "垂直越权 / BFLA" \
   "跨租户/组织/商户/部门访问" \
   "## 4. 静态取证流程" \
+  "### 4.1 授权面二次扫描（Security 模式强制）" \
+  "同角色异对象" \
+  "低权限高功能" \
+  "对象属性越权" \
+  "批量与嵌套资源" \
+  "替代执行路径" \
+  "已绑定 / 未绑定 / 外部证据缺失 / 不适用" \
   "## 5. 证据等级与输出" \
   "静态已证实" \
   "待确认项" \
@@ -153,6 +160,12 @@ for security_agent_file in "$AGENT_FILE" "$FRONTEND_AGENT_FILE" "$ROOT_DIR/agent
   require_literal "$security_agent_file" "统一安全模型" "security agent must execute the unified enterprise Security model"
   require_literal "$security_agent_file" "SECURITY_FRAMEWORK_PATH" "security agent must name the SECURITY_FRAMEWORK_PATH parameter"
   require_literal "$security_agent_file" "主体/资源/决策链" "security agent must emit the authorization-chain evidence fields"
+  require_literal "$security_agent_file" "授权面台账（仅 Security，强制）" "security agent must build an action-centered authorization ledger"
+  require_literal "$security_agent_file" "授权面二次扫描" "security agent must run a second authorization pass after file coverage"
+  require_literal "$security_agent_file" "文件覆盖率不能代替授权面覆盖率" "security agent must distinguish file coverage from authorization coverage"
+  require_literal "$security_agent_file" "同角色异对象" "security agent must test horizontal authorization counterexamples"
+  require_literal "$security_agent_file" "低权限高功能" "security agent must test vertical authorization counterexamples"
+  require_literal "$security_agent_file" "批量/嵌套资源" "security agent must test batch and nested-resource counterexamples"
 done
 for lang_framework_file in \
   "$ROOT_DIR/references/languages/java/review-framework.md" \
@@ -161,7 +174,7 @@ for lang_framework_file in \
   require_literal "$lang_framework_file" "references/security/enterprise-security-framework.md" "language review framework must defer to the enterprise Security framework in security mode"
 done
 AUTHZ_EVAL_ROOT="$ROOT_DIR/tests/evals/authorization-contracts"
-for authz_eval_case in horizontal-unbound owner-bound; do
+for authz_eval_case in horizontal-unbound owner-bound matrix-unbound matrix-bound; do
   [ -r "$AUTHZ_EVAL_ROOT/$authz_eval_case/pom.xml" ] || {
     echo "authorization evaluation fixture missing pom.xml: $authz_eval_case" >&2
     exit 1
@@ -173,10 +186,14 @@ for authz_eval_case in horizontal-unbound owner-bound; do
 done
 require_literal "$AUTHZ_EVAL_ROOT/README.md" "horizontal-unbound" "authorization evaluation README must describe the vulnerable fixture"
 require_literal "$AUTHZ_EVAL_ROOT/README.md" "owner-bound" "authorization evaluation README must describe the control fixture"
+require_literal "$AUTHZ_EVAL_ROOT/README.md" "matrix-unbound" "authorization evaluation README must describe the authorization-matrix vulnerable fixture"
+require_literal "$AUTHZ_EVAL_ROOT/README.md" "matrix-bound" "authorization evaluation README must describe the authorization-matrix control fixture"
 require_literal "$ROOT_DIR/README.md" "references/security/enterprise-security-framework.md" "README must link the enterprise Security framework"
 require_literal "$ROOT_DIR/README.md" "代码链闭合只能证明静态触发路径和缺少拒绝分支" "README must separate static reachability from production reachability"
 require_literal "$ROOT_DIR/references/report-format.md" "Security 模式问题条目附加字段" "report format must define security-specific evidence fields"
 require_literal "$ROOT_DIR/references/report-format.md" "主体/资源/决策链" "report format must require authorization chain evidence"
+require_literal "$ROOT_DIR/references/report-format.md" "## 🔐 授权面覆盖（仅 Security 模式强制）" "security report must disclose authorization-surface coverage"
+require_literal "$ROOT_DIR/references/report-format.md" 'N = A + B + C + D' "authorization ledger counts must reconcile"
 require_literal "$ROOT_DIR/runtime/contract.md" "企业级安全框架路径" "runtime contract must carry the enterprise Security framework path"
 require_literal "$AUTHZ_EVAL_ROOT/owner-bound/src/main/java/eval/RecordFlow.java" "request.subject.id.equals(record.ownerId)" "owner-bound control must perform an explicit owner comparison"
 if grep -q "findOwned" "$AUTHZ_EVAL_ROOT/owner-bound/src/main/java/eval/RecordFlow.java" "$AUTHZ_EVAL_ROOT/owner-bound/src/main/java/eval/RecordStore.java"; then

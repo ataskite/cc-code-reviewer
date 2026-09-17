@@ -25,3 +25,6 @@ test-output/
 # cc-code-reviewer 运行时产物（分批运行目录、修复 worktree）
 .cc-code-reviewer/
 .worktrees/
+
+# Java/Maven 编译产物（评测样本构建残留）
+target/

@@ -106,6 +106,7 @@
 - **认证与授权缺失**：视图/路由/DRF viewset 缺鉴权装饰器或权限类、`@action` 未设 `permission_classes`、依赖全局配置但新接口未继承
 - **对象级越权（IDOR）**：`Model.objects.get(id=...)`/`get_object_or_404` 未带 owner 过滤、queryset 未按当前用户/归属字段过滤、DRF 未重写 `get_queryset` 限定范围
 - **多租户隔离**：queryset/写入未按租户/组织标识过滤、租户字段可被前端伪造、跨租户读写
+- **授权面差分反例**：Security 模式完成逐文件阅读后，按统一 Security 框架再次核对同角色异对象、低权限高功能、跨租户、对象属性、批量/嵌套资源和替代执行路径；permission class、dependency、decorator、queryset/helper 名称只能作为线索，必须追到真实控制流与查询约束
 - **secrets 硬编码**：API key/token/密码直接写在源码、`.env` 提交到版本库、secret 写入日志
 - **路径穿越**：用户输入拼路径未规范化（`os.path.join` + `..`）、`open(user_path)` 未校验根目录
 - **SSRF**：用户可控 URL（经任意 HTTP 客户端：`requests`/`httpx`/`aiohttp`/`urllib` 或自封装 client）访问内网/云元数据地址，未做协议与域名白名单；URL 可控性需跨文件追溯，不得仅凭变量名判断
