@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.7.0 — BFF server-root 层、collector locale 修复与中继层负面清单
+
+### 新增
+
+- **BFF server-root 层（前端正式范围扩展）**：老式 BFF 脚手架（express/superagent 时代）的服务端代码位于包根与一级子目录（`app.js`/`controllers/`/`common/`/`core/`/`middleware/`/`application/`），src-only 口径会静默漏掉中继/鉴权/会话等漏洞主体文件（2026-09-18 IMA 前端 BFF SSRF 事件实证：4 个 C 端项目漏洞文件全部在 src 之外）。`collect-source-files.sh` 增加信号门控发现：包级合格 = `package.json` `main`/`scripts.{start,dev}` 入口指向 src 外真实 JS（含 `./bin/www` 无扩展名回退），或包根存在强服务端信号（express/koa/fastify 依赖、`.listen(`、`createServer`、router 动词、`RequestMapping` 大小写变体——覆盖 thinkJS）；收集 = 根级 `.js/.mjs/.cjs`（排除构建/测试配置 basename，含实测补充 `*.webpack.js`/`babel*`/`archive*`）+ 一级非噪声目录全深度弱模块信号文件（排除 `*mock*`/`test*`/`*shell`/`sdk*`/`tpl*`/`static*`/`vite*`/`webpack*` 等）；`.ts` 不入 server 层（现代 TS BFF 位于 src）。上限 `CC_CODE_REVIEWER_SERVER_ROOT_LIMIT`（默认 200，0=禁用），stderr `SERVER_ROOTS_ADDED=N` 披露。**注意：含 BFF 的前端项目 `SOURCE_FILE_COUNT` 会因 server 层并入而增长，属预期口径变化。**
+- **scan-project `SERVER_ROOT:formal` 声明**：server 层包根独立登记（companion 的 package.json 不误判）；`COMPONENT:` 行增补 server 一级目录与 `server-root` 聚合；`SOURCE_SCOPE:formal` 增补 server glob；纯 BFF 包根的配置进入 `FORMAL_CONFIG_FILE`。步骤 4 目录选择放宽为「存在于 `COMPONENT:` 行（含 server 目录如 `controllers`）」，`*/src/{目录名}/` 契约保留。
+- **BFF 中继层负面清单**：`node-rules.md` 新增 7 条 IMA 事件实证反模式（出口头黑名单半吊子防御、白名单键名但值取自客户端头、body 参数优先于 session 成身份、session 任意字段写入、匿名端点返回 secret 派生值、XHR 头/无密钥 MD5 签名当鉴权、SSRF 缓解绕过变体——目标 host 白名单才是正解）；前端 review-framework 维度 6 SSRF 条目扩写 + 「内网可达性放大定级」（不得因「仅内网」降级）；安全框架 §4.1「不能单独证明已授权」补自定义 XHR/HTTP 请求头。node-rules 由前端 agent 无条件必读，对所有前端审查模式生效。
+- **planner 风险优先级对齐**：`app.js`/`server.js`/`boot.js`/`router.js` 与 `controllers` 目录提到文件分批优先级 0（与前端 agent P0 热点清单一致）。
+
+### 修复
+
+- **三端 collector 的 comm locale 缺陷（阻塞级）**：frontend/java/python 三个 collector 用 `LC_ALL=C sort` 排序、裸 `comm` 比较，zh_CN.UTF-8 等非 C locale 环境下 comm 按本地 collation 误判「无序」退出 1，`set -euo pipefail` 放大为脚本终止、输出**空清单**（4 个真实项目实测全部命中，即 security 模式静默失效的直接根因）。修复为 `LC_ALL=C comm`；次级为 `prepare-review-input.sh` / `plan-file-batches.sh`（core+java）三处 `sort` 补 `LC_ALL=C`（跨环境行序与 `-u` 判等确定）。回归测试以 `name-x`/`name` 文件名对构造触发（现有套件 fixture 全 ASCII 小写对 P0 全盲），目标 locale 缺失时 SKIP。
+- **测试可移植性**：Findings 测试的 BSD/GNU `stat` 探测顺序（GNU stat 对未知 `-f` 格式不报错导致回退链在 Linux 上失效）；phase11 的 `jq -e` 多文件 `select` 退出码在 jq 1.5 与 1.6+ 不一致（改 `-s` + `any` 聚合）。
+
+### 升级方式
+
+三端插件 manifest 已指向 1.7.0（Claude Code / Codex / ZCode），`validate-plugin-manifests.sh` 校验通过；变更后执行 `/reload-plugins` 生效。
+
 ## 1.6.9 — 敏感路径保护、证据脱敏与大 manifest 规划性能修复
 
 ### 新增
