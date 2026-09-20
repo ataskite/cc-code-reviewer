@@ -147,7 +147,9 @@ done
 
 LC_ALL=C sort -u "$MAIN_TMP" > "$MAIN_TMP.s" || true
 LC_ALL=C sort -u "$COMP_TMP" > "$COMP_TMP.s" || true
-comm -23 "$COMP_TMP.s" "$MAIN_TMP.s" > "$COMP_TMP.new"
+# comm 必须与 sort 同用 C locale（同 frontend collector 的 locale 回归教训）：
+# 非 C locale 下 comm 按 collation 误判无序退出 1，set -euo pipefail 放大为空清单。
+LC_ALL=C comm -23 "$COMP_TMP.s" "$MAIN_TMP.s" > "$COMP_TMP.new"
 ADDED="$(grep -c . "$COMP_TMP.new" || true)"
 TRUNCATED_NOTE=""
 if [ "$ADDED" -gt "$COMPANION_FILE_LIMIT" ]; then

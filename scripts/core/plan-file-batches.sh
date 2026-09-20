@@ -158,7 +158,8 @@ awk -F '\t' -v OFS='\t' '
 ' "$UNIT_GROUPS" "$FILES_TSV" > "$FILES_TSV.tmp"
 mv "$FILES_TSV.tmp" "$FILES_TSV"
 
-sort -t "$(printf '\t')" -k1,1n -k5,5 -k2,2rn "$FILES_TSV" > "$SORTED"
+# C locale 固定字符串键（-k5,5/-k2,2rn 的组键与路径段）排序语义，保证批次组成跨环境确定。
+LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k5,5 -k2,2rn "$FILES_TSV" > "$SORTED"
 TOTAL_LOC="$(sum_field "$FILES_TSV" 3)"
 TOTAL_FILES="$(awk 'END{print NR+0}' "$UNIT_MEMBERS")"
 

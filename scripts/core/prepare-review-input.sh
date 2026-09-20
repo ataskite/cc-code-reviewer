@@ -210,7 +210,8 @@ awk -F "$(printf '\036')" -v OFS="$(printf '\036')" -v has_manifest="$([ -n "$SO
   }' "$LOOKUP_TSV" "$ITEMS_TSV" > "$ITEMS_TSV.enriched"
 mv "$ITEMS_TSV.enriched" "$ITEMS_TSV"
 
-sort -t "$(printf '\036')" -k1,1 -u "$ITEMS_TSV" > "$ITEMS_TSV.sorted"
+# C locale 固定排序键语义：-u 的判等与跨机器行序不受运行环境 collation 影响。
+LC_ALL=C sort -t "$(printf '\036')" -k1,1 -u "$ITEMS_TSV" > "$ITEMS_TSV.sorted"
 ITEM_COUNT="$(awk 'END{print NR+0}' "$ITEMS_TSV.sorted")"
 SELECTED_COUNT="$(awk -F "$(printf '\036')" '$4 == "true" {n++} END{print n+0}' "$ITEMS_TSV.sorted")"
 # 先生成 NUL 路径流，再单进程批量统计；保持 wc -l 语义（末行无换行符不计入），

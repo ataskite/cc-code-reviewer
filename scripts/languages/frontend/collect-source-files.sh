@@ -188,7 +188,10 @@ done
 
 LC_ALL=C sort -u "$MAIN_TMP" > "$MAIN_TMP.s" || true
 LC_ALL=C sort -u "$COMP_TMP" > "$COMP_TMP.s" || true
-comm -23 "$COMP_TMP.s" "$MAIN_TMP.s" > "$COMP_TMP.new"
+# comm 必须与 sort 同用 C locale：输入按 LC_ALL=C 排序，而 comm 默认按当前
+# locale collation 校验有序性，zh_CN.UTF-8 等环境下会误判无序退出 1，
+# 在 set -euo pipefail 下直接终止脚本输出空清单。
+LC_ALL=C comm -23 "$COMP_TMP.s" "$MAIN_TMP.s" > "$COMP_TMP.new"
 ADDED="$(grep -c . "$COMP_TMP.new" || true)"
 TRUNCATED_NOTE=""
 if [ "$ADDED" -gt "$COMPANION_FILE_LIMIT" ]; then

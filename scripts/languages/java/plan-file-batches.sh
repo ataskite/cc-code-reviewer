@@ -52,7 +52,8 @@ if [ ! -s "$FILES_TSV" ]; then
   exit 1
 fi
 
-sort -t "$(printf '\t')" -k1,1n -k2,2rn -k4,4 "$FILES_TSV" > "$SORTED_TSV"
+# C locale 固定字符串键（-k4,4 路径段）排序语义，保证交由 core 版重排前的顺序跨环境确定。
+LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2,2rn -k4,4 "$FILES_TSV" > "$SORTED_TSV"
 
 # 2. 把已排序文件清单（绝对路径，逐行）交给 core/plan-file-batches.sh
 #    core 版本会重新算 loc/cost（与本处一致），产出 source_* 字段 plan.json + batches。
