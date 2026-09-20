@@ -1133,7 +1133,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 
 该输出必须包含：
 - 批次状态表：使用用户可见的 Markdown 表格，表头固定为 `| 批次 | 状态 | 行数 | 文件数 | 模块 |`，下一行必须为 `|------|------|------:|------:|------|`
-- 模块列必须使用缩略名展示；当同一批次内模块存在共同工程前缀（例如 `yudao-module-`）时，去掉共同前缀，只展示真正的业务模块含义名称，例如 `trade-server,statistics-api`。
+- 模块列必须使用缩略名展示；当同一批次内模块存在共同工程前缀（例如 `demo-module-`）时，去掉共同前缀，只展示真正的业务模块含义名称，例如 `trade-server,statistics-api`。
 - 本轮可执行批次：`pending`、`failed` 和 `partial` 批次；`completed` 批次只展示不调度
 - 推荐执行计划：必须根据本轮可执行批次数动态生成，不能固定展示 3 / 5 / 10 批选项
 - 自行输入批次号提示：允许用户根据表格在 Other/free-form 中输入若干批次号，例如 `batch-002,batch-004` 或 `2,4,7`
@@ -1340,7 +1340,7 @@ bash "${PLUGIN_ROOT}/scripts/languages/java/plan-large-batches.sh" \
 
 适用范围：
 - 全量审查：`REVIEW_SCOPE=全量代码`
-- 指定模块：`REVIEW_SCOPE` 为模块相对路径列表，例如 `yudao-module-mes,yudao-framework`
+- 指定模块：`REVIEW_SCOPE` 为模块相对路径列表，例如 `demo-module-order,demo-framework`
 - 按模块依次：`STOCK_REVIEW_STRATEGY=module-sequential`
 - AI 智能规划：`STOCK_REVIEW_STRATEGY=ai-planned`
 
@@ -1566,7 +1566,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `FEISHU_UPLOAD_OPTION` | 交互步骤2 | `本地 Markdown 报告` 或 `飞书云文档, 飞书多维表格` 等 |
 | `REVIEW_ENTRY` | 交互步骤3 | `增量审查` / `全量审查` / `指定模块` |
 | `REVIEW_TYPE` | 交互步骤3 | `增量审查` / `存量审查` |
-| `REVIEW_SCOPE` | 交互步骤4 | `最近5次提交` / `全量代码` / `yudao-module-mes,yudao-framework` |
+| `REVIEW_SCOPE` | 交互步骤4 | `最近5次提交` / `全量代码` / `demo-module-order,demo-framework` |
 | `STOCK_REVIEW_STRATEGY` | 步骤3默认 `single-agent`；仅达到当前范围门槛时由步骤4B覆盖 | `single-agent` / `module-sequential` / `ai-planned` |
 | `PROJECT_SCAN_RESULT` | languages/java/project-scan.sh 完整输出 | 项目概况、模块结构 |
 | `SEMANTIC_LEVEL` | Java：`detect-code-intelligence.sh` 输出转换（`CODE_INTELLIGENCE_AVAILABLE=true` → `jdtls-lsp`，否则 `maven-static`）；前端：`CODE_INTELLIGENCE_PROVIDER=typescript-lsp` → `typescript-lsp`，否则 `none`；Python：`CODE_INTELLIGENCE_PROVIDER=pyright|pylsp|jedi` → 同名 LSP，`pyright-cli` → `pyright-cli`（仅 diagnostics），否则 `none` | `jdtls-lsp` / `typescript-lsp` / `pyright` / `pyright-cli` |

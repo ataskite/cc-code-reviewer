@@ -29,18 +29,7 @@ cd "{REPORT_DIR}" && lark-cli docs +create \
 
 分批合并报告必须使用 `summary.json` 中的 `report_title` 校验标题：`final_report_path` 指向的 Markdown 文件第一条非空内容必须等于 `# {report_title}`。不满足时不得上传，必须回到合并报告文件修正标题后再创建飞书云文档。
 
-### 1.2 已验证的完整示例
-
-```bash
-# 先 cd 到报告文件所在目录（必须！--content @... 不接受绝对路径）
-cd /path/to/project/.cc-code-reviewer/runs/20260606-135100-master-jdk17-deep/final && \
-lark-cli docs +create \
-  --api-version v2 \
-  --doc-format markdown \
-  --content @code-review-report-yudao-cloud-20260606-135910.md
-```
-
-### 1.3 成功响应示例
+### 1.2 成功响应示例
 
 ```json
 {
@@ -55,7 +44,7 @@ lark-cli docs +create \
 
 从 `data.doc_url` 提取文档链接用于最终汇总。
 
-### 1.4 常见错误与解决
+### 1.3 常见错误与解决
 
 | 错误 | 原因 | 解决 |
 |------|------|------|
@@ -65,7 +54,7 @@ lark-cli docs +create \
 | `--content is required` | 使用了旧参数 `--markdown` | 不得使用 `--markdown`，固定使用 `--content @相对文件名` |
 | `invalid file path ... must be a relative path` | `@file` 参数不接受绝对路径 | 先 `cd` 到报告文件所在目录，使用 `@filename` 相对路径 |
 
-### 1.5 注意事项
+### 1.4 注意事项
 
 - 文档内容必须是完整的审查报告 Markdown 文件
 - 如果创建失败，在报告中说明原因，不阻塞后续步骤
@@ -116,7 +105,6 @@ lark-cli base +base-create --name "代码审查问题清单 - {PROJECT_NAME}"
   "data": {
     "base": {
       "base_token": "BASETOKEN123",
-      "name": "代码审查问题清单 - agentscope-demo",
       "url": "https://xxx.feishu.cn/base/BASETOKEN123"
     }
   }
