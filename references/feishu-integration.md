@@ -46,8 +46,8 @@ lark-cli docs +create \
 {
   "ok": true,
   "data": {
-    "doc_id": "JKDZdHhYVoicZuxyb82cjWPNnMc",
-    "doc_url": "https://www.feishu.cn/docx/JKDZdHhYVoicZuxyb82cjWPNnMc",
+    "doc_id": "DOCXTOKEN123",
+    "doc_url": "https://www.feishu.cn/docx/DOCXTOKEN123",
     "message": "文档创建成功"
   }
 }
@@ -115,9 +115,9 @@ lark-cli base +base-create --name "代码审查问题清单 - {PROJECT_NAME}"
   "ok": true,
   "data": {
     "base": {
-      "base_token": "S2slbvdMaaQHubsxAxbcsYDrnVO",
+      "base_token": "BASETOKEN123",
       "name": "代码审查问题清单 - agentscope-demo",
-      "url": "https://xxx.feishu.cn/base/S2slbvdMaaQHubsxAxbcsYDrnVO"
+      "url": "https://xxx.feishu.cn/base/BASETOKEN123"
     }
   }
 }
@@ -131,7 +131,7 @@ lark-cli base +base-create --name "代码审查问题清单 - {PROJECT_NAME}"
 lark-cli base +table-list --base-token {BASE_TOKEN}
 ```
 
-响应中获取默认表的 `id`（如 `tbl1ZdE0hBsV1DVh`），保存为 `TABLE_ID`。
+响应中获取默认表的 `id`（如 `tbl1234567890`），保存为 `TABLE_ID`。
 
 > 新建的多维表格会自动创建一个默认表（名为"数据表"），后续操作基于这个表。默认表自带几个空白字段（"单选"、"日期"、"文本"、"附件"），需要在本表上创建新字段，然后清理默认字段。
 

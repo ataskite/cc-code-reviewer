@@ -34,7 +34,7 @@ if bash "$ROOT_DIR/scripts/core/detect-fix-input.sh" "https://example.feishu.cn/
 fi
 grep -Fq "飞书云文档和飞书多维表格输入不得调用 core/detect-fix-input.sh" "$BASE_OUTPUT"
 
-WIKI_BASE_URL="https://example.feishu.cn/wiki/FlKdwsFpIih3CzkQhl7cwR40nsz?table=tblhnVIjMA4Rts1i&view=vewiXLBlKx"
+WIKI_BASE_URL="https://example.feishu.cn/wiki/WIKITOKEN123?table=tbl456&view=vew456"
 WIKI_BASE_OUTPUT="$TMP_DIR/phase6-wiki-base.out"
 if bash "$ROOT_DIR/scripts/core/detect-fix-input.sh" "$WIKI_BASE_URL" >"$WIKI_BASE_OUTPUT" 2>&1; then
   echo "phase6 must not handle Feishu wiki base inputs" >&2

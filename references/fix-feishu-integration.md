@@ -87,9 +87,9 @@ lark-cli base +record-list --base-token "{BASE_TOKEN}" --table-id "{TABLE_ID}"
 Wiki 链接读取模板：
 
 ```bash
-WIKI_TOKEN="FlKdwsFpIih3CzkQhl7cwR40nsz"
-TABLE_ID="tblhnVIjMA4Rts1i"
-VIEW_ID="vewiXLBlKx"
+WIKI_TOKEN="{WIKI_TOKEN}"
+TABLE_ID="{TABLE_ID}"
+VIEW_ID="{VIEW_ID}"
 
 BASE_TOKEN=$(lark-cli wiki spaces get_node \
   --params "{\"token\": \"$WIKI_TOKEN\"}" \
