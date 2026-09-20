@@ -86,7 +86,7 @@
 - **权限前置误判**：按钮隐藏、菜单过滤、路由 meta 只属于前端展示控制，不得当作后端授权证据
 - **BFF/Node 鉴权透传**：接口鉴权、token 透传、401/403 处理、租户隔离
 - **授权面差分反例**：Security 模式下，Node/BFF 需按统一 Security 框架完成授权面二次扫描；浏览器端只登记可见入口、对象标识和敏感字段线索，不能据此证明后端已授权
-- **不安全 URL 拼接**：SSRF 向量（前端→BFF/Node）、开放重定向
+- **不安全 URL 拼接**：SSRF 向量（前端→BFF/Node）——query/body 的 url、fullUrl、path、callback、webhook 等用户可控字段进入服务端 HTTP 客户端（http.request/axios/superagent 等）前必须白名单校验协议与 host；`rb.origin ? rb.url : host+url` 的任意 origin 分支是 SSRF 直通；只挡 Host 头不够（`@` userinfo、协议相对 URL、重定向均可绕过），目标 host 白名单才是有效缓解；BFF 中继层出口头负面清单见 node-rules.md「BFF 中继层负面清单」（IMA 事件实证）
 - **内容安全策略**：CSP 是否部署（`script-src 'self'` + nonce/hash，禁用 `unsafe-inline`/`unsafe-eval`）；跨域脚本是否有 SRI `integrity`；Trusted Types 策略
 - **供应链（OWASP 2025 A03）**：lockfile 是否提交并用 `npm ci` 校验；`postinstall` 脚本来源；高危依赖的 provenance/Sigstore 签名；typosquatting 依赖
 - **依赖风险**：lockfile 版本漏洞结论规则见下
@@ -157,7 +157,8 @@
 
 - **高危安全问题必为 P0**：同时满足生产可达、证据完整且高置信、事故级安全影响、缺少有效防护的安全问题（如证据完整的 XSS、危险 HTML 注入、凭据泄露、开放重定向绕过登录），必须标为 P0 并阻断发布；不得以触发概率低、触发条件非攻击者可控、位于异常路径等理由降级到 P1。反向降级必须证明触发路径生产不可达。
 - **鉴权/安全开关 fail-open 即认证绕过候选**：路由守卫、权限拦截、安全开关判定路径上的 fail-open（异常、空值、默认放行）按认证绕过定级；代码链闭合只能证明静态触发路径和缺少拒绝分支，只有入口注册、装配以及部署/运行配置也由仓库证据闭合时才满足生产可达，否则归入待确认并标注“P0 待验证”。接口异常、配置缺失等运行时事件不构成低概率降级理由。
-- **身份信任边界缺陷**：客户端可控输入（localStorage、URL query、postMessage data 等直接成为身份/租户来源）属于认证绕过候选；最终攻击效果依赖部署或网关配置时归入待确认并标注“P0 待验证”，不得静默放入普通 P1。
+- **身份信任边界缺陷**：客户端可控输入（localStorage、URL query、postMessage data 等直接成为身份/租户来源）属于认证绕过候选；最终攻击效果依赖部署或网关配置时归入待确认并标注”P0 待验证”，不得静默放入普通 P1。
+- **内网可达性放大定级**：SSRF/越权类问题的攻击效果以内网可达范围计——BFF 中继能触达内网服务（配置中心、元数据服务、数据库管理面、互信接口）的候选按事故级影响评估，不得因「仅内网」降级（IMA BFF SSRF 事件实证：内网可达性正是杀伤力来源）；证据链未闭合时归待确认并标注”P0 待验证”。
 
 ## 依赖风险结论规则
 

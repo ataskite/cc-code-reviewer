@@ -15,6 +15,19 @@
 - **错误处理**：Express/Koa/Fastify 异步错误必须进入统一错误处理中间件；错误响应不得泄露 token、SQL、内部路径或堆栈。
 - **开放重定向与 SSRF**：用户可控 URL 用于跳转、代理、回调、webhook、文件下载时必须有白名单。
 
+### BFF 中继层负面清单（2026-09-18 IMA 前端 BFF SSRF 事件实证）
+
+以下反模式来自真实事件取证（通用中继接口 + 客户端可控请求头 → 内网 SSRF 数据泄露），命中任意一条即构成安全问题候选，必须追到实际白名单/阻断点才能关闭：
+
+1. **出口头黑名单 = 半吊子防御**：`Object.assign/extend(headers, req.headers)` 后仅 `delete` 少数键（host/content-length/x-requested-with 等）仍是客户端可控头透传——信任头（X-Internal、XFF、内部 token 头等）全部可穿过过滤器。BFF 外发请求头必须按**白名单**逐键构造；禁止在现有黑名单上打补丁。
+2. **白名单键名但值取自客户端头**：逐键构造出口头时，值来自 `req.headers`（如 `Authorization: req.headers.atoken`、`CmcToken`、`X-Product-Code`、`x-forwarded-for`）同样是身份注入——键名可控性不重要的地方，值的来源才重要。
+3. **body 参数优先于 session 成身份**：`token = data.LOCAL_TOKEN ? data.LOCAL_TOKEN : req.session.authorization` 一类写法允许任意客户端伪造任意用户身份外发；来自 body/query 的身份证据不得覆盖服务端会话来源。
+4. **session 任意字段写入（mass assignment）**：`for (let x in req.body) { req.session[x] = req.body[x] }`（`/updateBaseConfig`、`/updateRedis` 同款）允许向会话注入任意身份/配置字段；session 写入必须有字段白名单。
+5. **匿名端点返回 secret 派生值**：无鉴权接口返回 `MD5(secretKey.replace(/-/g, req.query.pwd))` 一类口令密文，等于把任意账号口令生成能力挂在公网（供应链级风险）。
+6. **XHR 头 / 无密钥签名当鉴权**：仅凭 `X-Requested-With` 或自定义头（`isAjaxRequest` 类）判定请求合法；无密钥 MD5 拼接签名（`MD5([channel, code, id].join(';')) == sign`）客户端可自行计算——两者都不是授权证据。
+7. **SSRF 缓解绕过变体**：只挡 Host 头不够（`@` userinfo、协议相对 URL、重定向均可绕过）；`rb.origin ? rb.url : host + rb.url` 的任意 origin 分支是 SSRF 直通。**目标 host 白名单**（解析后校验 host）才是有效缓解，URL 必须强制以 `/` 开头且拒绝 `@`。
+
+
 ## 异步、资源与稳定性
 
 - Promise 链必须处理 reject；定时任务、队列消费者、数据库连接、HTTP client、stream 需要超时、取消和释放。
