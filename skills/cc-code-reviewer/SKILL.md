@@ -227,10 +227,10 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 - 模块数量：{K} 个
 - 模块列表：{模块1名称}({n1}类), {模块2名称}({n2}类), ...
 {LANGUAGE_ID=frontend 时}
-- 前端源码文件（src 下 .ts/.tsx/.js/.jsx/.vue/.mjs/.cjs）：{SOURCE_FILE_COUNT} 个
+- 前端源码文件（src 下 .ts/.tsx/.js/.jsx/.vue/.mjs/.cjs + BFF server 层 .js/.mjs/.cjs）：{SOURCE_FILE_COUNT} 个
 - 代码行数：{SOURCE_LINE_COUNT} 行
 - 配置文件：{FORMAL_CONFIG_FILE_COUNT} 个
-- src 目录概览：{解析预扫描 `COMPONENT:` 行，格式为 `目录名(文件数)` 逗号分隔，如 `components(42), pages(18), hooks(8)`；无 `COMPONENT:` 行时显示"无可选子目录"}
+- 目录概览：{解析预扫描 `COMPONENT:` 行，格式为 `目录名(文件数)` 逗号分隔，如 `components(42), pages(18), controllers(13)`；server 层目录（来自 `SERVER_ROOT:formal` 的包根一级目录）正常混排在列表中；无 `COMPONENT:` 行时显示"无可选子目录"}
 {LANGUAGE_ID=python 时}
 - Python 源码文件（src 或顶层包下 .py）：{SOURCE_FILE_COUNT} 个
 - 代码行数：{SOURCE_LINE_COUNT} 行
@@ -350,7 +350,7 @@ Maven 多模块：只有当前范围达到 estimated_tokens > 1000000，
 **参数来源**：
 - `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 的来源按语言分支：
   - `LANGUAGE_ID=java`：从步骤 4 后 `collect-source-files.sh` 固化的当前范围 manifest 统计，口径仅包含 `src/main/java` 生产源码
-  - `LANGUAGE_ID=frontend`：从步骤 4 后收集并按需过滤的当前范围 manifest 统计，口径仅包含 `src/` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`
+  - `LANGUAGE_ID=frontend`：从步骤 4 后收集并按需过滤的当前范围 manifest 统计，口径包含 `src/` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs` 与 BFF server 层（包根及一级目录）生产 `.js/.mjs/.cjs`
   - `LANGUAGE_ID=python`：从步骤 4 后收集并按需过滤的当前范围 manifest 统计，口径仅包含 `src/` 或顶层包下生产 `.py`
 - `500`：每个文件的工具调用 + agent 评估开销（token）
 - `3`：每行代码平均 token 数
@@ -698,7 +698,7 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 `SEMANTIC_LEVEL=maven-static` 时才允许回退 Maven 静态依赖与文本检索。
 
 **LANGUAGE_ID=frontend 时**：
-正式扫描文件必须限定为 `BATCH_FILE_LIST`（文件级分批）内的 `src/` 下生产源码（`.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`）；测试文件（`*.test.*`/`*.spec.*`/`__tests__`/`e2e`/`cypress`）、产物（`dist`/`build`）、`.d.ts` 只能作为只读上下文，不计入已审查前端文件，也不得作为正式问题位置。
+正式扫描文件必须限定为 `BATCH_FILE_LIST`（文件级分批）内的生产源码：`src/` 下的 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs` 与 BFF server 层（包根及一级目录，见 `SERVER_ROOT:formal` 声明）的 `.js/.mjs/.cjs`；测试文件（`*.test.*`/`*.spec.*`/`__tests__`/`e2e`/`cypress`）、产物（`dist`/`build`）、`.d.ts` 只能作为只读上下文，不计入已审查前端文件，也不得作为正式问题位置。
 `SEMANTIC_LEVEL=typescript-lsp` 时必须用 TS LSP 查询 definition/references/implementations/diagnostics 理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `BATCH_FILE_LIST` 内的生产源码。
 `SEMANTIC_LEVEL=none` 时才允许回退 import graph + 配置 + 文本检索静态分析。
 
@@ -1001,7 +1001,7 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 
 **指定模块 + 前端时，先展示 src 目录概览，再调用 INTERACT 工具**：
 
-前端没有 Maven 模块，其可选择的"分区"是 `src/` 下的顶层目录（如 `components`/`pages`/`hooks`/`store`），由前端 `scan-project.sh` 输出的 `COMPONENT:` 行提供。
+前端没有 Maven 模块，其可选择的"分区"由前端 `scan-project.sh` 输出的 `COMPONENT:` 行提供，包含两类：`src/` 下的顶层目录（如 `components`/`pages`/`hooks`/`store`），以及 BFF server 层的一级目录（如 `controllers`/`common`/`application`，来自 `SERVER_ROOT:formal` 声明的包根，老式 BFF 脚手架的服务端代码不在 src 下）。
 
 **展示目录概览**（在调用 INTERACT 之前，用文本输出；完整目录列表只能作为普通文本展示，不得放入 INTERACT options）：
 ```
@@ -1012,39 +1012,43 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 ├── {目录2}/     {N} 文件 · {M} 行
 └── {目录3}/     {N} 文件 · {M} 行
 
+🖥️ 服务端（BFF server 层）：
+├── {server目录1}/     {N} 文件 · {M} 行   （如 controllers、common、application）
+└── server-root 散文件 {N} 文件 · {M} 行   （包根 app.js/server.js 等）
+
 合计：{总文件数} 文件 · {总行数} 行
 ```
 
-数据来源：解析阶段四预扫描输出的 `COMPONENT:` 行（格式 `COMPONENT:{目录名}|{相对路径}|{文件数}|{代码行数}`），提取每个目录的名称、文件数、代码行数。单包项目相对路径通常是 `src/{目录名}`；monorepo/package 项目可能是 `apps/web/src/{目录名}` 或 `packages/admin/src/{目录名}`。仅展示 `COMPONENT:` 行，不展示 `src/` 下的零散文件。
+数据来源：解析阶段四预扫描输出的 `COMPONENT:` 行（格式 `COMPONENT:{目录名}|{相对路径}|{文件数}|{代码行数}`），提取每个目录的名称、文件数、代码行数。src 目录相对路径通常是 `src/{目录名}`；monorepo/package 项目可能是 `apps/web/src/{目录名}` 或 `packages/admin/src/{目录名}`；server 层目录相对路径是包根一级目录（如 `controllers`，monorepo 下为 `packages/api/controllers`），包根散文件聚合为 `server-root` 行。仅展示 `COMPONENT:` 行，不展示零散文件。
 
 **INTERACT payload 约束**：
 - 不得把每个目录都作为 INTERACT option；目录数量可能较多
 - 该步骤最多 3 个固定选项，目录路径通过 Other/free-form 或后续输入步骤收集
 
 **然后调用 INTERACT 工具，参数如下**：
-- question: "请选择本次希望 AI 扫描的 src 目录"
+- question: "请选择本次希望 AI 扫描的目录"
 - header: "扫描目录"
 - options:
   - label: "全部目录"
-    description: "扫描 src 下的全部生产源码，等同全量审查"
+    description: "扫描全部生产源码（src 与 BFF 服务端），等同全量审查"
   - label: "手动输入目录路径"
-    description: "在 Other/free-form 中输入一个或多个 src 下相对路径（如 src/components,src/pages），逗号分隔"
+    description: "在 Other/free-form 中输入一个或多个相对路径（如 src/components,controllers），逗号分隔"
   - label: "前 3 个大目录"
-    description: "按代码行数选择预扫描结果中最大的 3 个 src 目录，适合先覆盖主要复杂度"
+    description: "按代码行数选择预扫描结果中最大的 3 个目录，适合先覆盖主要复杂度"
 - multiSelect: false
 
 **指定模块 + 前端用户响应后**：
 - 选择"全部目录" → REVIEW_SCOPE=全量代码
 - 选择"前 3 个大目录" → REVIEW_SCOPE=按 `COMPONENT:` 行代码行数降序取前 3 个目录的相对路径（如 `src/components`），逗号分隔
 - 选择"手动输入目录路径" 或 Other/free-form → 读取用户提供的相对路径，支持逗号、中文逗号、顿号、空格或换行分隔多个目录；若 INTERACT 当前交互没有返回自定义文本，追加一次 INTERACT 收集目录路径，header 使用 "输入目录"，仍只提供固定选项并要求用户在 Other/free-form 填写目录路径
-- 目录路径必须是 `src/` 下的相对路径（形如 `src/{目录名}` 或 `{目录名}`，后者自动补 `src/` 前缀）；不得接受绝对路径、`..` 路径穿越或解析后位于 `PROJECT_DIR/src/` 之外的路径
+- 目录路径必须是 `COMPONENT:` 行中出现过的相对路径：src 目录形如 `src/{目录名}` 或 `{目录名}`（后者按 `*/src/{目录名}/` 边界匹配），server 层目录用其包根相对路径（如 `controllers`、`application`、monorepo 下的 `packages/api/controllers`）；不得接受绝对路径、`..` 路径穿越或解析后位于 `PROJECT_DIR` 之外的路径
 - 自定义目录路径必须逐个校验是否存在于预扫描结果的 `COMPONENT:` 行中；不存在时提示有效目录列表并重新收集，最多重试 3 次
 - 校验通过后，主 skill 在前端 manifest 生成阶段（见「前端分批」段落）按所选目录过滤 source manifest，使分批与扫描真正收敛到所选目录
 
 **变量赋值**：
 - 全部目录 → REVIEW_SCOPE=全量代码
-- 前 3 个大目录 → REVIEW_SCOPE=src 子目录相对路径（逗号分隔，如 `src/components,src/pages,src/hooks`）
-- 自定义目录路径 → REVIEW_SCOPE=src 子目录相对路径（逗号分隔）
+- 前 3 个大目录 → REVIEW_SCOPE=目录相对路径（逗号分隔，如 `src/components,src/pages,controllers`）
+- 自定义目录路径 → REVIEW_SCOPE=目录相对路径（逗号分隔）
 
 ---
 
@@ -1384,12 +1388,14 @@ bash "${PLUGIN_ROOT}/scripts/languages/java/plan-file-batches.sh" \
 MANIFEST="$(mktemp)"
 bash "${PLUGIN_ROOT}/scripts/languages/frontend/collect-source-files.sh" "$PROJECT_DIR" > "$MANIFEST"
 
-# 若用户在步骤 4 选了「指定目录」（REVIEW_SCOPE 为 src 子目录路径列表，非"全量代码"），
-# 用前端专属过滤脚本收敛 manifest：只保留落在所选 src 子目录内的文件。
-# 这是前端「指定模块」真正缩小扫描范围的唯一关卡——分批脚本只读 manifest，
-# manifest 收敛后，分批/扫描/文件计数自动收敛，无需改分批脚本或子 agent。
+# 若用户在步骤 4 选了「指定目录」（REVIEW_SCOPE 为目录相对路径列表——src 子目录或
+# BFF server 层目录（如 controllers），非"全量代码"），用前端专属过滤脚本收敛 manifest：
+# 只保留落在所选目录内的文件。这是前端「指定模块」真正缩小扫描范围的唯一关卡——
+# 分批脚本只读 manifest，manifest 收敛后，分批/扫描/文件计数自动收敛，无需改分批脚本或子 agent。
 # 过滤脚本支持单包和 monorepo：`src/components` 或 `components` 会匹配所有前端族群 package-local
-# `*/src/components/`；`apps/web/src/components` 这类完整相对路径只匹配对应 package。
+# `*/src/components/`；`apps/web/src/components` 这类完整相对路径只匹配对应 package；
+# server 层目录用包根相对路径（如 `controllers` 命中包根 `controllers/*`，monorepo 下
+# `packages/api/controllers` 只命中对应包）。
 if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_SCOPE" != "全量代码" ]; then
   FILTERED="$(mktemp)"
   bash "${PLUGIN_ROOT}/scripts/languages/frontend/filter-source-manifest.sh" \
@@ -1410,7 +1416,7 @@ bash "${PLUGIN_ROOT}/scripts/core/plan-file-batches.sh" \
 
 **REVIEW_SCOPE 过滤后必须重算审查规模**：manifest 收敛后，`REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 必须按过滤后的 manifest 重新统计（文件数 = `grep -c . "$MANIFEST"`，行数 = 各文件 `wc -l` 之和），覆盖步骤 4 之前按全项目算的值。重算后的值用于子 agent 参数表的「审查文件数量/审查代码行数」、最终汇总的覆盖率分母、以及前端分批表展示。`REVIEW_SCOPE=全量代码` 时跳过过滤和重算，保持原行为。
 
-> 过滤规则：manifest 中每行是绝对路径。`src/{目录名}` 或 `{目录名}` 按 `*/src/{目录名}/` 边界匹配，因此 monorepo 多包场景下，同名子目录（如两个包都有 `src/components`）会同时命中；`apps/web/src/{目录名}` 这类完整相对路径只匹配对应 package。过滤脚本必须拒绝绝对路径和 `..` 路径穿越；过滤后为空时必须终止并提示有效目录，而不是继续生成空批次。
+> 过滤规则：manifest 中每行是绝对路径。`src/{目录名}` 或 `{目录名}` 按 `*/src/{目录名}/` 边界匹配，因此 monorepo 多包场景下，同名子目录（如两个包都有 `src/components`）会同时命中；`apps/web/src/{目录名}` 这类完整相对路径只匹配对应 package；server 层目录的短名（如 `controllers`）按包根一级目录前缀命中（含 monorepo 包根）。过滤脚本必须拒绝绝对路径和 `..` 路径穿越；过滤后为空时必须终止并提示有效目录，而不是继续生成空批次。
 
 合并：
 ```bash

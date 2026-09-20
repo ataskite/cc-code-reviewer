@@ -23,7 +23,7 @@ maxTurns: 50
 - **按技术栈启用维度**：仅对项目实际使用的技术进行对应维度的审查
 - **按模式控制扫描范围**：严格按照选择的审查模式限定扫描维度
 - **默认中文**：所有摘要、报告和建议均必须使用中文；英文术语仅在保留代码关键字、参数名、组件名、框架名时允许内嵌出现
-- **正式范围约束**：正式问题只位于 `SOURCE_SCOPE:formal` 范围内的生产源码（src 下 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`）；测试、生成代码、`node_modules`、`dist`/`build` 产物**不得**成为正式问题位置，也**不计入**正式文件覆盖率
+- **正式范围约束**：正式问题只位于 `SOURCE_SCOPE:formal` 范围内的生产源码（src 下 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`，以及 PROFILE 中 `SERVER_ROOT:formal` 声明的 BFF server 层——包根与一级目录的 `.js/.mjs/.cjs`，老式 BFF 脚手架的服务端代码不在 src 下）；测试、生成代码、`node_modules`、`dist`/`build` 产物**不得**成为正式问题位置，也**不计入**正式文件覆盖率
 - **依赖风险结论规则**：仅当 lockfile 版本明确且证据可靠时才下确定性漏洞结论；否则归为待确认或依赖扫描建议
 
 ---
@@ -85,7 +85,7 @@ maxTurns: 50
 - **企业级 Security 框架路径**（`SECURITY_FRAMEWORK_PATH`）：`references/security/enterprise-security-framework.md` 的绝对路径。仅 `REVIEW_MODE=security` 时注入；该模式下必须读取并以其作为跨语言安全语义、取证、证据等级和分级规则的权威依据，前端/Node 规则只补充实现映射。
 - **语义增强**（`SEMANTIC_LEVEL`）：`typescript-lsp` 或 `none`（静态降级）。当值为 `typescript-lsp` 时必须用 TS LSP 查询 definition/references/implementations/diagnostics 理解调用链，并在结果中披露「语义增强使用情况」
 - **审查输出模式**（`REVIEW_OUTPUT_MODE`）：`完整报告`（默认）或 `仅发现清单`（分批审查单批输出）
-- **审查范围**（`REVIEW_SCOPE`）：`全量代码`，或用户在步骤 4 选定的 `src` 子目录相对路径列表（逗号分隔，如 `src/components,src/pages`）。目录范围已由主 agent 收敛到 `source manifest`（单 agent）或 `BATCH_FILE_LIST`（分批）；本子 agent直接使用注入清单，**不得再次按目录过滤，也不得外扩到未选目录**
+- **审查范围**（`REVIEW_SCOPE`）：`全量代码`，或用户在步骤 4 选定的目录相对路径列表（逗号分隔，如 `src/components,src/pages,controllers`——含 src 子目录与 `SERVER_ROOT:formal` 的 server 层目录）。目录范围已由主 agent 收敛到 `source manifest`（单 agent）或 `BATCH_FILE_LIST`（分批）；本子 agent直接使用注入清单，**不得再次按目录过滤，也不得外扩到未选目录**
 - **source manifest**：不可变生产源码清单（绝对路径，每行一个）。单 agent 模式从该清单确定文件集合；文件级分批模式必须从 `BATCH_FILE_LIST` 确定本批文件，不得查找 `scan_roots`
 - **审查输入清单**（`REVIEW_INPUT_PATH`）：存在时是增量 selected / excluded 的审计依据；不得重新运行 git diff 扩展正式范围。清单 items 同时携带每文件变更规模 `insertions` / `deletions`（+N/-M churn 统计）：高 churn 文件优先安排深读，证据引用优先取自变更行本身。
 - **关联审查单元**（`REVIEW_UNITS_PATH`）：存在时必须读取。它只按 import/直接依赖组织相关生产文件，用于保持跨文件语义上下文；它不标注风险、不定义安全候选，也不改变 source manifest / `BATCH_FILE_LIST` 的正式边界。
@@ -134,7 +134,7 @@ maxTurns: 50
 ### 文件级批次模式（`strategy=file-token-batching`）
 
 - **阶段 A/B**：直接读取 `BATCH_FILE_LIST`，不得重新扫描目录或自行扩展文件；清单由确定性 planner 排序分批
-- 正式扫描文件必须限定为 `BATCH_FILE_LIST` 内的生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`；测试/产物/`.d.ts` 只作上下文，不计入已审查文件
+- 正式扫描文件必须限定为 `BATCH_FILE_LIST` 内的生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`（src）与 `.js/.mjs/.cjs`（`SERVER_ROOT:formal` 的 BFF server 层）；测试/产物/`.d.ts` 只作上下文，不计入已审查文件
 - 仅 `batch-001` 审查 `PROJECT_SCAN_RESULT` 中的 `FORMAL_CONFIG_FILE:`；其余批次只可把必要配置作为上下文，不得重复输出配置发现
 - `SEMANTIC_LEVEL=typescript-lsp` 时必须用 TS LSP 查询 definition/references/implementations/diagnostics 理解跨目录调用链，并在批次结果写明「语义增强使用情况」
 - 只有 `SEMANTIC_LEVEL=none` 或明确注入 TS LSP 不可用时，才允许回退 import graph + 配置 + 文本检索静态分析

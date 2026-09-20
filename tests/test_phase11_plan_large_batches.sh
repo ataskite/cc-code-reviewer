@@ -334,7 +334,9 @@ if ! jq -r '.units[].name? // empty' "$RUN_DIR"/batches/batch-*.json | grep -Fxq
   echo "module-sequential batching must keep the selected oversized module as one batch" >&2
   exit 1
 fi
-if ! jq -e 'select(.large_batch == true and (.units[].name == "yudao-module-mes"))' "$RUN_DIR"/batches/batch-*.json >/dev/null; then
+# jq -e 对多文件 select 的退出码在 1.5（无尾输出 → 4）与 1.6+ 不一致，
+# 存在性断言改用 -s + any 聚合单布尔值，跨 jq 版本稳定。
+if ! jq -s -e 'any(.[]; .large_batch == true and any(.units[]; .name == "yudao-module-mes"))' "$RUN_DIR"/batches/batch-*.json >/dev/null; then
   echo "module-sequential oversized modules must be flagged but not blocked" >&2
   exit 1
 fi

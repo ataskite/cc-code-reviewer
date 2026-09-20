@@ -25,12 +25,16 @@ branch_slug() {
 }
 sum_field() { awk -F '\t' -v f="$2" '{s+=$f} END{print s+0}' "$1"; }
 
-# 语言中性的风险优先级：路由/页面/组件入口优先
+# 语言中性的风险优先级：路由/页面/组件/服务端入口优先
+# （app.js/server.js 与 controllers 目录对齐前端 agent 的 P0 热点清单——BFF 中继/鉴权/会话代码）
 risk_priority() {
-  case "$1" in
-    *route*|*Router*|*Page*|*App.tsx|*App.jsx|*index.tsx|*main.tsx) echo 0 ;;
-    *Service*|*api*|*hook*|*Hook*|*store*|*Store*) echo 1 ;;
-    *) echo 2 ;;
+  case "$(basename "$1")" in
+    app.js|server.js|boot.js|router.js) echo 0 ;;
+    *) case "$1" in
+      *route*|*Router*|*Page*|*App.tsx|*App.jsx|*index.tsx|*main.tsx|*controllers*) echo 0 ;;
+      *Service*|*api*|*hook*|*Hook*|*store*|*Store*) echo 1 ;;
+      *) echo 2 ;;
+    esac ;;
   esac
 }
 
@@ -139,7 +143,7 @@ for unit_file in "$UNIT_FILES_DIR"/*; do
   unit_cost="$(awk -F '\t' '{s+=$2} END{print s+0}' "$unit_file")"
   unit_loc="$(awk -F '\t' '{s+=$3} END{print s+0}' "$unit_file")"
   unit_priority="$(awk -F '\t' '
-    function p(path) { n=split(path,a,"/"); f=a[n]; return (f ~ /route|Router|Page|App\\.(tsx|jsx)|index\\.(tsx|jsx)|main\\.(tsx|jsx)/ ? 0 : (f ~ /Service|api|hook|Hook|store|Store/ ? 1 : 2)); }
+    function p(path) { n=split(path,a,"/"); f=a[n]; return ((f=="app.js"||f=="server.js"||f=="boot.js"||f=="router.js" || f ~ /route|Router|Page|App\\.(tsx|jsx)|index\\.(tsx|jsx)|main\\.(tsx|jsx)/ || path ~ /\/controllers\//) ? 0 : (f ~ /Service|api|hook|Hook|store|Store/ ? 1 : 2)); }
     { x=p($4); if (NR==1 || x<m) m=x } END { print m+0 }
   ' "$unit_file")"
   printf '%s\t%s\t%s\t%s\n' "$unit_priority" "$unit_cost" "$unit_loc" "$unit" >> "$FILES_TSV"

@@ -176,7 +176,9 @@ case "$OUT" in
   *) fail "atomic_write_text returns the tmp path (got '$OUT')" ;;
 esac
 grep -qx '新内容' "$TMP_DIR/t3.txt" || fail "atomic_write_text content"
-PERM="$(stat -f '%Lp' "$TMP_DIR/t3.txt" 2>/dev/null || stat -c '%a' "$TMP_DIR/t3.txt")"
+# GNU stat 对未知 -f 格式不报错而是输出文件系统状态并 exit 0，必须先探测 GNU -c，
+# 失败（macOS 无 -c）再回退 BSD -f '%Lp'，否则 Linux 上回退链永远走不到。
+PERM="$(stat -c '%a' "$TMP_DIR/t3.txt" 2>/dev/null || stat -f '%Lp' "$TMP_DIR/t3.txt" 2>/dev/null)"
 expect_eq "$PERM" "640" "atomic_write_text preserves mode bits"
 # 原子写 die 标签：向不可写目录写临时文件必须报 TMP_WRITE_ERROR。
 ERR_OUT="$(pm 'atomic_write_text("'"$TMP_DIR"'/no-such-dir/x.txt", "y", ".tmp.\$\$")' 2>&1 >/dev/null || true)"

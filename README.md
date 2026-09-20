@@ -147,8 +147,8 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 - React TS/JS 支持：可识别 `.tsx/.jsx`，也支持有 React import / `createElement` 证据的 `.ts/.js`
 - Vue 支持：识别 Vue 2.x / Vue 3.x 和 `.vue` SFC，信号覆盖 `vue@2/3`、`vue-template-compiler`、`@vue/cli-service`、`@vitejs/plugin-vue`、`pinia`、`vue-router@3/4`、`vue-loader` 版本、`vite-plugin-vue2` 等；无版本锁定时按 `createApp(` / `new Vue(` 等内容信号判版本；React/Vue 信号共存时按 Vue 优先；Vue2 legacy 重点检查 Options API、响应式限制、mixin 全局污染、filter 迁移债、Vuex 3、Vue Router 3、事件总线和生命周期清理
 - Node 支持：识别 `package.json` 的 `type`、`main`/`exports`、`engines.node`、Express/Koa/Fastify 等服务端信号
-- 正式源码范围：只统计受支持 package 的 `src` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`，排除测试、构建产物、配置脚本、`.d.ts`
-- Monorepo 范围选择：`src/components` 或 `components` 会匹配所有前端族群 package-local `*/src/components/`；`apps/web/src/components` 只匹配指定 package
+- 正式源码范围：受支持 package 的 `src` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`，加 BFF server-root 层（信号门控发现的包根与一级目录服务端 `.js/.mjs/.cjs`，覆盖老式 BFF 脚手架服务端代码在 src 之外的场景；上限 `CC_CODE_REVIEWER_SERVER_ROOT_LIMIT`，stderr `SERVER_ROOTS_ADDED=N` 披露）；测试、构建产物、配置脚本、`.d.ts` 仍排除
+- Monorepo 范围选择：`src/components` 或 `components` 会匹配所有前端族群 package-local `*/src/components/`；`apps/web/src/components` 只匹配指定 package；BFF server 层目录（如 `controllers`）按包根一级目录前缀命中
 - TypeScript LSP 可用时用于语义增强；不可用时降级到 import graph + 配置 + 文本检索
 
 ### Python 审查

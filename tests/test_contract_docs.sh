@@ -1109,6 +1109,13 @@ grep -qE 'new Vue|Vue\.extend|Vue\.component' "$FE_DETECT" || { echo "FAIL: dete
 # collect-source-files.sh 必须复用 detect-project.sh 的 Vue 信号（避免源码根闸门漂移导致 Vue3 hoisted 清单为空）
 FE_COLLECT="$ROOT_DIR/scripts/languages/frontend/collect-source-files.sh"
 grep -q 'FE_DETECT_SOURCED=1' "$FE_COLLECT" || { echo "FAIL: collect-source-files 必须 source detect-project.sh 复用 Vue 信号" >&2; exit 1; }
+# BFF server-root 层契约（v1.7.0）：collector 必须有上限披露与灰度开关；scan-project 与 agent 必须声明 SERVER_ROOT 行
+grep -q 'SERVER_ROOTS_ADDED' "$FE_COLLECT" || { echo "FAIL: frontend collector 必须以 stderr 披露 SERVER_ROOTS_ADDED" >&2; exit 1; }
+grep -q 'CC_CODE_REVIEWER_SERVER_ROOT_LIMIT' "$FE_COLLECT" || { echo "FAIL: frontend collector 必须支持 server 层上限开关" >&2; exit 1; }
+FE_SCAN="$ROOT_DIR/scripts/languages/frontend/scan-project.sh"
+grep -q 'SERVER_ROOT:formal' "$FE_SCAN" || { echo "FAIL: frontend scan-project 必须输出 SERVER_ROOT:formal 声明行" >&2; exit 1; }
+FE_AGENT_DOC="$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
+grep -q 'SERVER_ROOT:formal' "$FE_AGENT_DOC" || { echo "FAIL: frontend agent 必须声明 SERVER_ROOT:formal 正式范围" >&2; exit 1; }
 # Vue 规则细则必须覆盖高价值缺口（provide/inject 响应性、script setup 顶层 await、history base、动态路由时序）
 FE_VUE_RULES="$ROOT_DIR/references/languages/frontend/vue-rules.md"
 grep -q 'provide/inject' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 provide/inject 响应性" >&2; exit 1; }

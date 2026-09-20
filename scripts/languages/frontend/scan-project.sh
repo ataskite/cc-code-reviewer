@@ -9,19 +9,63 @@ PTYPE="$(bash "$SCRIPT_DIR/detect-project.sh" "$PROJECT_DIR" | sed -n 's/^PROJEC
 # 复用 detect-project.sh 的 Vue 信号纯函数，避免 TECH_STACK 信号与 detect 判定漂移
 FE_DETECT_SOURCED=1 . "$SCRIPT_DIR/detect-project.sh"
 rel_path() { printf '%s\n' "${1#$PROJECT_DIR/}"; }
+# server 包根相对路径：项目根本身输出 '.'（SOURCE_ROOT 恒为 src 目录不适用该分支）
+server_root_rel() {
+  if [ "$1" = "$PROJECT_DIR" ]; then printf '.\n'; return; fi
+  printf '%s\n' "${1#$PROJECT_DIR/}"
+}
+# 由 server 层文件上溯其包根：最近的含 package.json 祖先目录（含项目根），
+# 无 package.json 祖先时兜底取 PROJECT_DIR 直接子目录
+server_pkg_root_of() {
+  local f="$1" d
+  d="$(dirname "$f")"
+  while true; do
+    if [ -f "$d/package.json" ]; then
+      printf '%s\n' "$d"
+      return 0
+    fi
+    [ "$d" = "$PROJECT_DIR" ] && break
+    [ "$d" = "/" ] && break
+    d="$(dirname "$d")"
+  done
+  d="$(dirname "$f")"
+  while [ "$d" != "$PROJECT_DIR" ] && [ "$(dirname "$d")" != "$PROJECT_DIR" ] && [ "$d" != "/" ]; do
+    d="$(dirname "$d")"
+  done
+  printf '%s\n' "$d"
+}
 
 SOURCE_ROOTS=()
+SERVER_ROOTS=()
 MANIFEST="$(bash "$SCRIPT_DIR/collect-source-files.sh" "$PROJECT_DIR")"
 while IFS= read -r file; do
   [ -n "$file" ] || continue
-  root="${file%/src/*}/src"
-  [ -d "$root" ] || continue
-  root="$(cd "$root" && pwd -P)"
-  found=0
-  for existing in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
-    [ "$existing" = "$root" ] && { found=1; break; }
-  done
-  [ "$found" -eq 0 ] && SOURCE_ROOTS+=("$root")
+  case "$file" in
+    */src/*)
+      root="${file%/src/*}/src"
+      [ -d "$root" ] || continue
+      root="$(cd "$root" && pwd -P)"
+      found=0
+      for existing in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
+        [ "$existing" = "$root" ] && { found=1; break; }
+      done
+      [ "$found" -eq 0 ] && SOURCE_ROOTS+=("$root")
+      ;;
+    *)
+      # BFF server 层文件：登记其包根为 SERVER_ROOT（语义与 SOURCE_ROOTS 的 src root 区分）。
+      # companion 层并入的 package.json 不在 /src/ 下，但它不是 server 代码，须跳过，
+      # 否则纯前端包会被误判为 server 包（其 FORMAL_CONFIG/SOURCE_SCOPE 声明随之漂移）。
+      case "$(basename "$file")" in
+        package.json) continue ;;
+      esac
+      root="$(server_pkg_root_of "$file")"
+      found=0
+      for existing in "${SERVER_ROOTS[@]+"${SERVER_ROOTS[@]}"}"; do
+        [ "$existing" = "$root" ] && { found=1; break; }
+      done
+      [ "$found" -eq 0 ] && SERVER_ROOTS+=("$root")
+      ;;
+  esac
 done <<< "$MANIFEST"
 
 PKGS=()
@@ -43,13 +87,22 @@ done <<< "$MANIFEST"
 # 路径与计数必须来自同一份不可变清单，供 agent 按 FORMAL_CONFIG_FILE 精确读取。
 collect_formal_config_files() {
   local root pkg_root
-  for root in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
-    pkg_root="${root%/src}"
-    find "$pkg_root" -maxdepth 1 \
-      -type f \( -name 'package.json' -o -name 'tsconfig.json' -o -name 'tsconfig.*.json' \
-        -o -name 'vite.config.*' -o -name 'webpack.config.*' -o -name 'vue.config.*' \
-        -o -name 'babel.config.*' \) -print 2>/dev/null
-  done | sort -u
+  {
+    for root in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
+      pkg_root="${root%/src}"
+      find "$pkg_root" -maxdepth 1 \
+        -type f \( -name 'package.json' -o -name 'tsconfig.json' -o -name 'tsconfig.*.json' \
+          -o -name 'vite.config.*' -o -name 'webpack.config.*' -o -name 'vue.config.*' \
+          -o -name 'babel.config.*' \) -print 2>/dev/null
+    done
+    # server 层包根同样收集（纯 BFF 包无 src 时其配置仍需进入 FORMAL_CONFIG_FILE）
+    for root in "${SERVER_ROOTS[@]+"${SERVER_ROOTS[@]}"}"; do
+      find "$root" -maxdepth 1 \
+        -type f \( -name 'package.json' -o -name 'tsconfig.json' -o -name 'tsconfig.*.json' \
+          -o -name 'vite.config.*' -o -name 'webpack.config.*' -o -name 'vue.config.*' \
+          -o -name 'babel.config.*' \) -print 2>/dev/null
+    done
+  } | sort -u
 }
 
 CONFIG_MANIFEST="$(collect_formal_config_files)"
@@ -58,6 +111,9 @@ CONFIG_COUNT="$(printf '%s\n' "$CONFIG_MANIFEST" | grep -c . || true)"
 # 组件维度（每个 source root 下顶层目录作为粗粒度 COMPONENT）
 # 复用 collect-source-files.sh 的同一口径：对项目根调用一次得到完整 manifest，
 # 再按 src 下各顶层目录过滤计数，保证 COMPONENT 计数与 SOURCE_FILE_COUNT 一致
+# server 层文件（不在任何 src root 下）按 server 包根一级目录聚合为 COMPONENT，
+# 包根级散文件聚合为 server-root 行；rel 采用包根相对路径（项目根包为裸目录名），
+# 与 filter-source-manifest.sh 的 flat-path/短名匹配口径一致，供步骤 4 展示与选择
 emit_components() {
   local full_manifest
   full_manifest="$(bash "$SCRIPT_DIR/collect-source-files.sh" "$PROJECT_DIR" 2>/dev/null)"
@@ -82,6 +138,40 @@ emit_components() {
       fi
     done < <(find "$root" -maxdepth 1 -mindepth 1 -type d 2>/dev/null)
   done
+  # server 层聚合
+  local f in_src sr srel first crel
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    in_src=0
+    for root in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
+      case "$f" in
+        "$root"/*) in_src=1; break ;;
+      esac
+    done
+    [ "$in_src" -eq 1 ] && continue
+    sr=""
+    for root in "${SERVER_ROOTS[@]+"${SERVER_ROOTS[@]}"}"; do
+      case "$f" in
+        "$root"/*) sr="$root"; break ;;
+      esac
+    done
+    [ -z "$sr" ] && continue
+    srel="$(server_root_rel "$sr")"
+    rel="${f#"$sr"/}"
+    case "$rel" in
+      */*)
+        first="${rel%%/*}"
+        if [ "$srel" = "." ]; then crel="$first"; else crel="$srel/$first"; fi
+        printf '%s\t%s\t%s\n' "$first" "$crel" "$(wc -l < "$f" | tr -d ' ')"
+        ;;
+      *)
+        printf 'server-root\t%s\t%s\n' "$srel" "$(wc -l < "$f" | tr -d ' ')"
+        ;;
+    esac
+  done <<< "$full_manifest" | LC_ALL=C sort -u | awk -F'\t' '
+    { name[$2]=$1; cnt[$2]++; ln[$2]+=$3 }
+    END { for (k in cnt) printf "COMPONENT:%s|%s|%d|%d\n", name[k], k, cnt[k], ln[k] }
+  ' | LC_ALL=C sort
 }
 
 has_dep_anywhere() {
@@ -147,6 +237,10 @@ echo "CODE_INTELLIGENCE_REASON=typescript-lsp-detection-pending"
 
 for root in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
   echo "SOURCE_ROOT:formal|$(rel_path "$root")"
+done
+# BFF server 层包根声明：正式范围含包根与一级目录的服务端 JS（清单为准确边界）
+for root in "${SERVER_ROOTS[@]+"${SERVER_ROOTS[@]}"}"; do
+  echo "SERVER_ROOT:formal|$(server_root_rel "$root")"
 done
 while IFS= read -r cfg; do
   [ -n "$cfg" ] && printf 'FORMAL_CONFIG_FILE:%s\n' "$cfg"
@@ -218,6 +312,17 @@ echo "SOURCE_SCOPE:formal|src/**/*.jsx"
 echo "SOURCE_SCOPE:formal|src/**/*.vue"
 echo "SOURCE_SCOPE:formal|src/**/*.mjs"
 echo "SOURCE_SCOPE:formal|src/**/*.cjs"
+# server 层声明（collect-source-files.sh 的信号门控清单为准确边界，此为声明性口径）
+for root in "${SERVER_ROOTS[@]+"${SERVER_ROOTS[@]}"}"; do
+  srel="$(server_root_rel "$root")"
+  if [ "$srel" = "." ]; then
+    echo "SOURCE_SCOPE:formal|./*.js"
+    echo "SOURCE_SCOPE:formal|./**/*.js"
+  else
+    echo "SOURCE_SCOPE:formal|$srel/*.js"
+    echo "SOURCE_SCOPE:formal|$srel/**/*.js"
+  fi
+done
 echo "SOURCE_SCOPE:context|**/*.test.tsx"
 echo "SOURCE_SCOPE:context|**/*.test.vue"
 echo "SOURCE_SCOPE:context|**/*.d.ts"

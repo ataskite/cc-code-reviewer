@@ -109,3 +109,26 @@ printf 'import { createApp } from "vue"; createApp({}).mount("#app");\n' > "$CV/
 CVOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/scan-project.sh" "$CV")"
 grep -q "PROJECT_TYPE=frontend-vue3" <<< "$CVOUT"
 grep -qE "^SOURCE_FILE_COUNT=2$" <<< "$CVOUT"
+
+# ---- BFF server 层 fixture：SERVER_ROOT / COMPONENT / SOURCE_SCOPE 联动 ----
+SV="$TMP_DIR/bff-server"; mkdir -p "$SV/src/views" "$SV/controllers"
+cat > "$SV/package.json" <<'JSON'
+{"name":"bff-server","main":"app.js","dependencies":{"vue":"^2.6.10","express":"^4.16.0"}}
+JSON
+echo "<template><div/></template>" > "$SV/src/views/Home.vue"
+printf "const express = require('express');\nexpress().listen(3000);\n" > "$SV/app.js"
+cat > "$SV/controllers/svc.js" <<'JS'
+var router = { post: function () {} };
+router.post('/api/request', function (req, res) {});
+module.exports = router;
+JS
+SVOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/scan-project.sh" "$SV")"
+grep -qE "^SOURCE_FILE_COUNT=4$" <<< "$SVOUT"   # src 1 + server 2 + package.json 伴随 1
+grep -q "^SERVER_ROOT:formal|\\.$" <<< "$SVOUT"
+grep -qE "^COMPONENT:controllers\\|controllers\\|[0-9]+\\|[0-9]+$" <<< "$SVOUT"
+grep -qE "^COMPONENT:server-root\\|\\.\\|[0-9]+\\|[0-9]+$" <<< "$SVOUT"
+grep -qF 'SOURCE_SCOPE:formal|./*.js' <<< "$SVOUT"
+grep -qF 'SOURCE_SCOPE:formal|./**/*.js' <<< "$SVOUT"
+# 纯前端对照组：无入口/强信号 → 无 SERVER_ROOT 行
+PFOUT="$(bash "$ROOT_DIR/scripts/languages/frontend/scan-project.sh" "$CV")"
+! grep -q "^SERVER_ROOT:" <<< "$PFOUT"

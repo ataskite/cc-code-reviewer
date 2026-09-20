@@ -229,7 +229,7 @@ bash scripts/core/validate-resume-input.sh "$RUN_DIR" "$PROJECT_DIR" --rules
 - 类型：frontend-vue3
 - 证据：.vue SFC、vue@3、@vitejs/plugin-vue、pinia
 - 额外检测到 React 依赖，但按 Vue 优先策略路由到 Vue 3
-- 正式范围：受支持 package-local src 下的生产源码
+- 正式范围：受支持 package-local src 下的生产源码（含 BFF server 层时另附 `SERVER_ROOT:formal` 包根声明）
 
 后续仍按同一顺序逐步确认：审查模式 → 报告保存方式 → 审查入口 →
 可选目录范围 → 审查模型 → 可选批次/并发 → 最终执行计划。
