@@ -150,6 +150,7 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 - 正式源码范围：受支持 package 的 `src` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`，加 BFF server-root 层（信号门控发现的包根与一级目录服务端 `.js/.mjs/.cjs`，覆盖老式 BFF 脚手架服务端代码在 src 之外的场景；上限 `CC_CODE_REVIEWER_SERVER_ROOT_LIMIT`，stderr `SERVER_ROOTS_ADDED=N` 披露）；测试、构建产物、配置脚本、`.d.ts` 仍排除
 - Monorepo 范围选择：`src/components` 或 `components` 会匹配所有前端族群 package-local `*/src/components/`；`apps/web/src/components` 只匹配指定 package；BFF server 层目录（如 `controllers`）按包根一级目录前缀命中
 - TypeScript LSP 可用时用于语义增强；不可用时降级到 import graph + 配置 + 文本检索
+- 安全规则（v1.7.1 起，OWASP Top 10:2025 对齐）：node-rules「Node 服务端注入与危险 API 负面清单」覆盖原型污染、命令注入（child_process）、路径穿越、SSTI、HTTP 参数污染、NoSQL 操作符注入、不安全反序列化、ReDoS 与事件循环阻塞；维度 6 补 CSRF、tabnabbing、mXSS 与 DOM clobbering，注入类证据闭合直通 P0 定级；并补弱算法与不安全随机（A04）及安全事件审计日志缺失（A09）
 
 ### Python 审查
 

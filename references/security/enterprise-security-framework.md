@@ -65,6 +65,7 @@ Security 专项必须覆盖全部正式源码边界，并优先审查入口、�
 - SQL/NoSQL、命令、表达式、模板、LDAP、XPath、反序列化和代码执行注入。
 - XSS、开放重定向、HTTP 请求走私或协议解析边界错误。
 - 用户输入到查询、渲染、日志、消息、脚本、文件路径或外部调用的完整传播链。
+- 前端/Node 实现映射：原型污染、命令注入（child_process）、路径穿越、SSTI、NoSQL 操作符注入、不安全反序列化的检测特征与正解见 `references/languages/frontend/node-rules.md`「Node 服务端注入与危险 API 负面清单」。
 
 ### 3.4 外部资源与文件
 

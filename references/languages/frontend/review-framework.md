@@ -29,7 +29,7 @@
 
 ## 模式说明
 
-- **fast**（快速扫雷）：仅扫描会直接炸产线或造成明显安全/稳定性风险的问题，聚焦正确性、类型安全（any 逃逸+断言滥用）、React Hooks / Vue 响应式与生命周期 / Node 配置安全、副作用与资源清理、P0 级安全问题（XSS/危险 HTML/凭据/开放重定向）。适合 PR 合并前快速卡口。覆盖维度：1、2（部分）、4（部分）、6（P0）、8。
+- **fast**（快速扫雷）：仅扫描会直接炸产线或造成明显安全/稳定性风险的问题，聚焦正确性、类型安全（any 逃逸+断言滥用）、React Hooks / Vue 响应式与生命周期 / Node 配置安全、副作用与资源清理、P0 级安全问题（XSS/危险 HTML/凭据/开放重定向/命令注入等 RCE 类/任意文件读写路径穿越）。适合 PR 合并前快速卡口。覆盖维度：1、2（部分）、4（部分）、6（P0）、8。
 - **standard**（标准审查）：日常迭代推荐模式，覆盖维度 1-11，但 10 只查核心测试缺失、11 只查 RESTful+错误处理+分页。适合迭代上线前的常规质量门禁。（10/11 部分启用；维度 12 设计系统一致性不启用。）
 - **deep**（深度审查）：全量 12 维度，含测试质量、技术债深挖和设计系统一致性。适合大版本上线前或重要模块的系统性审查，耗时较长。覆盖维度：1-12 全开。
 - **security**（安全专项）：聚焦安全核心（维度 6 全深度）及与安全强相关的交叉维度（配置安全、注入/越权、敏感信息泄露、接口鉴权/错误信息）。类型安全在 security 关闭——类型问题是质量问题不是安全问题，不污染安全报告。覆盖维度：1、4（部分）、5（部分）、6、9（部分）、11（部分）。security 模式必须同时读取并执行 `references/security/enterprise-security-framework.md`（跨语言权威依据：安全语义、取证、证据等级与分级规则），本文件与前端/Node 规则只负责维度与实现映射，不得降低其安全要求。
@@ -87,8 +87,13 @@
 - **BFF/Node 鉴权透传**：接口鉴权、token 透传、401/403 处理、租户隔离
 - **授权面差分反例**：Security 模式下，Node/BFF 需按统一 Security 框架完成授权面二次扫描；浏览器端只登记可见入口、对象标识和敏感字段线索，不能据此证明后端已授权
 - **不安全 URL 拼接**：SSRF 向量（前端→BFF/Node）——query/body 的 url、fullUrl、path、callback、webhook 等用户可控字段进入服务端 HTTP 客户端（http.request/axios/superagent 等）前必须白名单校验协议与 host；`rb.origin ? rb.url : host+url` 的任意 origin 分支是 SSRF 直通；只挡 Host 头不够（`@` userinfo、协议相对 URL、重定向均可绕过），目标 host 白名单才是有效缓解；BFF 中继层出口头负面清单见 node-rules.md「BFF 中继层负面清单」（IMA 事件实证）
+- **Node 注入面**：原型污染（深合并消化请求对象）、命令注入（child_process）、路径穿越（sendFile/fs 路径拼接）、SSTI、NoSQL 操作符注入、不安全反序列化、ReDoS——检测特征与正解见 node-rules.md「Node 服务端注入与危险 API 负面清单」；命中即安全问题候选，证据闭合时按「注入与 RCE 直通定级」定 P0
+- **CSRF**：cookie 会话的 BFF/Node 状态变更端点（POST/PUT/DELETE/PATCH）必须有 SameSite Cookie 或 CSRF token 双重提交校验；纯 Authorization Bearer 头鉴权且无 cookie 会话时可豁免（须给出无 cookie 会话的证据，不得默认豁免）
+- **tabnabbing**：`window.open` 或 `target="_blank"` 打开外部/不可信链接未带 `rel="noopener noreferrer"`——被打开页面可经 `window.opener` 反向操纵原页面（钓鱼跳转）
+- **mXSS 与 DOM clobbering**：EOL 框架版本的模板编译器（Vue 2 系列 CVE-2024-6783 类）与过期 sanitizer（DOMPurify 历史 bypass CVE-2025-26791 类）会使「已净化」内容在重新解析时变异执行；HTML `id`/`name` 属性可 clobber 全局引用（`document.implementation` 等）使 sanitizer 判定失效——不得默认 sanitizer/编译器版本可信，须对照 lockfile 版本核查
 - **内容安全策略**：CSP 是否部署（`script-src 'self'` + nonce/hash，禁用 `unsafe-inline`/`unsafe-eval`）；跨域脚本是否有 SRI `integrity`；Trusted Types 策略
 - **供应链（OWASP 2025 A03）**：lockfile 是否提交并用 `npm ci` 校验；`postinstall` 脚本来源；高危依赖的 provenance/Sigstore 签名；typosquatting 依赖
+- **弱算法与不安全随机（OWASP 2025 A04）**：口令存储/签名/凭据派生使用 MD5、SHA-1、DES/3DES（crypto-js 高频）；`Math.random()` 生成 token、验证码、密钥等安全相关值；`rejectUnauthorized: false` 关闭 TLS 证书校验——必须给出替代（SHA-256+/HMAC、WebCrypto、`crypto.randomBytes`），不得默认「内部用途」可豁免
 - **依赖风险**：lockfile 版本漏洞结论规则见下
 
 ### 7. 性能（中后台聚焦）
@@ -116,6 +121,7 @@
 - **三态完整性**：异步 UI 的 loading/error/empty 三态是否齐全（中后台表格最常缺 empty 和 error 态，只画了 loading）
 - **网络失败 UX**：失败是否提供重试、乐观更新回滚、SWR/Query 的 stale-data fallback；表单提交是否区分 field-level 和 form-level 错误
 - **观测性**：关键错误是否上报到 Sentry 等平台且 source map 已上传；全局错误是否泄露 token/PII；**间接泄露**：含敏感字段（token/PII/表单值）的对象进入 `console.log`/`console.error`（生产构建未剥离）、错误上报把整个 error/state 对象塞进 Sentry `extra`/`contexts`、埋点 payload 携带含 token 的 URL query 或整页 state——不得只查显式打印 token 的语句，任何日志/上报/埋点边界消费含敏感字段的对象都算（与 Java 5.3、Python 维度 10 的间接泄露检查点对齐）
+- **安全事件审计日志缺失（OWASP 2025 A09）**：登录成功/失败、权限拒绝（401/403）、敏感数据导出/批量查询、配置与管理操作等安全相关事件没有审计日志，或日志缺主体标识（user id/租户）无法追责——「缺失方向」与上条的「泄露方向」同等检查；无法确认日志落在哪一层（前端/BFF/网关）时归待确认并说明假设
 
 ### 10. 测试质量
 - **standard** 仅检查：核心逻辑是否有对应测试、关键路径（鉴权/异步/错误边界）测试是否缺失
@@ -157,8 +163,9 @@
 
 - **高危安全问题必为 P0**：同时满足生产可达、证据完整且高置信、事故级安全影响、缺少有效防护的安全问题（如证据完整的 XSS、危险 HTML 注入、凭据泄露、开放重定向绕过登录），必须标为 P0 并阻断发布；不得以触发概率低、触发条件非攻击者可控、位于异常路径等理由降级到 P1。反向降级必须证明触发路径生产不可达。
 - **鉴权/安全开关 fail-open 即认证绕过候选**：路由守卫、权限拦截、安全开关判定路径上的 fail-open（异常、空值、默认放行）按认证绕过定级；代码链闭合只能证明静态触发路径和缺少拒绝分支，只有入口注册、装配以及部署/运行配置也由仓库证据闭合时才满足生产可达，否则归入待确认并标注“P0 待验证”。接口异常、配置缺失等运行时事件不构成低概率降级理由。
-- **身份信任边界缺陷**：客户端可控输入（localStorage、URL query、postMessage data 等直接成为身份/租户来源）属于认证绕过候选；最终攻击效果依赖部署或网关配置时归入待确认并标注”P0 待验证”，不得静默放入普通 P1。
-- **内网可达性放大定级**：SSRF/越权类问题的攻击效果以内网可达范围计——BFF 中继能触达内网服务（配置中心、元数据服务、数据库管理面、互信接口）的候选按事故级影响评估，不得因「仅内网」降级（IMA BFF SSRF 事件实证：内网可达性正是杀伤力来源）；证据链未闭合时归待确认并标注”P0 待验证”。
+- **身份信任边界缺陷**：客户端可控输入（localStorage、URL query、postMessage data 等直接成为身份/租户来源）属于认证绕过候选；最终攻击效果依赖部署或网关配置时归入待确认并标注“P0 待验证”，不得静默放入普通 P1。
+- **内网可达性放大定级**：SSRF/越权类问题的攻击效果以内网可达范围计——BFF 中继能触达内网服务（配置中心、元数据服务、数据库管理面、互信接口）的候选按事故级影响评估，不得因「仅内网」降级（IMA BFF SSRF 事件实证：内网可达性正是杀伤力来源）；证据链未闭合时归待确认并标注“P0 待验证”。
+- **注入与 RCE 直通定级**：命令注入、原型污染（可达模板引擎/child_process sink）、路径穿越越出指定根目录、不安全反序列化——生产可达且输入传播链证据闭合时必为 P0，不得以「代码质量/健壮性问题」降级；证据链未闭合时归待确认并标注“P0 待验证”。
 
 ## 依赖风险结论规则
 
@@ -166,5 +173,5 @@
 
 ---
 
-*本手册版本：前端 2.5（React + Vue2/Vue3 + Node，12 维度独立集；维度 12 仅 deep 启用）*
-*最后更新：2026-08-15*
+*本手册版本：前端 2.7（React + Vue2/Vue3 + Node，12 维度独立集；维度 12 仅 deep 启用；v1.7.1 补 CSRF/tabnabbing/mXSS 与 DOM clobbering/Node 注入面；v1.7.1 补弱算法 A04 与安全事件审计日志 A09）*
+*最后更新：2026-09-20*

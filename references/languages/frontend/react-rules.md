@@ -54,6 +54,8 @@
 - **开放重定向**：用户可控 `window.location` / `<a href>` 跳转，未做白名单校验。
 - **BFF 鉴权透传**：接口请求是否携带鉴权、401/403 是否正确处理而非静默失败。
 - **不安全 URL 拼接**：用户可控 URL 直接作为请求目标（SSRF 向量经前端透传到 BFF）。
+- **mXSS 与 DOM clobbering**：`dangerouslySetInnerHTML` + 富文本组件（Quill/TinyMCE）场景须核对 sanitizer 实际版本与已知 bypass（DOMPurify 历史 CVE），不得默认版本可信；渲染的 HTML 含用户可控 `id`/`name` 属性时可 clobber 全局引用（`document.implementation` 等）使防护判定失效。
+- **tabnabbing**：`window.open` / `<a target="_blank">` 打开外部或不可信链接必须带 `rel="noopener noreferrer"`，否则被打开页面可经 `window.opener` 反向操纵原页面。
 
 ## 性能（中后台聚焦）
 

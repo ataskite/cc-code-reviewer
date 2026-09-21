@@ -1116,6 +1116,27 @@ FE_SCAN="$ROOT_DIR/scripts/languages/frontend/scan-project.sh"
 grep -q 'SERVER_ROOT:formal' "$FE_SCAN" || { echo "FAIL: frontend scan-project 必须输出 SERVER_ROOT:formal 声明行" >&2; exit 1; }
 FE_AGENT_DOC="$ROOT_DIR/agents/cc-code-reviewer-frontend.md"
 grep -q 'SERVER_ROOT:formal' "$FE_AGENT_DOC" || { echo "FAIL: frontend agent 必须声明 SERVER_ROOT:formal 正式范围" >&2; exit 1; }
+# Node 注入与危险 API 负面清单契约（v1.7.1）：node-rules 必须覆盖注入类高危缺口
+FE_NODE_RULES="$ROOT_DIR/references/languages/frontend/node-rules.md"
+grep -q 'Node 服务端注入与危险 API 负面清单' "$FE_NODE_RULES" || { echo "FAIL: node-rules 必须包含注入与危险 API 负面清单小节" >&2; exit 1; }
+grep -q '原型污染' "$FE_NODE_RULES" || { echo "FAIL: node-rules 必须覆盖原型污染" >&2; exit 1; }
+grep -q 'child_process' "$FE_NODE_RULES" || { echo "FAIL: node-rules 必须覆盖 child_process 命令注入" >&2; exit 1; }
+grep -q 'execFile' "$FE_NODE_RULES" || { echo "FAIL: node-rules 必须给出 execFile 正解" >&2; exit 1; }
+grep -q '路径穿越' "$FE_NODE_RULES" || { echo "FAIL: node-rules 必须覆盖路径穿越" >&2; exit 1; }
+grep -q 'ReDoS' "$FE_NODE_RULES" || { echo "FAIL: node-rules 必须覆盖 ReDoS 灾难性回溯" >&2; exit 1; }
+grep -q 'NoSQL' "$FE_NODE_RULES" || { echo "FAIL: node-rules 必须覆盖 NoSQL 操作符注入" >&2; exit 1; }
+grep -q '反序列化' "$FE_NODE_RULES" || { echo "FAIL: node-rules 必须覆盖不安全反序列化" >&2; exit 1; }
+grep -q '弱算法' "$FE_NODE_RULES" || { echo "FAIL: node-rules 必须覆盖弱算法与不安全随机（v1.7.1）" >&2; exit 1; }
+grep -q '审计日志' "$FE_NODE_RULES" || { echo "FAIL: node-rules 必须覆盖安全审计日志缺失（v1.7.1）" >&2; exit 1; }
+# 前端框架维度 6 安全缺口契约（v1.7.1）：CSRF / tabnabbing / mXSS 与 DOM clobbering / 注入面交叉引用
+FE_FRAMEWORK_RULES="$ROOT_DIR/references/languages/frontend/review-framework.md"
+grep -q 'CSRF' "$FE_FRAMEWORK_RULES" || { echo "FAIL: 前端框架维度 6 必须覆盖 CSRF" >&2; exit 1; }
+grep -q 'tabnabbing' "$FE_FRAMEWORK_RULES" || { echo "FAIL: 前端框架维度 6 必须覆盖 tabnabbing" >&2; exit 1; }
+grep -q 'DOM clobbering' "$FE_FRAMEWORK_RULES" || { echo "FAIL: 前端框架维度 6 必须覆盖 DOM clobbering" >&2; exit 1; }
+grep -q 'Node 服务端注入与危险 API 负面清单' "$FE_FRAMEWORK_RULES" || { echo "FAIL: 前端框架维度 6 必须交叉引用 node-rules 注入清单" >&2; exit 1; }
+grep -q '注入与 RCE 直通定级' "$FE_FRAMEWORK_RULES" || { echo "FAIL: 前端框架分级规则必须含注入与 RCE 直通定级" >&2; exit 1; }
+grep -q '弱算法' "$FE_FRAMEWORK_RULES" || { echo "FAIL: 前端框架维度 6 必须覆盖弱算法与不安全随机（v1.7.1）" >&2; exit 1; }
+grep -q '审计日志缺失' "$FE_FRAMEWORK_RULES" || { echo "FAIL: 前端框架维度 9 必须覆盖安全事件审计日志缺失（v1.7.1）" >&2; exit 1; }
 # Vue 规则细则必须覆盖高价值缺口（provide/inject 响应性、script setup 顶层 await、history base、动态路由时序）
 FE_VUE_RULES="$ROOT_DIR/references/languages/frontend/vue-rules.md"
 grep -q 'provide/inject' "$FE_VUE_RULES" || { echo "FAIL: vue-rules 必须覆盖 provide/inject 响应性" >&2; exit 1; }
@@ -1283,7 +1304,7 @@ grep -q 'Python 1.1' "$PY_FRAMEWORK" || { echo "FAIL: Python 框架必须标注�
 
 # Java / 前端框架版本页脚
 grep -q '本手册版本：5.7' "$ROOT_DIR/references/languages/java/review-framework.md" || { echo "FAIL: Java 框架必须标注版本 5.7" >&2; exit 1; }
-grep -q '本手册版本：前端 2.5' "$FE_FRAMEWORK" || { echo "FAIL: 前端框架必须标注版本 前端 2.5" >&2; exit 1; }
+grep -q '本手册版本：前端 2.7' "$FE_FRAMEWORK" || { echo "FAIL: 前端框架必须标注版本 前端 2.7" >&2; exit 1; }
 
 # 安全设计审查必须由模型基于关联代码推理不变量；脚本只提供结构上下文，
 # 不得把方法名/字段名词表伪装成 Default Deny 识别能力。
