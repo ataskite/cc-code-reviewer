@@ -293,7 +293,7 @@ Verify installation by triggering the skill with a Java review request such as `
 
 ### Tracking Upstream (OpenCodeReview)
 
-When researching OpenCodeReview (`alibaba/open-code-review`) updates for absorption, do not query the GitHub API. Use the user's local clone at `/Users/jiangkun/Documents/github-project/open-code-review`: run `git pull --ff-only` there first, then inspect new commits (`git log <last-absorbed-tag>..HEAD --oneline`) and release tags locally. Last absorbed baseline: v1.12.3 (implemented in v1.6.9).
+When researching OpenCodeReview (`alibaba/open-code-review`) updates for absorption, do not query the GitHub API. Use the user's local clone at `/Users/jiangkun/Documents/github-project/open-code-review`: run `git pull --ff-only` there first, then inspect new commits (`git log <last-absorbed-tag>..HEAD --oneline`) and release tags locally. Last absorbed baseline: v1.12.3 (implemented in v1.6.9). Last evaluated with nothing absorbable: v1.12.7+3 / `cf64e70` (2026-09-21 — viewer restyle, translation chores, host plugins, CI-action-only features; the one substantive item, same-run IoU comment dedup in the Action posting layer, conflicts with our fail-open no-drop philosophy and is covered by prompt-level 同类聚合).
 
 ## Important Notes
 
