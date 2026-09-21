@@ -1426,3 +1426,17 @@ require_literal "$ROOT_DIR/scripts/core/validate-resume-input.sh" "SECURITY_SNAP
 for ADAPTER in "$ROOT_DIR/runtime/claude-code.md" "$ROOT_DIR/runtime/codex.md" "$ROOT_DIR/runtime/zcode.md" "$ROOT_DIR/runtime/contract.md"; do
   require_match "runtime adapters must declare local-only security artifacts" 'SECURITY_CONTROLS_PATH|本地 Security 产物|本地产物' "$ADAPTER"
 done
+
+# ===== 离线 OWASP 治理文档契约（Task 14）=====
+require_literal "$ROOT_DIR/README.md" "零网络依赖" "README must document the offline zero-network baseline"
+require_literal "$ROOT_DIR/README.md" "不是 OWASP 认证或 ASVS 合规声明" "README must deny certification claims"
+require_literal "$ROOT_DIR/README.md" "CCR-NODE-" "README must mention stable CCR-NODE rule ids"
+require_match "README must reference the control catalog doc" 'references/security/control-catalog\.md' "$ROOT_DIR/README.md"
+require_match "README must reference the upstream baseline doc" 'references/security/upstream' "$ROOT_DIR/README.md"
+for DOC in "$AGENTS_FILE" "$CLAUDE_FILE"; do
+  require_literal "$DOC" "validate-security-report.sh" "AGENTS/CLAUDE must document the security report gate"
+  require_literal "$DOC" "SECURITY_SNAPSHOT_CHANGED" "AGENTS/CLAUDE must document the security resume gate exit 5"
+  require_literal "$DOC" "update-owasp-baseline.sh" "AGENTS/CLAUDE must document the explicit maintenance upgrade path"
+done
+require_literal "$ROOT_DIR/references/security/upstream/README.md" "审查运行时零网络依赖" "upstream README must restate the zero-network boundary"
+require_literal "$ROOT_DIR/references/examples.md" "Security 控制覆盖" "examples must show the control coverage ledger contract"
