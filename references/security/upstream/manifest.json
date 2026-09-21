@@ -1,0 +1,142 @@
+{
+  "generated_at" : "2026-09-21T05:19:56Z",
+  "schema_version" : 1,
+  "sources" : [
+    {
+      "files" : [
+        {
+          "path" : "asvs/5.0.0/OWASP_Application_Security_Verification_Standard_5.0.0_en.json",
+          "sha256" : "bcdbec214d70abcfad9284a31d4f9e5134305831d628aad3aa85d7e26626cb35"
+        }
+      ],
+      "id" : "owasp-asvs",
+      "license" : "CC-BY-SA-4.0",
+      "local_root" : "asvs/5.0.0",
+      "source_revision" : "v5.0.0_release",
+      "source_url" : "https://github.com/OWASP/ASVS/releases/download/v5.0.0_release/OWASP_Application_Security_Verification_Standard_5.0.0_en.json",
+      "version" : "5.0.0"
+    },
+    {
+      "files" : [
+        {
+          "path" : "top10/2025/A01.md",
+          "sha256" : "d6ebc4e65422ff4fa32c310dec3c20ed6e804edfd2d06c7e5b8a802645f556ec"
+        },
+        {
+          "path" : "top10/2025/A02.md",
+          "sha256" : "0df66f6c3e23ee8234567b20de786bf579dac1561632dd532d64130bb2aa2d75"
+        },
+        {
+          "path" : "top10/2025/A03.md",
+          "sha256" : "d4108c04991ef2f5ab1d8ef301b51cfeef0fea35c550665c3dcfba7aa346758e"
+        },
+        {
+          "path" : "top10/2025/A04.md",
+          "sha256" : "43d7da6637dc9d7ad7d9f7a017afc36123beb96c13d4e35d986f89bca341eaad"
+        },
+        {
+          "path" : "top10/2025/A05.md",
+          "sha256" : "d617676bd8d03ab656a481d97a3e8abd2a6241f22ea10326ad05120ba07494ec"
+        },
+        {
+          "path" : "top10/2025/A06.md",
+          "sha256" : "e2b2f572b43ed5a4a82d2b1207c067687c321ecc683893f6bd4c2d2d467e22e4"
+        },
+        {
+          "path" : "top10/2025/A07.md",
+          "sha256" : "9f98e0c8f055b0c87b67078ae9af4799a9f8caf0736a3fdcd66b1b092b1c60da"
+        },
+        {
+          "path" : "top10/2025/A08.md",
+          "sha256" : "3739748e2cb72c3935dbab9236ac5cb5061da39a1891362369af0c27102a26ca"
+        },
+        {
+          "path" : "top10/2025/A09.md",
+          "sha256" : "87121126d307ea09dbf073b090609c861c9ded6dc654f73c5ea6436b9522e9c8"
+        },
+        {
+          "path" : "top10/2025/A10.md",
+          "sha256" : "1e05837530582feb3e96d84160cd2286d5ba93348fedca2d8f8fb35eecc27ac4"
+        },
+        {
+          "path" : "top10/2025/introduction.md",
+          "sha256" : "71e4b9124e768a954b4d5b9b6f952dd39fa6044688e8dd5ef7b5aa990a3c7c16"
+        }
+      ],
+      "id" : "owasp-top10",
+      "license" : "CC-BY-SA-4.0",
+      "local_root" : "top10/2025",
+      "source_revision" : "66ebc4798d2ca72973967a20264bdeb70dcf0a13",
+      "source_url" : "https://github.com/OWASP/Top10/tree/66ebc4798d2ca72973967a20264bdeb70dcf0a13/2025/docs/en",
+      "version" : "2025"
+    },
+    {
+      "files" : [
+        {
+          "path" : "api-top10/2023/API1.md",
+          "sha256" : "f5a827897509a005095c306d05e56b8dc713717a78cb5360a2ba4b3c29bf4b2b"
+        },
+        {
+          "path" : "api-top10/2023/API10.md",
+          "sha256" : "b5fe9034253ca2d7f7c4c9ef0a6db2b71da1689490911a5bb1f5aad2cab78706"
+        },
+        {
+          "path" : "api-top10/2023/API2.md",
+          "sha256" : "9c15446740599f7bcf709a406ca5627028793e701dd1798ba711a95e9b933971"
+        },
+        {
+          "path" : "api-top10/2023/API3.md",
+          "sha256" : "d316b89ee31f4689d4a4fafd1b97b62b7d05ac880945a478991ae4abf64a961d"
+        },
+        {
+          "path" : "api-top10/2023/API4.md",
+          "sha256" : "8df9df403fd0007bc28bd9a9a60e46739c6797b1f7135c7f0f683a7362f40e38"
+        },
+        {
+          "path" : "api-top10/2023/API5.md",
+          "sha256" : "bdaf0f1f0ec6e527c0c30aaca50a7328ed5b3c386bf6ab86e878116f4a3dd808"
+        },
+        {
+          "path" : "api-top10/2023/API6.md",
+          "sha256" : "b499f299f634b20557d0f9e335b105d6a738039fe5436b3eb09fe7f74ce63a27"
+        },
+        {
+          "path" : "api-top10/2023/API7.md",
+          "sha256" : "f1abf2f9d55a0b50a2004e44bc2ea95348c41452197bc5d1bc7dd71b70f52e6c"
+        },
+        {
+          "path" : "api-top10/2023/API8.md",
+          "sha256" : "13b9629746921f2ccd6fac1364cdfbb50f10d7b11faf668589d9994716c333de"
+        },
+        {
+          "path" : "api-top10/2023/API9.md",
+          "sha256" : "8d5d7e6130fac2b28f5808508d4f90683d99ae5a37f9d3d0d9714c853c39ca4f"
+        },
+        {
+          "path" : "api-top10/2023/introduction.md",
+          "sha256" : "c85ad2b0a5fa45e23f1611a1a33b3d8322c25dec6f1cac97c18a796eca6a3f48"
+        }
+      ],
+      "id" : "owasp-api-top10",
+      "license" : "CC-BY-SA-4.0",
+      "local_root" : "api-top10/2023",
+      "source_revision" : "e85ddfa5a936d4656840ac250c039c7057e66b0d",
+      "source_url" : "https://github.com/OWASP/API-Security/tree/e85ddfa5a936d4656840ac250c039c7057e66b0d/editions/2023/en",
+      "version" : "2023"
+    },
+    {
+      "files" : [
+        {
+          "path" : "nodejs-cheat-sheet/ef539da38a09/Nodejs_Security_Cheat_Sheet.md",
+          "sha256" : "b73caa5ed04023e69d1a9ad4c62030bfae8b6937bda5843589fbf8e7880a3dcc"
+        }
+      ],
+      "id" : "owasp-nodejs-cheat-sheet",
+      "license" : "CC-BY-SA-4.0",
+      "local_root" : "nodejs-cheat-sheet/ef539da38a09",
+      "source_revision" : "ef539da38a09a1ff05bb895c94580cdd5b8da340",
+      "source_url" : "https://github.com/OWASP/CheatSheetSeries/blob/ef539da38a09a1ff05bb895c94580cdd5b8da340/cheatsheets/Nodejs_Security_Cheat_Sheet.md",
+      "version" : "rolling"
+    }
+  ]
+}
