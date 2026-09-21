@@ -44,7 +44,7 @@ grep -q 'ERROR_SECURITY_CATALOG_' "$TMP/err.txt" || fail "validator stderr lacks
 . "$ROOT_DIR/scripts/core/lib/common.sh"
 perl -MJSON::PP -e '
   use strict; use warnings;
-  my ($cat_dir, $upstream, $sha_manifest_actual) = @ARGV;
+  my ($cat_dir, $upstream, $sha_manifest_actual, $root_dir) = @ARGV;
   sub slurp { my ($p) = @_; open my $fh, "<:raw", $p or die "ERROR_CATALOG_READ=$p\n"; local $/; my $d = <$fh>; close $fh; return $d; }
   sub failx { die "ERROR_CATALOG_CONTRACT=@_\n"; }
   sub load_json { my ($p) = @_; my $d = eval { decode_json(slurp($p)) }; failx("invalid JSON: $p") if $@ || !defined $d; return $d; }
@@ -86,7 +86,7 @@ perl -MJSON::PP -e '
     failx("control $id standards missing subkeys") unless ref($st) eq "HASH" && defined $st->{owasp_top10} && defined $st->{owasp_api_top10} && defined $st->{asvs} && defined $st->{cwe};
     no_dup($_, "$_ of $id") for ($st->{owasp_top10}, $st->{owasp_api_top10}, $st->{asvs}, $st->{cwe});
     failx("control $id cwe format invalid: @{ $st->{cwe} }") if grep { !/^CWE-\d+$/ } @{ $st->{cwe} };
-    no_dup([ map { $_->{id} // "" } @{ $c->{applicability}{requires_any_signals} // [] } ], "signals of $id");
+    no_dup($c->{applicability}{requires_any_signals} // [], "signals of $id");
   }
   failx("catalog must contain >= 12 controls") unless @$controls >= 12;
   for my $fb (@first_batch) {
@@ -147,10 +147,10 @@ perl -MJSON::PP -e '
   failx("schema must be object") unless ref($schema) eq "HASH";
 
   # 人类可读说明必须登记第二批「仅设计登记、未实现」候选，禁止假装已实现。
-  my $doc = slurp("$ROOT_DIR/references/security/control-catalog.md");
+  my $doc = slurp("$root_dir/references/security/control-catalog.md");
   for my $needle ("第二批", "未实现") {
     failx("control-catalog.md lacks marker: $needle") unless index($doc, $needle) >= 0;
   }
-' "$CATALOG_DIR" "$UPSTREAM" "$(sha256_file "$UPSTREAM/manifest.json")" || fail "catalog contract violated (see ERROR_CATALOG_* above)"
+' "$CATALOG_DIR" "$UPSTREAM" "$(sha256_file "$UPSTREAM/manifest.json")" "$ROOT_DIR" || fail "catalog contract violated (see ERROR_CATALOG_* above)"
 
 echo "PASS: security control catalog contract"

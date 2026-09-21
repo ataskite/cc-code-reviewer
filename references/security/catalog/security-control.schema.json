@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "cc-code-reviewer/security-control-catalog",
+  "title": "cc-code-reviewer Node Security Control Catalog",
+  "description_zh": "结构说明与 IDE 支持；真正的 fail-closed 校验由 scripts/core/validate-security-control-catalog.sh（Bash+Perl）执行，本文件不参与运行时判定。",
+  "type": "object",
+  "required": ["schema_version", "catalog_id", "catalog_version", "upstream_manifest_sha256", "controls"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "catalog_id": { "const": "cc-code-reviewer-node-security" },
+    "catalog_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "upstream_manifest_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description_zh": "必须等于 references/security/upstream/manifest.json 的字节 SHA-256——catalog 与离线上游快照强绑定。"
+    },
+    "notes_zh": { "type": "string" },
+    "controls": {
+      "type": "array",
+      "minItems": 12,
+      "items": { "$ref": "#/definitions/control" }
+    }
+  },
+  "definitions": {
+    "control": {
+      "type": "object",
+      "required": [
+        "id", "title_zh", "category", "profiles", "applicability", "standards",
+        "detectability", "sources", "sinks", "required_controls", "required_evidence",
+        "severity_candidate", "description_zh", "remediation_zh"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^CCR-NODE-[A-Z0-9]+-[0-9]{3}$", "description_zh": "稳定控制 ID；一经发布不可复用或改义。" },
+        "title_zh": { "type": "string" },
+        "category": { "enum": ["identity", "authorization", "injection", "external-resource", "file", "data-secret", "business-abuse", "logging-exception", "configuration-supply-chain"] },
+        "profiles": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["node-api", "node-bff", "node-worker"] } },
+        "applicability": {
+          "type": "object",
+          "required": ["requires_any_signals", "excludes_project_types"],
+          "properties": {
+            "requires_any_signals": { "type": "array", "items": { "type": "string" }, "description_zh": "封闭信号词表（见 control-catalog.md）；为空表示 profile 启用即适用。" },
+            "excludes_project_types": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "standards": {
+          "type": "object",
+          "required": ["owasp_top10", "owasp_api_top10", "asvs", "cwe"],
+          "properties": {
+            "owasp_top10": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^A[0-9]{2}:2025$", "description_zh": "必须存在于本地快照 top10/2025/Axx.md。" } },
+            "owasp_api_top10": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^API[0-9]{1,2}:2023$", "description_zh": "必须存在于本地快照 api-top10/2023/APIx.md。" } },
+            "asvs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^v5\\.0\\.0-V[0-9]+\\.[0-9]+\\.[0-9]+$", "description_zh": "必须存在于本地 ASVS 5.0.0 JSON 的 Shortcode 集合。" } },
+            "cwe": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^CWE-[0-9]+$", "description_zh": "首期只校验格式与去重，不固化 MITRE 全库。" } }
+          }
+        },
+        "detectability": {
+          "type": "object",
+          "required": ["primary", "requires_semantic_review", "runtime_verification_possible"],
+          "properties": {
+            "primary": { "enum": ["pattern", "taint", "semantic", "config", "dependency", "runtime"] },
+            "requires_semantic_review": { "type": "boolean" },
+            "runtime_verification_possible": { "type": "boolean" }
+          }
+        },
+        "sources": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+        "sinks": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+        "required_controls": { "type": "array", "uniqueItems": true, "items": { "type": "string" }, "description_zh": "使控制成立所需的防护措施清单。" },
+        "required_evidence": { "type": "array", "uniqueItems": true, "items": { "type": "string" }, "description_zh": "闭合发现所需的证据链元素。" },
+        "severity_candidate": { "enum": ["P0", "P1", "P2", "P3", "none"], "description_zh": "候选级别；不替代 P0 五项硬门槛。" },
+        "description_zh": { "type": "string" },
+        "remediation_zh": { "type": "string" }
+      }
+    }
+  }
+}
