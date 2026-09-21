@@ -413,11 +413,16 @@ partial 部分完成待重跑（已产出部分发现，可整批重跑）
 
 如果发现兼容的未完成 `RUN_DIR`，必须先读取 `plan.json` 并展示状态表。
 
-展示可调度批次选项之前，必须先执行恢复准入门禁，验证冻结快照未被改动；门禁必须带 `--rules` 把规则快照一并校验：
+展示可调度批次选项之前，必须先执行恢复准入门禁，验证冻结快照未被改动；门禁必须带 `--rules` 把规则快照一并校验。`plan.json` 声明 `review_mode=security` 且 `language_id=frontend` 时还必须带 `--security`，把 Security 冻结产物（controls/surface/catalog/upstream 哈希）一并校验（非该组合不传，脚本对不适用计划会明确跳过并保持 `GATE_OK`）：
 ```bash
-bash "${PLUGIN_ROOT}/scripts/core/validate-resume-input.sh" "$RUN_DIR" "$PROJECT_DIR" --rules
+IS_FRONTEND_SECURITY="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(do{local $/;open my $f,"<",$ARGV[0] or die;<$f>}); print (($d->{review_mode}//"") eq "security" && ($d->{language_id}//"") eq "frontend") ? "1":"0"' "$RUN_DIR/plan.json")"
+if [ "$IS_FRONTEND_SECURITY" = "1" ]; then
+  bash "${PLUGIN_ROOT}/scripts/core/validate-resume-input.sh" "$RUN_DIR" "$PROJECT_DIR" --rules --security
+else
+  bash "${PLUGIN_ROOT}/scripts/core/validate-resume-input.sh" "$RUN_DIR" "$PROJECT_DIR" --rules
+fi
 ```
-门禁退出码非 0 时不得列出任何可调度批次：任何非零结果（含 `INPUT_CHANGED`、`RULES_CHANGED`、`FROZEN_INPUT_MISSING` 与用法错误）均表示冻结输入与现状不再一致或已不可信，不允许在该 `RUN_DIR` 续跑；必须向用户转述门禁输出的单行原因与 stderr 提示，并按既有交互规则由用户确认后整体重新规划（创建新的 `RUN_DIR`），禁止仅凭旧计划复用已完成、部分完成或失败批次。仅当输出 `GATE_OK=<run_id>` 时才放行进入既有 pending/partial/failed 调度流程。
+门禁退出码非 0 时不得列出任何可调度批次：任何非零结果（含 `INPUT_CHANGED`、`RULES_CHANGED`、`FROZEN_INPUT_MISSING`、`SECURITY_SNAPSHOT_CHANGED` 与用法错误）均表示冻结输入与现状不再一致或已不可信，不允许在该 `RUN_DIR` 续跑；必须向用户转述门禁输出的单行原因与 stderr 提示，并按既有交互规则由用户确认后整体重新规划（创建新的 `RUN_DIR`），禁止仅凭旧计划复用已完成、部分完成或失败批次。仅当输出 `GATE_OK=<run_id>` 时才放行进入既有 pending/partial/failed 调度流程。
 
 恢复时：
 - `completed` 批次默认跳过，不重跑
@@ -568,6 +573,31 @@ bash "${PLUGIN_ROOT}/scripts/core/resolve-review-rules.sh" \
   "${CC_CODE_REVIEWER_REVIEW_RULES_PATH:-$PROJECT_DIR/.cc-code-reviewer/review-rules.yml}" review-input >/dev/null
 test -r "$REVIEW_RULES_RESOLVED_PATH"
 
+# Security + frontend：解析本轮适用控制（离线 catalog，零网络）；启用 Node profile
+# 时再生成攻击面候选索引。两份产物与冻结输入同源（selected=true），注入子 agent；
+# 纯浏览器前端（无 Node profile）不生成 surface。适用性只决定「检查什么」，
+# 不产生漏洞结论。非 security / 非 frontend 模式保持「未启用」，prompt 字节不变。
+SECURITY_UPSTREAM_MANIFEST_PATH="未启用"
+SECURITY_CONTROL_CATALOG_PATH="未启用"
+SECURITY_CONTROLS_PATH="未启用"
+SECURITY_SURFACE_PATH="未生成"
+if [ "$REVIEW_MODE" = "security" ] && [ "$LANGUAGE_ID" = "frontend" ]; then
+  SECURITY_UPSTREAM_MANIFEST_PATH="${PLUGIN_ROOT}/references/security/upstream/manifest.json"
+  SECURITY_CONTROL_CATALOG_PATH="${PLUGIN_ROOT}/references/security/catalog/node-security-controls.json"
+  test -r "$SECURITY_UPSTREAM_MANIFEST_PATH"
+  test -r "$SECURITY_CONTROL_CATALOG_PATH"
+  SECURITY_CONTROLS_PATH="${REVIEW_INPUT_PATH%.json}-security-controls.json"
+  bash "${PLUGIN_ROOT}/scripts/core/resolve-security-controls.sh" \
+    "$PROJECT_DIR" "$PROJECT_TYPE" "$REVIEW_INPUT_PATH" "$SECURITY_CONTROLS_PATH" >/dev/null
+  test -r "$SECURITY_CONTROLS_PATH"
+  if perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $f,"<",$ARGV[0] or die; <$f> }); exit(($d->{security_profile}//[]) ? 0 : 1)' "$SECURITY_CONTROLS_PATH"; then
+    SECURITY_SURFACE_PATH="${REVIEW_INPUT_PATH%.json}-security-surface.json"
+    bash "${PLUGIN_ROOT}/scripts/languages/frontend/prepare-security-surface.sh" \
+      "$PROJECT_DIR" "$REVIEW_INPUT_PATH" "$SECURITY_CONTROLS_PATH" "$SECURITY_SURFACE_PATH" >/dev/null
+    test -r "$SECURITY_SURFACE_PATH"
+  fi
+fi
+
 # 规模必须来自同一个冻结输入，不能在增量路径继续展示全量 manifest 规模。
 REVIEW_FILE_COUNT="$(perl -MJSON::PP -e 'local $/; print decode_json(<>)->{selected_item_count}+0' "$REVIEW_INPUT_PATH")"
 REVIEW_LINE_COUNT="$(perl -MJSON::PP -e 'local $/; print decode_json(<>)->{selected_line_count}+0' "$REVIEW_INPUT_PATH")"
@@ -628,6 +658,19 @@ test -r "$BATCH_FILE_LIST"
 
 Maven 大仓库模式不注入 `BATCH_FILE_LIST`，仍以 `BATCH_PLAN_PATH` 中的 `scan_roots` / `units` 为正式边界。
 
+**frontend + Security 分批的冻结产物派生**：`plan-file-batches.sh` 已在 `RUN_DIR` 冻结 `security-controls.json` / `security-surface.json`（无 Node profile 时 surface 为 null）。主 skill 必须从 `plan.json` 的 `security_*` 字段读取实际路径并注入每个 batch agent（同一份冻结产物，禁止按批重新生成）：
+
+```bash
+if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_MODE" = "security" ]; then
+  SECURITY_CONTROLS_PATH="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(do{local $/;open my $f,"<",$ARGV[0] or die;<$f>}); print $d->{security_controls_path}//"未启用"' "$RUN_DIR/plan.json")"
+  SECURITY_SURFACE_PATH="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(do{local $/;open my $f,"<",$ARGV[0] or die;<$f>}); print $d->{security_surface_path}//"未生成"' "$RUN_DIR/plan.json")"
+  SECURITY_CONTROL_CATALOG_PATH="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(do{local $/;open my $f,"<",$ARGV[0] or die;<$f>}); print $d->{security_catalog_path}//"未启用"' "$RUN_DIR/plan.json")"
+  SECURITY_UPSTREAM_MANIFEST_PATH="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(do{local $/;open my $f,"<",$ARGV[0] or die;<$f>}); my $p=$d->{security_catalog_path}; print $p ? $p=~s{/catalog/.*$}{/upstream/manifest.json}r : "未启用"' "$RUN_DIR/plan.json")"
+  [ "$SECURITY_CONTROLS_PATH" != "未启用" ] && test -r "$SECURITY_CONTROLS_PATH"
+  [ "$SECURITY_SURFACE_PATH" != "未生成" ] && [ "$SECURITY_SURFACE_PATH" != "null" ] && test -r "$SECURITY_SURFACE_PATH"
+fi
+```
+
 **所有分批路径的关联审查单元**：文件级 planner 已生成 `RUN_DIR/review-units.json`；Maven 大仓库 planner 没有该文件时，主 Skill 必须从同一冻结输入补充生成。结构单元只用于把直接相关代码放在同一推理上下文，不能充当安全候选或正式扫描边界：
 
 ```bash
@@ -663,6 +706,10 @@ test -r "$REVIEW_UNITS_PATH"
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
 | 企业级 Security 框架路径 | {SECURITY_FRAMEWORK_PATH}（仅 REVIEW_MODE=security） |
 | Security 伴随文件清单 | 由 {BATCH_PLAN_PATH} 的 `security_companion_manifest` 指定（仅 Maven 大仓库 Security） |
+| Security 上游基线清单 | {SECURITY_UPSTREAM_MANIFEST_PATH}（仅 REVIEW_MODE=security 且 LANGUAGE_ID=frontend；仅供溯源，禁止访问 URL） |
+| Security 控制目录 | {SECURITY_CONTROL_CATALOG_PATH}（仅 REVIEW_MODE=security 且 LANGUAGE_ID=frontend） |
+| 本轮适用安全控制 | {SECURITY_CONTROLS_PATH}（仅 REVIEW_MODE=security 且 LANGUAGE_ID=frontend；控制覆盖台账以此为准） |
+| Node 攻击面索引 | {SECURITY_SURFACE_PATH}（仅启用 Node profile 时生成；只是导航候选，不是发现清单） |
 | React 规则路径 | {REACT_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Vue 规则路径 | {VUE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Node 规则路径 | {NODE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
@@ -1508,6 +1555,10 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | 审查框架路径 | {REVIEW_FRAMEWORK_PATH} |
 | 企业级 Security 框架路径 | {SECURITY_FRAMEWORK_PATH}（仅 REVIEW_MODE=security） |
 | Security 伴随文件清单 | 由 {BATCH_PLAN_PATH} 的 `security_companion_manifest` 指定（仅 Maven 大仓库 Security） |
+| Security 上游基线清单 | {SECURITY_UPSTREAM_MANIFEST_PATH}（仅 REVIEW_MODE=security 且 LANGUAGE_ID=frontend；仅供溯源，禁止访问 URL） |
+| Security 控制目录 | {SECURITY_CONTROL_CATALOG_PATH}（仅 REVIEW_MODE=security 且 LANGUAGE_ID=frontend） |
+| 本轮适用安全控制 | {SECURITY_CONTROLS_PATH}（仅 REVIEW_MODE=security 且 LANGUAGE_ID=frontend；控制覆盖台账以此为准） |
+| Node 攻击面索引 | {SECURITY_SURFACE_PATH}（仅启用 Node profile 时生成；只是导航候选，不是发现清单） |
 | React 规则路径 | {REACT_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Vue 规则路径 | {VUE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Node 规则路径 | {NODE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |

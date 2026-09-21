@@ -1404,3 +1404,25 @@ require_literal "$ROOT_DIR/README.md" "secret-path" "README must surface the sec
 require_literal "$ROOT_DIR/README.md" "敏感路径强制排除（v1.6.9）" "README must attribute secret-path exclusion to v1.6.9"
 
 echo "✅ 契约文档测试通过"
+
+# ===== Security Control Catalog 接入契约（离线 OWASP 基线）=====
+test -f "$ROOT_DIR/references/security/catalog/node-security-controls.json" || { echo "node-security-controls.json 缺失" >&2; exit 1; }
+test -f "$ROOT_DIR/scripts/core/resolve-security-controls.sh" || { echo "resolve-security-controls.sh 缺失" >&2; exit 1; }
+test -f "$ROOT_DIR/scripts/languages/frontend/prepare-security-surface.sh" || { echo "prepare-security-surface.sh 缺失" >&2; exit 1; }
+# 单 Agent 路径在 DISPATCH 前准备并注入四个本地产物
+require_literal "$SKILL_FILE" "resolve-security-controls.sh" "skill must resolve applicable security controls before dispatch"
+require_literal "$SKILL_FILE" "prepare-security-surface.sh" "skill must build the security surface before dispatch"
+require_literal "$SKILL_FILE" "SECURITY_CONTROLS_PATH=\"未启用\"" "non-security runs must keep SECURITY_CONTROLS_PATH disabled literal"
+require_literal "$SKILL_FILE" "SECURITY_SURFACE_PATH=\"未生成\"" "non-node-profile runs must keep SECURITY_SURFACE_PATH unset literal"
+for DOC in "$SKILL_FILE" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"; do
+  require_literal "$DOC" "禁止访问 URL" "agent-facing docs must forbid runtime URL access for security artifacts"
+done
+# 分批冻结 + 恢复门禁
+require_literal "$ROOT_DIR/scripts/core/plan-file-batches.sh" "security_controls_sha256" "planner must freeze security-controls hash for frontend security plans"
+require_literal "$ROOT_DIR/scripts/core/plan-file-batches.sh" "security_upstream_manifest_sha256" "planner must freeze upstream manifest hash for frontend security plans"
+require_match "resume gate must support --security" 'validate-resume-input\.sh.*--security' "$SKILL_FILE"
+require_literal "$ROOT_DIR/scripts/core/validate-resume-input.sh" "SECURITY_SNAPSHOT_CHANGED" "gate must emit SECURITY_SNAPSHOT_CHANGED on snapshot drift"
+# 三端 runtime 契约只声明本地产物
+for ADAPTER in "$ROOT_DIR/runtime/claude-code.md" "$ROOT_DIR/runtime/codex.md" "$ROOT_DIR/runtime/zcode.md" "$ROOT_DIR/runtime/contract.md"; do
+  require_match "runtime adapters must declare local-only security artifacts" 'SECURITY_CONTROLS_PATH|本地 Security 产物|本地产物' "$ADAPTER"
+done

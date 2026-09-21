@@ -55,3 +55,5 @@ Claude Code 把共享逻辑动作 `DISPATCH_AGENT` 映射为插件 Agent 类型�
 - scan：`cc-code-reviewer:cc-code-reviewer`（Java）、`cc-code-reviewer:cc-code-reviewer-frontend`（前端）、`cc-code-reviewer:cc-code-reviewer-python`（Python），由 `LANGUAGE_ID` 选择。
 - batch：主 Skill 读取 `agents/*.md`，按 batch plan 分发并行插件 Agent。
 - 子 Agent 不上传飞书；主 Skill 统一调用 merge/status 脚本和飞书上传。
+- Security + frontend：主 Skill 注入插件本地 Security 产物（upstream manifest / control catalog / 冻结 controls / surface）。子 Agent 只读本地文件，禁止联网补资料；适配器不得引入平台专属路径或网络工具。
+

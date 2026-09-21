@@ -63,7 +63,7 @@ UPSTREAM_MANIFEST_SHA256="$(perl -MJSON::PP -0777 -e '
 TMP_OUT="${OUTPUT_JSON}.tmp.$$"
 trap 'rm -f "$TMP_OUT"' EXIT
 
-perl -MJSON::PP -MCwd=abs_path -e '
+perl -MJSON::PP -MCwd=abs_path -MFile::Spec -e '
   use strict; use warnings; use utf8;
   my ($project_dir, $project_type, $input_path, $catalog_path, $catalog_sha, $manifest_sha, $ri_sha, $tmp_out) = @ARGV;
   sub failx { my ($tag, $msg) = @_; print STDERR "ERROR_SECURITY_RESOLVE_${tag}=${msg}\n"; exit 1; }
@@ -78,9 +78,15 @@ perl -MJSON::PP -MCwd=abs_path -e '
   my $proj_abs = abs_path($project_dir) or failx("PROJECT_DIR", $project_dir);
   my @selected;
   for my $it (@$items) {
-    next unless ref($it) eq "HASH" && ($it->{selected} // "") eq "true" && defined $it->{path} && length $it->{path};
+    next unless ref($it) eq "HASH" && defined $it->{path} && length $it->{path};
+    # selected 兼容 JSON 布尔（JSON::PP::Boolean 数值化）与字符串 "true"
+    my $sel = $it->{selected};
+    my $sel_ok = !defined($sel) ? 0
+               : ref($sel)      ? ($sel ? 1 : 0)
+               : (($sel eq "true" || $sel eq "1") ? 1 : 0);
+    next unless $sel_ok;
     my $p = $it->{path};
-    my $abs = abs_path($p);
+    my $abs = File::Spec->file_name_is_absolute($p) ? abs_path($p) : abs_path(File::Spec->rel2abs($p, $proj_abs));
     failx("INPUT_SCOPE", "selected path outside PROJECT_DIR or missing: $p")
       unless defined($abs) && -e $abs && $abs =~ /^\Q$proj_abs\E(\/|$)/;
     push @selected, $abs;

@@ -265,6 +265,34 @@ if [ -n "${CC_CODE_REVIEWER_REVIEW_INPUT_PATH:-}" ]; then
   REVIEW_INPUT_SHA256="$(sha256_file "$RUN_DIR/review-input.json")"
 fi
 
+# Security 冻结快照（仅 frontend + security）：适用控制 + Node 攻击面在 RUN_DIR
+# 冻结并记录字节哈希；batch agent 注入同一份冻结产物，恢复门禁（--security）
+# 校验任一漂移即拒绝续跑。上游 manifest/catalog 哈希同时入 plan，防止运行期间
+# 插件基线被升级导致旧批次结论语义漂移。纯浏览器前端（无 Node profile）不生成
+# surface，字段记 null；fail closed——任一脚本失败即终止规划。
+SECURITY_PLAN_FIELDS=""
+if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_MODE" = "security" ]; then
+  CONTROLS_FROZEN="$RUN_DIR/security-controls.json"
+  bash "$SCRIPT_DIR/resolve-security-controls.sh" "$PROJECT_DIR" auto "$RUN_DIR/review-input.json" "$CONTROLS_FROZEN" >/dev/null
+  CONTROLS_SHA="$(sha256_file "$CONTROLS_FROZEN")"
+  SURFACE_FROZEN="$RUN_DIR/security-surface.json"
+  SURFACE_SHA="null"
+  SURFACE_DECL="null"
+  if perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $f,"<",$ARGV[0] or die; <$f> }); exit(($d->{security_profile}//[]) ? 0 : 1)' "$CONTROLS_FROZEN"; then
+    bash "$SCRIPT_DIR/../languages/frontend/prepare-security-surface.sh" \
+      "$PROJECT_DIR" "$RUN_DIR/review-input.json" "$CONTROLS_FROZEN" "$SURFACE_FROZEN" >/dev/null
+    SURFACE_SHA="\"$(sha256_file "$SURFACE_FROZEN")\""
+    SURFACE_DECL="\"$(json_escape "$SURFACE_FROZEN")\""
+  fi
+  CATALOG_PATH="$(cd "$SCRIPT_DIR/../.." && pwd)/references/security/catalog/node-security-controls.json"
+  UPSTREAM_PATH="$(cd "$SCRIPT_DIR/../.." && pwd)/references/security/upstream/manifest.json"
+  CATALOG_SHA="$(sha256_file "$CATALOG_PATH")"
+  UPSTREAM_SHA="$(sha256_file "$UPSTREAM_PATH")"
+  SECURITY_PLAN_FIELDS="$(printf '\n  "security_controls_path": "%s",\n  "security_controls_sha256": "%s",\n  "security_surface_path": %s,\n  "security_surface_sha256": %s,\n  "security_catalog_path": "%s",\n  "security_catalog_sha256": "%s",\n  "security_upstream_manifest_sha256": "%s",' \
+    "$(json_escape "$CONTROLS_FROZEN")" "$CONTROLS_SHA" "$SURFACE_DECL" "$SURFACE_SHA" "$(json_escape "$CATALOG_PATH")" "$CATALOG_SHA" "$UPSTREAM_SHA")"
+  echo "SECURITY_SNAPSHOT_FROZEN=controls+catalog+upstream surface=$SURFACE_DECL" >&2
+fi
+
 CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # plan.json 仅在语义分组实际启用时披露新字段；省略时保持旧 plan.json 逐字节可比。
 plan_semantic_fields=""
@@ -286,7 +314,7 @@ cat > "$RUN_DIR/plan.json.tmp" <<JSON
   "review_rules_resolved_path": "$(json_escape "$RULES_RESOLVED")",
   "review_input_path": "$(json_escape "$RUN_DIR/review-input.json")",
   "review_input_sha256": "$(json_escape "$REVIEW_INPUT_SHA256")",
-  "rules_snapshot_sha256": "$(json_escape "$RULES_SNAPSHOT_SHA256")",
+  "rules_snapshot_sha256": "$(json_escape "$RULES_SNAPSHOT_SHA256")",${SECURITY_PLAN_FIELDS}
   "total_source_loc": $TOTAL_LOC,
   "total_source_file_count": $TOTAL_FILES,
   "batch_count": $BATCH_COUNT,

@@ -50,6 +50,10 @@ maxTurns: 50
 | 审查代码行数 | {REVIEW_LINE_COUNT} |
 | 前端审查框架路径 | {references/languages/frontend/review-framework.md 绝对路径} |
 | 企业级 Security 框架路径 | {references/security/enterprise-security-framework.md 绝对路径（仅 REVIEW_MODE=security）} |
+| Security 上游基线清单 | {references/security/upstream/manifest.json 绝对路径（仅 security+frontend 注入；仅供溯源，禁止访问 URL）} |
+| Security 控制目录 | {references/security/catalog/node-security-controls.json 绝对路径（仅 security+frontend 注入）} |
+| 本轮适用安全控制 | {SECURITY_CONTROLS_PATH 冻结产物绝对路径（仅 security+frontend 注入；控制覆盖台账以此为准）} |
+| Node 攻击面索引 | {SECURITY_SURFACE_PATH 冻结产物绝对路径（仅启用 Node profile 时注入；只是导航候选，不是发现清单；未生成时为「未生成」）} |
 | React 规则路径 | {references/languages/frontend/react-rules.md 绝对路径} |
 | Vue 规则路径 | {references/languages/frontend/vue-rules.md 绝对路径} |
 | Node 规则路径 | {references/languages/frontend/node-rules.md 绝对路径} |
@@ -83,6 +87,7 @@ maxTurns: 50
 - **语言 ID**（`LANGUAGE_ID`）：固定 `frontend`
 - **审查模式**（`REVIEW_MODE`）：`fast` / `standard` / `deep` / `security`，启用维度见前端审查框架矩阵
 - **企业级 Security 框架路径**（`SECURITY_FRAMEWORK_PATH`）：`references/security/enterprise-security-framework.md` 的绝对路径。仅 `REVIEW_MODE=security` 时注入；该模式下必须读取并以其作为跨语言安全语义、取证、证据等级和分级规则的权威依据，前端/Node 规则只补充实现映射。
+- **Security 控制目录 / 本轮适用安全控制 / Node 攻击面索引**（仅 security+frontend 注入）：`SECURITY_CONTROL_CATALOG_PATH`（稳定 CCR-NODE-* 控制与标准映射）、`SECURITY_CONTROLS_PATH`（本轮适用控制冻结产物）、`SECURITY_SURFACE_PATH`（攻击面候选索引）。三者均为插件本地离线文件——禁止访问任何 URL 补资料。surface 只是导航：候选命中不等于漏洞，必须回到实际代码闭合 Source→Propagation→Sink→Missing Control 证据链。
 - **语义增强**（`SEMANTIC_LEVEL`）：`typescript-lsp` 或 `none`（静态降级）。当值为 `typescript-lsp` 时必须用 TS LSP 查询 definition/references/implementations/diagnostics 理解调用链，并在结果中披露「语义增强使用情况」
 - **审查输出模式**（`REVIEW_OUTPUT_MODE`）：`完整报告`（默认）或 `仅发现清单`（分批审查单批输出）
 - **审查范围**（`REVIEW_SCOPE`）：`全量代码`，或用户在步骤 4 选定的目录相对路径列表（逗号分隔，如 `src/components,src/pages,controllers`——含 src 子目录与 `SERVER_ROOT:formal` 的 server 层目录）。目录范围已由主 agent 收敛到 `source manifest`（单 agent）或 `BATCH_FILE_LIST`（分批）；本子 agent直接使用注入清单，**不得再次按目录过滤，也不得外扩到未选目录**
@@ -233,6 +238,8 @@ maxTurns: 50
 #### 阶段 D：定向补充扫描（Security 授权面二次扫描强制，其余按需）
 对发现的 P0/P1 问题，用 `Grep` 查找 import graph/调用方/配置引用确认影响范围；每次 Grep 必须有明确目标，单次结果不超过 20 条。
 **安全设计不变量反例追踪（强制）**：关联单元出现受保护动作、授权证据、主体—资源关系、外部数据传播或敏感数据边界时，即使单文件尚未产生正式问题，也必须完成安全契约并寻找未明确授权状态到受保护动作的路径。检索目标只能来自已读取代码中的现场符号；追踪后再按证据定级，不得因跨文件才成立而静默丢弃，也不得仅凭不变量假设升级。
+
+**Security 控制覆盖台账（仅 security+frontend 注入 `SECURITY_CONTROLS_PATH` 时，强制）**：`SECURITY_CONTROLS_PATH` 中每条适用控制必须且只能出现一次台账结论，状态取值封闭为 `finding_confirmed`（已发现问题）/ `checked_no_finding`（已检查无发现）/ `external_evidence_missing`（外部证据缺失）/ `static_unsupported`（静态不可验证）/ `not_applicable`（不适用，须写明理由）。`pattern` 命中只是候选——必须确认输入可控、生产可达、防护缺失才可定论；`semantic` 控制（BOLA/BFLA）与授权面台账联动执行、不重复计数；`static_unsupported` / `external_evidence_missing` 必须写明缺失证据与最小验证方式，不得当作通过。台账随报告输出为「Security 控制覆盖」章节（格式见 `references/report-format.md`）。
 
 **授权面二次扫描（仅 `REVIEW_MODE=security`，强制）**：全部正式文件完成首轮阅读后，按 `SECURITY_FRAMEWORK_PATH` 的“授权面二次扫描”重新遍历授权面台账，即使首轮没有越权候选也必须执行。对每行分别验证同角色异对象、低权限高功能、跨租户/组织、对象属性、批量/嵌套资源和替代执行路径六类差分反例；不适用必须有证据。`未绑定` 形成正式发现，`外部证据缺失` 形成待确认项；只有全部行已有结论且适用反例都有阻断证据或缺口时，才可写“未发现越权问题”。前端展示控制只能作为入口线索；不得把登录态、不可预测 ID、路由 meta、按钮隐藏、注解/helper 名称或“内部接口”标签当作后端授权成立证据。
 

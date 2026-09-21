@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # 恢复准入门禁（resume admission gate）：
-#   validate-resume-input.sh <RUN_DIR> <PROJECT_DIR> [--rules]
+#   validate-resume-input.sh <RUN_DIR> <PROJECT_DIR> [--rules] [--security]
 #
 # 分批审查恢复旧 RUN_DIR 之前，必须证明 plan.json 记录的冻结快照仍与现状对应。
 # 本脚本只做「快照 vs 当前文件字节」的比对，假设运行期间没有第三方改写 RUN_DIR；
@@ -17,6 +17,12 @@ set -euo pipefail
 #                                                rules_snapshot_sha256 ⇒ legacy run lacks rules snapshot
 #                                                未给 --rules 时完全跳过规则检查（向后兼容调用方）
 #   exit 4  FROZEN_INPUT_MISSING=<detail>        plan.json 自身缺失 / 不可读 / 非 JSON 对象（无法门禁 ⇒ 拒绝采纳）
+#   exit 5  SECURITY_SNAPSHOT_CHANGED=<detail>   仅 --security 时校验（推荐仅 frontend+security 计划传入）：
+#                                                security-controls/surface 冻结文件缺失、越出 RUN_DIR 或字节哈希
+#                                                不符；或当前插件 catalog / upstream manifest 哈希与 plan 记录不一致；
+#                                                或 review_mode=security 的 frontend 计划缺任一 security 快照字段
+#                                                （legacy run fail-closed）。非 Security 计划传 --security 时跳过
+#                                                security 校验（stderr 注明不适用），保持 exit 0。
 #
 # stderr 面向人：ERROR_*=诊断键 + 建议：*处置提示。哈希算法统一来自共享库
 # scripts/core/lib/common.sh 的三级回退链（shasum -a 256 → sha256sum → perl
@@ -26,10 +32,12 @@ set -euo pipefail
 RUN_DIR=""
 PROJECT_DIR=""
 CHECK_RULES=0
+CHECK_SECURITY=0
 
 for arg in "$@"; do
   case "$arg" in
     --rules) CHECK_RULES=1 ;;
+    --security) CHECK_SECURITY=1 ;;
     *) if [ -z "$RUN_DIR" ]; then RUN_DIR="$arg"
        elif [ -z "$PROJECT_DIR" ]; then PROJECT_DIR="$arg"
        else echo "ERROR_UNEXPECTED_ARGUMENT=$arg" >&2; exit 1; fi ;;
@@ -37,7 +45,7 @@ for arg in "$@"; do
 done
 
 if [ -z "$RUN_DIR" ] || [ -z "$PROJECT_DIR" ]; then
-  echo "ERROR_USAGE_MISSING_ARGS=<RUN_DIR> <PROJECT_DIR> [--rules] 均为必填参数" >&2
+  echo "ERROR_USAGE_MISSING_ARGS=<RUN_DIR> <PROJECT_DIR> [--rules] [--security] 均为必填参数" >&2
   exit 1
 fi
 if [ ! -d "$RUN_DIR" ]; then
@@ -76,7 +84,7 @@ read_plan_fields() {
     my $data;
     eval { $data = decode_json(<$fh>) };
     die "UNPARSEABLE\n" if $@ || !defined $data || ref($data) ne "HASH";
-    for my $k ("run_id","review_input_path","review_input_sha256","review_rules_resolved_path","rules_snapshot_sha256") {
+    for my $k ("run_id","review_input_path","review_input_sha256","review_rules_resolved_path","rules_snapshot_sha256","review_mode","language_id","security_controls_path","security_controls_sha256","security_surface_path","security_surface_sha256","security_catalog_path","security_catalog_sha256","security_upstream_manifest_sha256") {
       my $v = $data->{$k};
       $v = "" if !defined $v || ref($v);
       $v =~ s/\r?\n$//;
@@ -98,6 +106,15 @@ REVIEW_INPUT_DECLARED="$(plan_field review_input_path)"
 REVIEW_INPUT_SHA_RECORDED="$(plan_field review_input_sha256 | tr 'A-Z' 'a-z')"
 RULES_PATH_DECLARED="$(plan_field review_rules_resolved_path)"
 RULES_SNAPSHOT_SHA_RECORDED="$(plan_field rules_snapshot_sha256 | tr 'A-Z' 'a-z')"
+REVIEW_MODE_RECORDED="$(plan_field review_mode)"
+LANGUAGE_ID_RECORDED="$(plan_field language_id)"
+SECURITY_CONTROLS_DECLARED="$(plan_field security_controls_path)"
+SECURITY_CONTROLS_SHA_RECORDED="$(plan_field security_controls_sha256 | tr 'A-Z' 'a-z')"
+SECURITY_SURFACE_DECLARED="$(plan_field security_surface_path)"
+SECURITY_SURFACE_SHA_RECORDED="$(plan_field security_surface_sha256 | tr 'A-Z' 'a-z')"
+SECURITY_CATALOG_DECLARED="$(plan_field security_catalog_path)"
+SECURITY_CATALOG_SHA_RECORDED="$(plan_field security_catalog_sha256 | tr 'A-Z' 'a-z')"
+SECURITY_UPSTREAM_SHA_RECORDED="$(plan_field security_upstream_manifest_sha256 | tr 'A-Z' 'a-z')"
 
 [ -n "$RUN_ID_RECORDED" ] || RUN_ID_RECORDED="$(basename "$RUN_DIR")"
 
@@ -152,6 +169,53 @@ if [ "$CHECK_RULES" -eq 1 ]; then
   if [ "$(short12 "$RULES_SNAPSHOT_SHA_ACTUAL")" != "$(short12 "$RULES_SNAPSHOT_SHA_RECORDED")" ]; then
     emit_and_exit 3 RULES_CHANGED "review-rules.json sha256 mismatch recorded=$(short12 "$RULES_SNAPSHOT_SHA_RECORDED") actual=$(short12 "$RULES_SNAPSHOT_SHA_ACTUAL")" \
       "规则快照已变化，旧批次结论不可混用——请新建审查计划重新规划。"
+  fi
+fi
+
+# Security 快照检查仅在显式 --security 时执行。只对 frontend+security 计划生效：
+# 非 Security 计划（或非 frontend）即使传 --security 也明确跳过（不适用），保持 exit 0。
+SECURITY_HINT="Security 快照已变化或缺失，旧批次结论不可混用——请新建审查计划重新规划。"
+if [ "$CHECK_SECURITY" -eq 1 ]; then
+  if [ "$REVIEW_MODE_RECORDED" = "security" ] && [ "$LANGUAGE_ID_RECORDED" = "frontend" ]; then
+    if [ -z "$SECURITY_CONTROLS_DECLARED" ] || [ -z "$SECURITY_CONTROLS_SHA_RECORDED" ] \
+      || [ -z "$SECURITY_CATALOG_DECLARED" ] || [ -z "$SECURITY_CATALOG_SHA_RECORDED" ] \
+      || [ -z "$SECURITY_UPSTREAM_SHA_RECORDED" ]; then
+      emit_and_exit 5 SECURITY_SNAPSHOT_CHANGED "legacy security run lacks security snapshot fields" "$SECURITY_HINT"
+    fi
+    for pair in "controls:$SECURITY_CONTROLS_DECLARED:$SECURITY_CONTROLS_SHA_RECORDED" \
+                "surface:$SECURITY_SURFACE_DECLARED:$SECURITY_SURFACE_SHA_RECORDED"; do
+      kind="${pair%%:*}"; rest="${pair#*:}"
+      declared="${rest%:*}"; recorded="${rest##*:}"
+      [ -z "$declared" ] || [ "$declared" = "null" ] && continue   # 无 Node profile 的 security 计划允许 surface 为 null
+      resolved_sec="$(resolve_against_run_dir "$declared" "")"
+      case "$resolved_sec" in
+        "$RUN_DIR"/*) ;;
+        *) emit_and_exit 5 SECURITY_SNAPSHOT_CHANGED "security_${kind} path outside RUN_DIR: $resolved_sec" "$SECURITY_HINT" ;;
+      esac
+      if [ ! -f "$resolved_sec" ] || [ ! -r "$resolved_sec" ]; then
+        emit_and_exit 5 SECURITY_SNAPSHOT_CHANGED "security_${kind} missing: $resolved_sec" "$SECURITY_HINT"
+      fi
+      if [ -n "$recorded" ] && [ "$recorded" != "null" ]; then
+        actual_sec="$(sha256_file "$resolved_sec")"
+        if [ "$(short12 "$actual_sec")" != "$(short12 "$recorded")" ]; then
+          emit_and_exit 5 SECURITY_SNAPSHOT_CHANGED "security_${kind} sha256 mismatch recorded=$(short12 "$recorded") actual=$(short12 "$actual_sec")" "$SECURITY_HINT"
+        fi
+      fi
+    done
+    # 当前插件 catalog / upstream manifest 与 plan 记录哈希比对（基线升级 ⇒ fail closed）
+    if [ ! -f "$SECURITY_CATALOG_DECLARED" ] || [ ! -r "$SECURITY_CATALOG_DECLARED" ]; then
+      emit_and_exit 5 SECURITY_SNAPSHOT_CHANGED "security catalog unreadable: $SECURITY_CATALOG_DECLARED" "$SECURITY_HINT"
+    fi
+    catalog_actual="$(sha256_file "$SECURITY_CATALOG_DECLARED")"
+    if [ "$(short12 "$catalog_actual")" != "$(short12 "$SECURITY_CATALOG_SHA_RECORDED")" ]; then
+      emit_and_exit 5 SECURITY_SNAPSHOT_CHANGED "security catalog sha256 mismatch recorded=$(short12 "$SECURITY_CATALOG_SHA_RECORDED") actual=$(short12 "$catalog_actual")" "$SECURITY_HINT"
+    fi
+    UPSTREAM_ACTUAL="$(sha256_file "$(dirname "$SECURITY_CATALOG_DECLARED")/../upstream/manifest.json" 2>/dev/null || true)"
+    if [ -z "$UPSTREAM_ACTUAL" ] || [ "$(short12 "$UPSTREAM_ACTUAL")" != "$(short12 "$SECURITY_UPSTREAM_SHA_RECORDED")" ]; then
+      emit_and_exit 5 SECURITY_SNAPSHOT_CHANGED "upstream manifest sha256 mismatch recorded=$(short12 "$SECURITY_UPSTREAM_SHA_RECORDED") actual=$(short12 "$UPSTREAM_ACTUAL")" "$SECURITY_HINT"
+    fi
+  else
+    echo "SECURITY_SNAPSHOT_SKIPPED=non-security or non-frontend plan (--security 不适用)" >&2
   fi
 fi
 

@@ -107,6 +107,8 @@ Codex 使用共享 Prompt 注入的通用 subagent：
 - 不要求写入用户的 `~/.codex/agents`。
 - batch：主 Skill 按 batch plan 分发并行通用 subagent；每个 subagent 必须写当前批次 status/result 文件。
 - 子 Agent 不与用户交互、不上传飞书；主 Skill 统一调用 merge/status 脚本和飞书上传。
+- Security + frontend：主 Skill 注入插件本地 Security 产物（upstream manifest / control catalog / 冻结 controls / surface）。子 Agent 只读本地文件，禁止联网补资料；适配器不得引入平台专属路径或网络工具。
+
 - 平台没有可用 subagent 时，scan 在最终确认前报告阻塞，不得让主 Skill 静默接管实际审查。
 
 ## 6. IDE Extension 支持

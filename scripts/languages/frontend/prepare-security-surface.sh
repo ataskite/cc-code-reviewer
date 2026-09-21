@@ -58,7 +58,7 @@ REVIEW_INPUT_SHA256="$(sha256_file "$REVIEW_INPUT_JSON")"
 TMP_OUT="${OUTPUT_JSON}.tmp.$$"
 trap 'rm -f "$TMP_OUT"' EXIT
 
-perl -MJSON::PP -MCwd=abs_path -MEncode=decode,FB_CROAK -e '
+perl -MJSON::PP -MCwd=abs_path -MFile::Spec -MEncode=decode,FB_CROAK -e '
   use strict; use warnings;
   my ($project_dir, $input_path, $ri_sha, $tmp_out) = @ARGV;
   sub failx { my ($tag, $msg) = @_; print STDERR "ERROR_SECURITY_SURFACE_${tag}=${msg}\n"; exit 1; }
@@ -72,8 +72,14 @@ perl -MJSON::PP -MCwd=abs_path -MEncode=decode,FB_CROAK -e '
   my $proj_abs = abs_path($project_dir) or failx("PROJECT_DIR", $project_dir);
   my @selected;
   for my $it (@$items) {
-    next unless ref($it) eq "HASH" && ($it->{selected} // "") eq "true" && defined $it->{path};
-    my $abs = abs_path($it->{path});
+    next unless ref($it) eq "HASH" && defined $it->{path};
+    my $sel = $it->{selected};
+    my $sel_ok = !defined($sel) ? 0
+               : ref($sel)      ? ($sel ? 1 : 0)
+               : (($sel eq "true" || $sel eq "1") ? 1 : 0);
+    next unless $sel_ok;
+    my $rp = $it->{path};
+    my $abs = File::Spec->file_name_is_absolute($rp) ? abs_path($rp) : abs_path(File::Spec->rel2abs($rp, $proj_abs));
     failx("INPUT_SCOPE", "selected path outside PROJECT_DIR or missing: $it->{path}")
       unless defined($abs) && -e $abs && $abs =~ /^\Q$proj_abs\E(\/|$)/;
     push @selected, $abs;
