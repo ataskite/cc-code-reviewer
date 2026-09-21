@@ -1,0 +1,10 @@
+{
+  "name": "node-sec-eval-path-traversal-vulnerable",
+  "version": "0.1.0",
+  "private": true,
+  "description": "cc-code-reviewer Node Security 评测夹具（express 静态文件读取最小示例）",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.18.0"
+  }
+}

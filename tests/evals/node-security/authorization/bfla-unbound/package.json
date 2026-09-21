@@ -1,0 +1,11 @@
+{
+  "name": "node-sec-eval-authorization-bfla-unbound",
+  "version": "0.1.0",
+  "private": true,
+  "description": "cc-code-reviewer Node Security 评测夹具（express 用户管理最小示例）",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.18.0",
+    "mongoose": "^7.0.0"
+  }
+}

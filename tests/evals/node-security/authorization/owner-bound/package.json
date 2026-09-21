@@ -1,0 +1,11 @@
+{
+  "name": "node-sec-eval-authorization-owner-bound",
+  "version": "0.1.0",
+  "private": true,
+  "description": "cc-code-reviewer Node Security 评测夹具（express 订单查询最小示例）",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.18.0",
+    "mongoose": "^7.0.0"
+  }
+}
