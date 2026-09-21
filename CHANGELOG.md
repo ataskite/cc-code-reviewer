@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.7.1 — 前端与 BFF 安全规则补全：Node 注入负面清单与 OWASP Top 10 常规模式对齐
+
+### 新增
+
+- **Node 服务端注入与危险 API 负面清单（node-rules.md，OWASP Top 10:2025 A05 注入对齐）**：补齐 Node/BFF 服务端侧此前零覆盖的高危类别（调研依据：OWASP Node.js Cheat Sheet、Trail of Bits Express 安全规范与 Node 审计机构命中率统计——原型污染约每四次 Node 安全评估命中一次）。七条反模式：① 原型污染——`lodash.merge`/`deepmerge`/自写深合并消化 `req.body`、`JSON.parse` 后未过滤 `__proto__`/`constructor` 键，污染 `Object.prototype` 可改写 `isAdmin`/`role` 绕鉴权、配合模板引擎或 `child_process` 达 RCE（lodash CVE-2019-10744、minimist CVE-2020-7598 同类）；② 命令注入——`exec()`/`execSync()`/`spawn(cmd, {shell:true})` 拼接用户输入即任意命令执行，正解 `execFile()`/无 shell `spawn()` + 参数数组 + `--` 分隔 + 可执行名白名单；③ 路径穿越——`res.sendFile`/`fs` 路径来自请求且 **`path.join()` 不消除 `../`**，必须 `path.resolve()` + 根目录前缀校验 + 固定 `root`；④ SSTI——用户串/模板路径进 `res.render`/模板编译，模板名白名单、数据与模板分离；⑤ HTTP 参数污染（HPP）——express 末值 vs 下游首值语义差与 `req.query` 数组未归一造成校验绕过；⑥ NoSQL 操作符注入——`$gt`/`$ne`/`$regex`/`$where` 恒真条件，查询前键校验或 mongo-sanitize；⑦ 不安全反序列化——`node-serialize` IIFE 载荷即 RCE，不可信数据只用 `JSON.parse` + 形状校验。另在「异步、资源与稳定性」补 ReDoS（嵌套量词正则灾难性回溯冻结事件循环）与事件循环阻塞（处理器内同步 IO、无上限 `JSON.parse`、`express.json` 缺 `limit`）。
+- **前端框架维度 6 安全扩写（review-framework.md，前端 2.7）**：新增 CSRF（cookie 会话的 BFF/Node 状态变更端点须 SameSite 或 CSRF token，纯 Bearer 头鉴权须给出无 cookie 会话证据才可豁免——此前 CSRF 仅存在于 security 模式框架的并列项，本次前移后四模式生效）、tabnabbing（`window.open`/`target="_blank"` 缺 `rel="noopener noreferrer"`）、mXSS 与 DOM clobbering（EOL Vue 2 模板编译器 CVE-2024-6783、过期 DOMPurify CVE-2025-26791、`id`/`name` 属性 clobber 全局使 sanitizer 判定失效——须对照 lockfile 核查版本）、Node 注入面条目（交叉引用 node-rules 新清单）、弱算法与不安全随机（OWASP 2025 A04：MD5/SHA-1/DES/3DES、`Math.random()` 生成安全相关值、`rejectUnauthorized: false`——必须给替代 SHA-256+/HMAC/WebCrypto/`crypto.randomBytes`）。fast 模式 P0 级安全定义扩至「命令注入等 RCE 类/任意文件读写路径穿越」；分级规则新增「注入与 RCE 直通定级」：证据闭合的命令注入、原型污染（可达模板引擎/child_process sink）、路径穿越越出根目录必为 P0，不得以「代码质量/健壮性问题」降级。
+- **安全事件审计日志缺失（OWASP 2025 A09，维度 9 + node-rules）**：登录成功/失败、权限拒绝（401/403）、敏感数据导出/批量查询、配置与管理操作无审计日志，或日志缺主体标识（user id/租户）无法追责——补齐「缺失方向」检查（既有条目只查日志「泄露方向」的间接泄露）；无法确认日志落在哪一层（前端/BFF/网关）时归待确认并说明假设。security 模式原有 §3.7 覆盖，本次补到常规 standard/deep。
+- **框架特化与交叉引用**：react-rules 安全节补 mXSS/DOM clobbering 与 tabnabbing；vue-rules（2.4）补 Vue 2 EOL 模板编译器 XSS（字符串模板 + EOL lockfile 必须给升级/迁移建议）；security 框架 §3.3 注入域交叉引用 node-rules 新清单。node-rules 保持前端 agent 无条件必读、维度 6 四模式全开——新规则对所有前端审查模式生效；不新增 filetype checklist（延续 1.7.0 口径）。至此 OWASP Top 10:2025 十类在代码可见范围内全部有常规规则落点。
+- **契约钉死**：`test_contract_docs.sh` 新增 node-rules 注入清单内容断言（小节名/原型污染/child_process/execFile/路径穿越/ReDoS/NoSQL/反序列化/弱算法/审计日志）与前端框架断言（CSRF/tabnabbing/DOM clobbering/交叉引用/直通定级/弱算法/审计日志缺失）；前端框架版本页脚断言 2.5 → 2.7；修复 1.7.0 遗留的”P0 待验证”错误右引号。
+
+### 升级方式
+
+三端插件 manifest 已指向 1.7.1（Claude Code / Codex / ZCode），`validate-plugin-manifests.sh` 校验通过；变更后执行 `/reload-plugins` 生效。
+
 ## 1.7.0 — BFF server-root 层、collector locale 修复与中继层负面清单
 
 ### 新增
