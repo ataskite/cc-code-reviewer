@@ -1,6 +1,6 @@
 # 企业级 Security 专项审查框架
 
-**框架版本：Security 1.1**
+**框架版本：Security 1.2**
 **适用模式：`security`**
 **定位：跨 Java、Python、Frontend/Node 的安全专项共同审查依据**
 
@@ -217,5 +217,6 @@ Security 专项以本框架为执行契约，并用 OWASP Top 10:2025、OWASP AP
 - 注入、外部资源、文件、敏感数据、业务重放和配置依赖是否检查。
 - 每个安全契约是否记录默认行为、反例结果和外部待验证项。
 - 是否完成授权面二次扫描，并披露台账四类结论与未闭合入口。
+- （frontend）是否输出「Security 控制覆盖」台账：每条适用控制一个封闭状态结论（`finding_confirmed` / `checked_no_finding` / `external_evidence_missing` / `static_unsupported` / `not_applicable`），对账 `N = A + B + C + D`；`static_unsupported` 不是通过。控制定义、稳定 ID 与标准映射见 `references/security/catalog/node-security-controls.json`（离线基线，随插件分发，零网络依赖；映射核验经 `references/security/upstream/` 本地快照）。控制覆盖是覆盖状态披露，不是 OWASP 认证或 ASVS 合规声明。
 
 安全专项的最终输出应让审阅者能够区分：代码已经证明什么、代码没有证明什么、下一步应如何安全验证。

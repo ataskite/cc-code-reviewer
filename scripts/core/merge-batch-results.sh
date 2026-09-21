@@ -535,6 +535,119 @@ if [ "$FAILED_BATCHES" -gt 0 ]; then
   FAILED_BY_CLASS_LINE="  \"failed_by_class\": {\"context_exhausted\": $FC_FAILED_CTX, \"tool_budget_exhausted\": $FC_FAILED_TOOL, \"output_truncated\": $FC_FAILED_TRUNC, \"cancelled\": $FC_FAILED_CANCEL, \"unknown\": $FC_FAILED_UNKNOWN},"
 fi
 
+# Security 控制覆盖跨批聚合（仅 frontend + security 且 RUN_DIR 冻结 controls 时）：
+# 按 control ID 聚合各已纳入批次的台账行，优先级 finding_confirmed > external_evidence_missing
+# > static_unsupported > checked_no_finding；not_applicable 行不计入适用对账（单独披露 E）。
+# 全局 checked_no_finding 仅当所有已纳入批次行均不高于该级别时成立；遗留批次存在时对
+# checked_no_finding 控制追加「部分批次未完成」披露，不假装通过。冻结适用控制若没有任何
+# 已纳入批次报告，聚合为 external_evidence_missing（批次台账不完整），不得静默判为通过。
+SECURITY_COVERAGE_SUMMARY_LINE=""
+SECURITY_COVERAGE_SECTION_FILE="$RUN_DIR/.security-coverage-section.md"
+SECURITY_COVERAGE_SECTION=""
+if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_MODE" = "security" ] && [ -r "$RUN_DIR/security-controls.json" ]; then
+  SECURITY_INCLUDED_IDS="$(printf '%s ' ${INCLUDED_BATCH_IDS[@]+"${INCLUDED_BATCH_IDS[@]}"})"
+  perl -MJSON::PP -MEncode=decode,FB_CROAK -e '
+    use strict; use warnings; use utf8;
+    my ($run, $plan_path, $section_out, $included_ids_arg, $leftover_arg) = @ARGV;
+    my @included_ids = grep { length } split /\s+/, $included_ids_arg;
+    my $leftover = 0 + $leftover_arg;
+    sub loadj { my ($p)=@_; open my $f,"<",$p or die "read $p: $!"; local $/; return decode_json(<$f>); }
+    binmode(STDOUT, ":utf8");
+    my $plan = loadj($plan_path);
+    my $frozen = loadj("$run/security-controls.json");
+    my @applicable = map { $_->{id} } @{ $frozen->{controls} || [] };
+    my %excluded = map { ($_->{id}||"") => 1 } @{ $frozen->{excluded_controls} || [] };
+    my $catalog_path = $plan->{security_catalog_path} || "";
+    my %cat_meta;
+    if (length $catalog_path && -r $catalog_path) {
+      my $cat = loadj($catalog_path);
+      for my $c (@{ $cat->{controls} || [] }) {
+        my $st = $c->{standards} || {};
+        my @parts;
+        push @parts, "OWASP " . join(" / ", @{ $st->{owasp_top10} || [] }) if @{ $st->{owasp_top10} || [] };
+        push @parts, join(" / ", @{ $st->{owasp_api_top10} || [] }) if @{ $st->{owasp_api_top10} || [] };
+        push @parts, "ASVS " . join(" / ", @{ $st->{asvs} || [] }) if @{ $st->{asvs} || [] };
+        push @parts, join(" / ", @{ $st->{cwe} || [] }) if @{ $st->{cwe} || [] };
+        $cat_meta{ $c->{id} } = { title => $c->{title_zh} // $c->{id}, mapping => join(" / ", @parts), detect => $c->{detectability}{primary} // "" };
+      }
+    }
+    my %rank = (finding_confirmed => 4, external_evidence_missing => 3, static_unsupported => 2, checked_no_finding => 1, not_applicable => 0);
+    my %agg;        # id => [rank, status]
+    my %evidence;   # id => joined evidence
+    for my $bid (@included_ids) {
+      my $rp = "$run/results/$bid.md";
+      next unless -r $rp;
+      open my $f, "<", $rp or next;
+      my $in_sec = 0;
+      my %seen_in_batch;
+      while (my $raw = <$f>) {
+        # 按 UTF-8 解码（失败按字节兜底），与 use utf8 的字符模式正则一致
+        my $l = eval { decode("UTF-8", $raw, FB_CROAK) } // $raw;
+        $in_sec = 1 if $l =~ /^##\s*🛡️\s*Security 控制覆盖/;
+        last if $in_sec && $l =~ /^##\s/ && $l !~ /🛡️/;
+        next unless $in_sec && $l =~ /^\|\s*(CCR-NODE-[A-Z0-9]+-[0-9]{3})\s*\|/;
+        my @cells = map { my $c = $_; $c =~ s/^\s+|\s+$//g; $c } split /\|/, $l;
+        shift @cells if @cells && $cells[0] eq "";
+        pop @cells if @cells && $cells[-1] eq "";
+        next unless @cells >= 5;
+        my ($id, $status, $ev) = ($cells[0], $cells[4], $cells[5] // "");
+        next unless $rank{$status};
+        next if $seen_in_batch{$id}++;   # 批内重复行以首行为准（批次结果自身应已对账）
+        if (!exists $agg{$id} || $rank{$status} > $agg{$id}[0]) {
+          $agg{$id} = [$rank{$status}, $status];
+        }
+        if (length $ev) {
+          $evidence{$id} = exists $evidence{$id} && index($evidence{$id}, $ev) < 0 ? "$evidence{$id}；$ev" : ($evidence{$id} // $ev);
+        }
+      }
+      close $f;
+    }
+    # 冻结适用控制必须全部出现在聚合表；无任何批次报告 → external_evidence_missing。
+    for my $id (@applicable) {
+      next if exists $agg{$id};
+      $agg{$id} = [3, "external_evidence_missing"];
+      $evidence{$id} = "全部已纳入批次均未报告该控制（批次台账不完整，需重跑对应批次）";
+    }
+    my %count;
+    my @rows;
+    for my $id (@applicable, sort keys %excluded) {
+      my $e = $agg{$id};
+      next unless $e;   # excluded 且无批次披露 → 不强行造行
+      my $status = $e->[1];
+      $count{$status}++;
+      my $meta = $cat_meta{$id} || { title => $id, mapping => "", detect => "" };
+      my $ev = $evidence{$id} // "";
+      if ($leftover > 0 && $status eq "checked_no_finding") {
+        $ev = length($ev) ? "$ev（部分批次未完成，结论以全量合并为准）" : "部分批次未完成，结论以全量合并为准";
+      }
+      $ev =~ s/\|/\\|/g;
+      push @rows, "| $id | $meta->{title} | $meta->{mapping} | $meta->{detect} | $status | $ev |";
+    }
+    my $N = scalar @applicable;
+    my $A = $count{finding_confirmed} // 0;
+    my $B = $count{checked_no_finding} // 0;
+    my $C = $count{external_evidence_missing} // 0;
+    my $D = $count{static_unsupported} // 0;
+    my $E = $count{not_applicable} // 0;
+    open my $of, ">:encoding(UTF-8)", $section_out or die "write $section_out: $!";
+    print {$of} "\n## 🛡️ Security 控制覆盖（仅 Security 模式强制）\n\n";
+    print {$of} "- 适用控制：$N\n- 已发现问题：$A\n- 已检查无发现：$B\n- 外部证据缺失：$C\n- 静态不可验证：$D\n- 不适用：$E\n- 对账：N = A + B + C + D\n\n";
+    print {$of} "| 控制 ID | 标题 | 标准映射 | 检测方式 | 状态 | 证据或限制 |\n|---|---|---|---|---|---|\n";
+    print {$of} "$_\n" for @rows;
+    print {$of} "\n台账按 control ID 跨批聚合：优先级 finding_confirmed > external_evidence_missing > static_unsupported > checked_no_finding；适用控制对账 N = A + B + C + D，not_applicable 单独披露不计入对账。\n";
+    close $of;
+    my $ctrl_json = JSON::PP->new->canonical->utf8->encode({ map { $_ => $agg{$_}[1] } (sort keys %agg) });
+    print "{\"applicable\":$N,\"finding_confirmed\":$A,\"checked_no_finding\":$B,\"external_evidence_missing\":$C,\"static_unsupported\":$D,\"not_applicable\":$E,\"staged\":" . ($leftover > 0 ? "true" : "false") . ",\"controls\":$ctrl_json}\n";
+  ' "$RUN_DIR" "$PLAN_PATH" "$SECURITY_COVERAGE_SECTION_FILE" "$SECURITY_INCLUDED_IDS" "$LEFTOVER_BATCHES" > "$RUN_DIR/.security-coverage-summary.txt" 2>"$RUN_DIR/.security-coverage-err.txt" || {
+    echo "WARN_SECURITY_COVERAGE_AGGREGATION_FAILED=$(cat "$RUN_DIR/.security-coverage-err.txt" | head -1)" >&2
+  }
+  if [ -s "$RUN_DIR/.security-coverage-summary.txt" ] && [ -s "$SECURITY_COVERAGE_SECTION_FILE" ]; then
+    SECURITY_COVERAGE_SECTION="$(cat "$SECURITY_COVERAGE_SECTION_FILE")"
+    SECURITY_COVERAGE_SUMMARY_LINE="$(printf '  "security_control_coverage": %s,\n' "$(cat "$RUN_DIR/.security-coverage-summary.txt")")"
+  fi
+  rm -f "$RUN_DIR/.security-coverage-summary.txt" "$RUN_DIR/.security-coverage-err.txt"
+fi
+
 cat > "$RUN_DIR/summary.json.tmp" <<JSON
 {
   "schema_version": 1,
@@ -563,7 +676,7 @@ ${FAILED_BY_CLASS_LINE}
   "total_source_file_count": $TOTAL_FILE_COUNT,
   "source_file_coverage_percent": $FILE_COVERAGE,
   "finding_count": $TOTAL_FINDINGS,
-${RELOCATION_SUMMARY_LINE}
+${SECURITY_COVERAGE_SUMMARY_LINE}${RELOCATION_SUMMARY_LINE}
 ${DEDUP_SUMMARY_LINE}
   "report_title": "$(json_escape "$REPORT_TITLE")",
   "run_manifest_path": "$(json_escape "$RUN_DIR/run-manifest.json")",
@@ -823,6 +936,11 @@ cat >> "$FINAL_REPORT.tmp" <<'MD'
 
 MD
 if [ -s "$CROSS_BATCH_LEADS" ]; then sort -u "$CROSS_BATCH_LEADS" >> "$FINAL_REPORT.tmp"; else echo "暂无跨批依赖线索。" >> "$FINAL_REPORT.tmp"; fi
+
+# Security 控制覆盖聚合段（仅 frontend+security 且聚合成功时；紧随跨批依赖线索之后）
+if [ -n "$SECURITY_COVERAGE_SECTION" ]; then
+  printf '%s\n' "$SECURITY_COVERAGE_SECTION" >> "$FINAL_REPORT.tmp"
+fi
 
 # Java 兼容：补发「覆盖限制与未审查范围」段（前端/Python 报告保持精简）
 if [ "$LANGUAGE_ID" = "java" ]; then

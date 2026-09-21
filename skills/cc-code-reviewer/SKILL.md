@@ -1704,6 +1704,13 @@ RUN_BATCH_IDS="{RUN_BATCH_IDS}" bash "${PLUGIN_ROOT}/scripts/core/merge-batch-re
 
 merge 完成、`summary.json.report_title` 标题校验之后、飞书上传之前，按条件执行以下后处理（`REPORT_PATH` 指向合并后落盘的本地 Markdown 报告）：
 
+**Security 控制覆盖校验（仅 `SECURITY_CONTROLS_PATH` 非「未启用」时，强制且先于其余后处理）**：
+```bash
+bash "${PLUGIN_ROOT}/scripts/core/validate-security-report.sh" "$REPORT_PATH" "$SECURITY_CONTROLS_PATH"
+```
+- 成功 stdout 单行 `SECURITY_REPORT_OK=... CONTROLS=... FINDINGS=... PENDING=...`，必须展示给用户
+- 校验失败（exit 1）时**禁止 SARIF 导出与任何飞书上传**：保留本地报告，向用户明确报告「Security 报告结构无效」及 `ERROR_SECURITY_REPORT_*` 原因，按既有交互规则处理（修正/重跑后重试）；不得带着无效控制台账继续后处理
+
 **上轮已报标记（仅 `REPEAT_PREV_REPORT_PATH` 非空时）**：
 ```bash
 bash "${PLUGIN_ROOT}/scripts/core/mark-repeat-findings.sh" "$REPORT_PATH" "$REPEAT_PREV_REPORT_PATH"
@@ -1795,6 +1802,13 @@ bash "${PLUGIN_ROOT}/scripts/core/export-sarif.sh" "$REPORT_PATH" "${REPORT_PATH
 #### 步骤 0：报告产出后处理——上轮已报标记、跨轮对比与 SARIF 导出（可选）
 
 本地 Markdown 报告持久化之后、标题校验与飞书上传之前，按条件执行（`REPORT_PATH` 即子 agent 返回的 `REPORT_FILE_PATH`，与批次路径的合并后处理同一套命令和披露口径）：
+
+**Security 控制覆盖校验（仅 `SECURITY_CONTROLS_PATH` 非「未启用」时，强制且先于其余后处理）**：
+```bash
+bash "${PLUGIN_ROOT}/scripts/core/validate-security-report.sh" "$REPORT_PATH" "$SECURITY_CONTROLS_PATH"
+```
+- 成功 stdout 单行 `SECURITY_REPORT_OK=... CONTROLS=... FINDINGS=... PENDING=...`，必须展示给用户
+- 校验失败（exit 1）时**禁止 SARIF 导出与任何飞书上传**：保留本地报告，向用户明确报告「Security 报告结构无效」及 `ERROR_SECURITY_REPORT_*` 原因；不得带着无效控制台账继续后处理
 
 **上轮已报标记（仅 `REPEAT_PREV_REPORT_PATH` 非空时）**：
 ```bash

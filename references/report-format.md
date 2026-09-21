@@ -106,6 +106,39 @@
 
 本节台账计数用于披露扫描完整性，不计入 P0/P1/P2/P3/待确认问题总数；其中“未绑定”必须有对应正式问题，“外部证据缺失”必须有对应待确认项。
 
+## 🛡️ Security 控制覆盖（仅 Security 模式且注入 `SECURITY_CONTROLS_PATH` 时强制）
+
+当 `SECURITY_CONTROLS_PATH` 已注入（frontend + security，Node Security Control Catalog 适用）时，授权面覆盖之后必须输出本节；其余场景省略。每个适用控制必须且只能出现一行，状态为封闭集合：`finding_confirmed`（已发现问题）/ `checked_no_finding`（已检查无发现）/ `external_evidence_missing`（外部证据缺失）/ `static_unsupported`（静态不可验证）；被 resolver 排除的控制如需披露只能以 `not_applicable`（不适用）行出现。`static_unsupported` 不是通过——必须写明缺失证据与最小验证方式。
+
+```markdown
+## 🛡️ Security 控制覆盖（仅 Security 模式强制）
+
+- 适用控制：{N}
+- 已发现问题：{A}
+- 已检查无发现：{B}
+- 外部证据缺失：{C}
+- 静态不可验证：{D}
+- 不适用：{E}
+- 对账：N = A + B + C + D
+
+| 控制 ID | 标题 | 标准映射 | 检测方式 | 状态 | 证据或限制 |
+|---|---|---|---|---|---|
+| CCR-NODE-SSRF-001 | 用户可控数据进入服务端外发请求目标 | OWASP A01:2025 / API7:2023 / ASVS v5.0.0-V1.3.6 / CWE-918 | taint | finding_confirmed | 见 P0-1：无 scheme/host allowlist |
+| CCR-NODE-CSRF-001 | Cookie 会话写接口缺少 CSRF 控制 | OWASP A01:2025 / ASVS v5.0.0-V3.3.2 / CWE-352 | config | checked_no_finding | 全部写接口校验 Origin + SameSite=Lax |
+```
+
+说明：`not_applicable` 行属于 catalog 总集而不属于「适用控制 N」，单独披露 E、不进入 N 对账。`N = A + B + C + D` 必须与冻结 `SECURITY_CONTROLS_PATH` 的适用控制数一致——落盘后由 `scripts/core/validate-security-report.sh` 确定性校验；校验失败时禁止飞书上传与 SARIF 导出。
+
+### Security 控制条目附加字段（问题块内）
+
+当问题块对应某条 CCR-NODE 控制（`REVIEW_MODE=security` 且注入控制目录）时，除上文「Security 模式问题条目附加字段」外，还必须追加：
+
+- **安全规则 ID**：`CCR-NODE-*` 稳定控制 ID（必须属于本轮适用控制集合）。
+- **标准映射**：与控制目录一致的映射串（如 `OWASP A01:2025 / API7:2023 / ASVS v5.0.0-V1.3.6 / CWE-918`）；顺序可不同、内容不得漂移。
+- **检测方式**：`pattern` / `taint` / `semantic` / `config` / `dependency` / `runtime`（与控制目录一致）。
+
+`finding_confirmed` 状态的控制必须有携带其规则 ID 的 P0-P3 正式问题块；`external_evidence_missing` 状态的控制必须有携带其规则 ID 的问题块（通常为待确认项）。非控制对应的安全问题（如弱算法加固）不携带规则 ID 字段，照常按 Security 附加字段输出。
+
 ## ✅ 最佳实践亮点
 
 可写亮点；如无明显亮点，可明确写未发现足够稳定且值得单独表扬的最佳实践亮点。

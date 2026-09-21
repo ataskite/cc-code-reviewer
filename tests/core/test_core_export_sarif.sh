@@ -291,3 +291,53 @@ rc=0; bash "$SCRIPT" "$D10/report.md" "$D10/isdir" >/dev/null 2>&1 || rc=$?
 [ "$rc" -eq 1 ] || fail "10 output path is a directory must exit exactly 1 (got $rc)"
 
 echo "PASS: core export-sarif"
+
+# ===== Security 稳定规则 ID（CCR-NODE-*）与历史回退 =====
+SEC_MD="$TMP_DIR/sec-report.md"
+cat > "$SEC_MD" <<'MDSARIF'
+# 报告
+
+### P0-1 | [维度6-安全] SSRF 直连
+
+- 文件：app.js:12
+- **安全规则 ID**：CCR-NODE-SSRF-001
+- **标准映射**：OWASP A01:2025 / ASVS v5.0.0-V1.3.6 / CWE-918
+- **检测方式**：taint
+- **证据状态**：静态已证实
+- 证据：
+```js
+fetch(req.body.url) // ← 用户可控 URL 直连
+```
+- 建议：加 allowlist
+
+---
+
+### P2-1 | [维度3-可维护性] 命名不规范
+
+- 文件：src/a.ts:3
+- 证据：示例
+- 建议：示例
+MDSARIF
+SEC_SARIF="$TMP_DIR/sec-report.sarif"
+bash "$ROOT_DIR/scripts/core/export-sarif.sh" "$SEC_MD" "$SEC_SARIF" --project-name "demo" >/dev/null
+perl -MJSON::PP -0777 -e '
+  use utf8;
+  my $d = decode_json(do { local $/; open my $f, "<", $ARGV[0] or die; <$f> });
+  my @rs = @{ $d->{runs}[0]{results} };
+  die "results count\n" unless @rs == 2;
+  my ($ssrf) = grep { $_->{ruleId} eq "CCR-NODE-SSRF-001" } @rs;
+  die "SSRF result must use stable CCR ruleId\n" unless $ssrf;
+  die "SSRF level must be error (P0)\n" unless ($ssrf->{level} // "") eq "error";
+  die "SSRF evidenceStatus property missing\n" unless (($ssrf->{properties}//{})->{evidenceStatus}//"") eq "静态已证实";
+  die "SSRF fingerprint must still be present\n" unless ($ssrf->{partialFingerprints}//{})->{"ccCodeReviewer/v1"};
+  my ($legacy) = grep { $_->{ruleId} eq "维度3-可维护性" } @rs;
+  die "non-security block must fall back to dimension ruleId\n" unless $legacy;
+  my @rules = @{ $d->{runs}[0]{tool}{driver}{rules} };
+  my ($ccr_rule) = grep { $_->{id} eq "CCR-NODE-SSRF-001" } @rules;
+  die "CCR rule entry missing\n" unless $ccr_rule;
+  die "CCR shortDescription must use block title\n" unless ($ccr_rule->{shortDescription}{text}//"") =~ /SSRF 直连/;
+  my $props = $ccr_rule->{properties} // {};
+  die "CCR properties.standards missing\n" unless ($props->{standards}//"") =~ /A01:2025/;
+  die "CCR properties.detectability missing\n" unless ($props->{detectability}//"") eq "taint";
+  die "CCR properties.securityCategory missing\n" unless ($props->{securityCategory}//"") eq "external-resource";
+' "$SEC_SARIF" || { echo "FAIL: sarif security ruleId contract" >&2; exit 1; }

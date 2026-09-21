@@ -855,3 +855,99 @@ jq -e '.coverage[] | select(.batch_id == "batch-002" and .status == "partial" an
 grep -qF '| batch-002 | 部分完成待重跑 | 是 | 部分完成已纳入 | 1 | 250 | b2 | [输出中断] 输出被中断 |' "$PFREPORT"
 
 echo "PASS: core merge-batch-results"
+
+# ===== Security 控制覆盖跨批聚合（frontend+security）=====
+SEC_DIR="$TMP_DIR/sec-run"; mkdir -p "$SEC_DIR/batches" "$SEC_DIR/results"
+cat > "$SEC_DIR/plan.json" <<JSON
+{"schema_version":1,"run_id":"sec1","project_name":"demo","review_mode":"security",
+ "review_scope":"全量代码","language_id":"frontend",
+ "total_source_loc":500,"total_source_file_count":2,"batch_count":2,
+ "security_controls_path":"$SEC_DIR/security-controls.json",
+ "security_controls_sha256":"placeholder",
+ "security_catalog_path":"$ROOT_DIR/references/security/catalog/node-security-controls.json",
+ "security_catalog_sha256":"placeholder",
+ "security_upstream_manifest_sha256":"placeholder"}
+JSON
+cat > "$SEC_DIR/security-controls.json" <<'JSON'
+{"schema_version":1,"security_profile":["node-api","node-bff"],
+ "controls":[{"id":"CCR-NODE-SSRF-001","applicability":"applicable","matched_signals":["outbound-http-client"]},
+             {"id":"CCR-NODE-CSRF-001","applicability":"applicable","matched_signals":["session-usage"]}],
+ "excluded_controls":[{"id":"CCR-NODE-CMD-001","reason":"无信号"}]}
+JSON
+for b in 001 002; do
+  cat > "$SEC_DIR/batches/batch-$b.json" <<JSON
+{"batch_id":"batch-$b","planned_source_loc":250,"planned_source_file_count":1,
+ "scan_roots":["src/x"],"modules":[{"name":"x"}]}
+JSON
+  cat > "$SEC_DIR/results/batch-$b.status.json" <<JSON
+{"batch_id":"batch-$b","status":"completed","planned_source_loc":250,
+ "planned_source_file_count":1,"result_path":"$SEC_DIR/results/batch-$b.md","finding_count":0}
+JSON
+done
+cat > "$SEC_DIR/results/batch-001.md" <<'MD'
+# Batch 001
+## 发现列表
+### P0-1 | [维度6-安全] SSRF
+- 文件：app.js:12
+- **安全规则 ID**：CCR-NODE-SSRF-001
+- **标准映射**：OWASP A01:2025 / API7:2023 / API10:2023 / ASVS v5.0.0-V1.3.6 / v5.0.0-V4.2.5 / CWE-918
+- **检测方式**：taint
+## 🛡️ Security 控制覆盖（仅 Security 模式强制）
+
+- 适用控制：2
+- 已发现问题：1
+- 已检查无发现：1
+- 外部证据缺失：0
+- 静态不可验证：0
+- 不适用：0
+- 对账：N = A + B + C + D
+
+| 控制 ID | 标题 | 标准映射 | 检测方式 | 状态 | 证据或限制 |
+|---|---|---|---|---|---|
+| CCR-NODE-SSRF-001 | t | m | taint | finding_confirmed | 批次1确认 |
+| CCR-NODE-CSRF-001 | t | m | config | checked_no_finding | 批次1无发现 |
+MD
+cat > "$SEC_DIR/results/batch-002.md" <<'MD'
+# Batch 002
+## 发现列表
+（无正式发现）
+## 🛡️ Security 控制覆盖（仅 Security 模式强制）
+
+- 适用控制：2
+- 已发现问题：0
+- 已检查无发现：1
+- 外部证据缺失：1
+- 静态不可验证：0
+- 不适用：0
+- 对账：N = A + B + C + D
+
+| 控制 ID | 标题 | 标准映射 | 检测方式 | 状态 | 证据或限制 |
+|---|---|---|---|---|---|
+| CCR-NODE-SSRF-001 | t | m | taint | checked_no_finding | 批次2无发现 |
+| CCR-NODE-CSRF-001 | t | m | config | external_evidence_missing | 批次2缺外部证据 |
+MD
+SMOUT="$(MERGE_WAIT_TIMEOUT_SECONDS=0 RUN_BATCH_IDS=batch-001,batch-002 \
+         bash "$ROOT_DIR/scripts/core/merge-batch-results.sh" "$SEC_DIR" 2>&1 || true)"
+SEC_SUMM="$(printf '%s\n' "$SMOUT" | sed -n 's/^SUMMARY_PATH=//p')"
+SEC_REPORT="$(printf '%s\n' "$SMOUT" | sed -n 's/^FINAL_REPORT_PATH=//p')"
+# summary.json 暴露聚合对象
+grep -q '"security_control_coverage"' "$SEC_SUMM"
+grep -Eq '"finding_confirmed": ?1' "$SEC_SUMM"
+grep -Eq '"external_evidence_missing": ?1' "$SEC_SUMM"
+# 聚合优先级：SSRF = finding_confirmed（一批确认 > 另一批无发现）；CSRF = external_evidence_missing
+grep -q '| CCR-NODE-SSRF-001 |.*| finding_confirmed |' "$SEC_REPORT"
+grep -q '| CCR-NODE-CSRF-001 |.*| external_evidence_missing |' "$SEC_REPORT"
+# 发现块的安全规则 ID/标准映射/检测方式在合并产物中保留
+grep -q '\*\*安全规则 ID\*\*：CCR-NODE-SSRF-001' "$SEC_REPORT"
+grep -q '\*\*检测方式\*\*：taint' "$SEC_REPORT"
+# 聚合表通过确定性校验器
+bash "$ROOT_DIR/scripts/core/validate-security-report.sh" "$SEC_REPORT" "$SEC_DIR/security-controls.json" >/dev/null
+
+# 阶段性（遗留批次）披露：只合并 batch-001 时 CSRF 的 checked_no_finding 不得假装全局成立——
+# 批次1 自身即 checked_no_finding，仍应输出该状态但披露「部分批次未完成」
+SMOUT2="$(MERGE_WAIT_TIMEOUT_SECONDS=0 RUN_BATCH_IDS=batch-001 \
+          bash "$ROOT_DIR/scripts/core/merge-batch-results.sh" "$SEC_DIR" 2>&1 || true)"
+SEC_REPORT2="$(printf '%s\n' "$SMOUT2" | sed -n 's/^FINAL_REPORT_PATH=//p')"
+grep -q '部分批次未完成，结论以全量合并为准' "$SEC_REPORT2"
+bash "$ROOT_DIR/scripts/core/validate-security-report.sh" "$SEC_REPORT2" "$SEC_DIR/security-controls.json" >/dev/null
+

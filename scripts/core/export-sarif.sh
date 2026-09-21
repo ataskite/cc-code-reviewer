@@ -102,9 +102,37 @@ perl -I "$LIB_DIR" -MCCR::Findings=:all -Mutf8 -MEncode=decode,encode,encode_utf
   # relocate / mark-repeat 同源同口径（本脚本传入的是已去换行的块体行；
   # merge 传入带换行的行，各正则对二者等价）。
   # argv 中的自由文本（--project-name / VERSION）按 UTF-8 解码；文件路径保持原字节。
+  #
+  # Security 稳定规则 ID（v1.7.2）：发现块携带 `**安全规则 ID**：CCR-NODE-*` 时
+  # ruleId 用该稳定 ID（rules 条目标题取块标题、属性取插件 catalog），历史/非
+  # Security 报告缺字段时回退维度标签——跨批/跨轮指纹身份不变（partialFingerprint
+  # 仍用现有发现指纹公式）。
 
-  my ($report_path, $output_path, $project_name, $tool_version) = @ARGV;
+  my ($report_path, $output_path, $project_name, $tool_version, $catalog_path) = @ARGV;
   ($project_name, $tool_version) = map { to_chars($_) } ($project_name, $tool_version);
+
+  # 插件 catalog（可选增强；缺失/不可读时 rules[].properties 降级省略）
+  my %ccr_meta;
+  if (defined($catalog_path) && length($catalog_path) && -r $catalog_path) {
+    my $craw = slurp_raw($catalog_path);
+    my $ctxt = eval { decode("UTF-8", $craw, FB_CROAK | LEAVE_SRC) } // $craw;
+    my $cat = eval { JSON::PP->new->decode($ctxt) };
+    if ($cat && ref($cat) eq "HASH" && ref($cat->{controls}) eq "ARRAY") {
+      for my $c (@{ $cat->{controls} }) {
+        my $st = $c->{standards} || {};
+        $ccr_meta{ $c->{id} } = {
+          standards => join("; ", grep { length } (
+            (join(",", @{ $st->{owasp_top10} || [] }) ? "Top10:" . join(",", @{ $st->{owasp_top10} }) : ()),
+            (join(",", @{ $st->{owasp_api_top10} || [] }) ? "APITop10:" . join(",", @{ $st->{owasp_api_top10} }) : ()),
+            (join(",", @{ $st->{asvs} || [] }) ? "ASVS:" . join(",", @{ $st->{asvs} }) : ()),
+            (@{ $st->{cwe} || [] } ? join(",", @{ $st->{cwe} }) : ()),
+          )),
+          detectability => ($c->{detectability} || {})->{primary} // "",
+          category => $c->{category} // "",
+        };
+      }
+    }
+  }
 
   my $raw = slurp_raw($report_path);
   die "ERROR_REPORT_READ_FAILED=$report_path\n" unless defined $raw;
@@ -137,6 +165,7 @@ perl -I "$LIB_DIR" -MCCR::Findings=:all -Mutf8 -MEncode=decode,encode,encode_utf
 
   my @results;
   my %rule_seen;
+  my %rule_title;   # CCR-NODE-* 规则 ID → 首个块标题（shortDescription 用）
   for my $b (@blocks) {
     my $header = $b->{header};
     my @body = @{ $b->{body} };
@@ -149,6 +178,9 @@ perl -I "$LIB_DIR" -MCCR::Findings=:all -Mutf8 -MEncode=decode,encode,encode_utf
 
     my $dim = parse_dim_tag($header);
     my $rule_id = length($dim) ? $dim : "unknown-dimension";
+    # Security 稳定规则 ID：块内显式声明时优先于维度标签
+    my ($sec_rule) = grep { defined } map { /^(?:-\s*)?\*\*安全规则 ID\*\*：\s*(CCR-NODE-[A-Z0-9]+-[0-9]{3})\s*$/ ? $1 : undef } @body;
+    $rule_id = $sec_rule if defined $sec_rule;
     $rule_seen{$rule_id} = 1;
 
     # 标题：剥 `###` 前缀、优先级 token、可选问题编号（P0-1 / 待确认-N）、
@@ -174,6 +206,22 @@ perl -I "$LIB_DIR" -MCCR::Findings=:all -Mutf8 -MEncode=decode,encode,encode_utf
       last;
     }
     $advice = substr($advice, 0, 500) if length($advice) > 500;
+
+    # 证据状态（Security 块可选字段；缺失省略）
+    my $evidence_status = "";
+    for my $bl (@body) {
+      next unless $bl =~ /^(?:-\s*)?\*\*证据状态\*\*：\s*(\S.*?)\s*$/;
+      $evidence_status = $1;
+      last;
+    }
+    # 规则 ID 与标题（供 CCR 规则条目 shortDescription/properties 使用）
+    my $sec_rule_id = "";
+    for my $bl (@body) {
+      next unless $bl =~ /^(?:-\s*)?\*\*安全规则 ID\*\*：\s*(CCR-NODE-[A-Z0-9]+-[0-9]{3})\s*$/;
+      $sec_rule_id = $1;
+      last;
+    }
+    $rule_title{$sec_rule_id} = $title if length($sec_rule_id) && !exists($rule_title{$sec_rule_id});
     my $message_text = length($title) && length($advice) ? "$title — $advice"
                     : length($title)                    ? $title
                     :                                     $advice;
@@ -216,13 +264,32 @@ perl -I "$LIB_DIR" -MCCR::Findings=:all -Mutf8 -MEncode=decode,encode,encode_utf
       start_line => $start_line,
       end_line => $end_line,
       fingerprint => $fp,
+      sec_rule_id => $sec_rule_id,
+      title => $title,
+      evidence_status => $evidence_status,
     };
   }
 
   # rules = 实际出现的去重集合，按 UTF-8 字节序排序（确定性）。
+  # CCR-NODE-* 条目：shortDescription 取块标题，properties 来自插件 catalog
+  # （standards / detectability / category；catalog 不可读或 ID 未收录时省略）。
   my @rule_ids = sort { encode_utf8($a) cmp encode_utf8($b) } keys %rule_seen;
   my %rule_index = map { $rule_ids[$_] => $_ } 0 .. $#rule_ids;
-  my @rules = map { { id => $_, shortDescription => { text => "$_ 审查发现" } } } @rule_ids;
+  my @rules = map {
+    if (/^CCR-NODE-/) {
+      my %r = ( id => $_, shortDescription => { text => ($rule_title{$_} || $_) } );
+      if (my $m = $ccr_meta{$_}) {
+        my %props;
+        $props{standards} = $m->{standards} if length $m->{standards};
+        $props{detectability} = $m->{detectability} if length $m->{detectability};
+        $props{securityCategory} = $m->{category} if length $m->{category};
+        $r{properties} = \%props if %props;
+      }
+      \%r;
+    } else {
+      { id => $_, shortDescription => { text => "$_ 审查发现" } };
+    }
+  } @rule_ids;
 
   my @json_results;
   for my $r (@results) {
@@ -236,14 +303,16 @@ perl -I "$LIB_DIR" -MCCR::Findings=:all -Mutf8 -MEncode=decode,encode,encode_utf
       }
       push @locations, { physicalLocation => \%phys };
     }
-    push @json_results, {
+    my %result = (
       ruleId => $r->{rule_id},
       level => $r->{level},
       ruleIndex => $rule_index{ $r->{rule_id} },
       message => { text => $r->{message_text} },
       locations => \@locations,
       partialFingerprints => { "ccCodeReviewer/v1" => $r->{fingerprint} },
-    };
+    );
+    $result{properties} = { evidenceStatus => $r->{evidence_status} } if length($r->{evidence_status});
+    push @json_results, \%result;
   }
 
   my $run = {
@@ -277,6 +346,6 @@ perl -I "$LIB_DIR" -MCCR::Findings=:all -Mutf8 -MEncode=decode,encode,encode_utf
   my $abs_out = abs_path($output_path);
   $abs_out = $output_path unless defined $abs_out;
   print "SARIF_EXPORTED=$abs_out RESULTS=" . scalar(@json_results) . " RULES=" . scalar(@rules) . "\n";
-' "$REPORT_MD" "$OUTPUT_SARIF" "$PROJECT_NAME" "$TOOL_VERSION" || exit 1
+' "$REPORT_MD" "$OUTPUT_SARIF" "$PROJECT_NAME" "$TOOL_VERSION" "$(cd "$SCRIPT_DIR/../.." && pwd)/references/security/catalog/node-security-controls.json" || exit 1
 # perl 任何 die（读入失败 / 临时文件写入 / rename 失败）统一归一为 exit 1，
 # 保证对外只有 0（成功）与 1（用法/IO 错误）两个退出码。
