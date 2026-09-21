@@ -128,7 +128,7 @@ case "$MODE" in
       && [ -f "$STAGING/.source-meta/owasp-api-top10.json" ] && [ -f "$STAGING/.source-meta/owasp-nodejs-cheat-sheet.json" ] \
       || err "staging 缺少四源 .source-meta（先逐源 --fetch）"
     for m in "$STAGING"/.source-meta/*.json; do
-      grep -q '"license": "UNVERIFIED"' "$m" && err "$(basename "$m") 许可证未核验（license=UNVERIFIED）——依据上游 LICENSE 原文人工核验后再 --emit-manifest"
+      grep -Eq '"license"\s*:\s*"UNVERIFIED"' "$m" && err "$(basename "$m") 许可证未核验（license=UNVERIFIED）——依据上游 LICENSE 原文人工核验后再 --emit-manifest"
     done
     perl -MJSON::PP -MDigest::SHA -e '
       use strict; use warnings;
