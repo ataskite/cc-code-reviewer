@@ -7,7 +7,9 @@ set -euo pipefail
 #   NOTICE.md 记录来源/版本/许可证/原样保存声明。本测试只读本地文件，
 #   不访问任何网络——上游更新只能走 scripts/maintenance/update-owasp-baseline.sh 显式维护流程。
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-UPSTREAM="$ROOT_DIR/references/security/upstream"
+# CC_CODE_REVIEWER_UPSTREAM_DIR：仅供 scripts/maintenance/update-owasp-baseline.sh --verify-only
+# 复用本契约核验 staging 目录；默认面向仓库内正式快照。
+UPSTREAM="${CC_CODE_REVIEWER_UPSTREAM_DIR:-$ROOT_DIR/references/security/upstream}"
 
 fail() { echo "FAIL(upstream): $*" >&2; exit 1; }
 
@@ -77,7 +79,7 @@ perl -MJSON::PP -MDigest::SHA -e '
     my %sums;
     for my $line (split /\n/, slurp($sums_path)) {
       next if $line =~ /^\s*$/;
-      failx("SHA256SUMS line not in '<sha256>  <name>' format under $s->{local_root}: $line")
+      failx("SHA256SUMS line not in sha256-two-space-name format under $s->{local_root}: $line")
         unless $line =~ /^([0-9a-f]{64})  (\S.*)$/;
       my ($h, $n) = ($1, $2);
       failx("SHA256SUMS duplicate entry: $n") if $sums{$n}++;
