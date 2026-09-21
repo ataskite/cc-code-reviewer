@@ -227,7 +227,7 @@ ignore 文件格式定义在 `references/ignore-workflow.md`。该文件是 AI �
 - 模块数量：{K} 个
 - 模块列表：{模块1名称}({n1}类), {模块2名称}({n2}类), ...
 {LANGUAGE_ID=frontend 时}
-- 前端源码文件（src 下 .ts/.tsx/.js/.jsx/.vue/.mjs/.cjs + BFF server 层 .js/.mjs/.cjs）：{SOURCE_FILE_COUNT} 个
+- 前端源码文件（src 下 .ts/.tsx/.js/.jsx/.vue/.mjs/.cjs + BFF server 层 .js/.mjs/.cjs/.ts）：{SOURCE_FILE_COUNT} 个
 - 代码行数：{SOURCE_LINE_COUNT} 行
 - 配置文件：{FORMAL_CONFIG_FILE_COUNT} 个
 - 目录概览：{解析预扫描 `COMPONENT:` 行，格式为 `目录名(文件数)` 逗号分隔，如 `components(42), pages(18), controllers(13)`；server 层目录（来自 `SERVER_ROOT:formal` 的包根一级目录）正常混排在列表中；无 `COMPONENT:` 行时显示"无可选子目录"}
@@ -350,7 +350,7 @@ Maven 多模块：只有当前范围达到 estimated_tokens > 1000000，
 **参数来源**：
 - `REVIEW_FILE_COUNT` 和 `REVIEW_LINE_COUNT` 的来源按语言分支：
   - `LANGUAGE_ID=java`：从步骤 4 后 `collect-source-files.sh` 固化的当前范围 manifest 统计，口径仅包含 `src/main/java` 生产源码
-  - `LANGUAGE_ID=frontend`：从步骤 4 后收集并按需过滤的当前范围 manifest 统计，口径包含 `src/` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs` 与 BFF server 层（包根及一级目录）生产 `.js/.mjs/.cjs`
+  - `LANGUAGE_ID=frontend`：从步骤 4 后收集并按需过滤的当前范围 manifest 统计，口径包含 `src/` 下生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs` 与 BFF server 层（包根及一级目录）生产 `.js/.mjs/.cjs/.ts`（TS 须文件级强服务端信号或位于 server/api/controllers/routes/middleware 目录）
   - `LANGUAGE_ID=python`：从步骤 4 后收集并按需过滤的当前范围 manifest 统计，口径仅包含 `src/` 或顶层包下生产 `.py`
 - `500`：每个文件的工具调用 + agent 评估开销（token）
 - `3`：每行代码平均 token 数
@@ -698,7 +698,7 @@ Maven 大仓库批次的正式文件必须限定为 `scan_roots` 内的 `src/mai
 `SEMANTIC_LEVEL=maven-static` 时才允许回退 Maven 静态依赖与文本检索。
 
 **LANGUAGE_ID=frontend 时**：
-正式扫描文件必须限定为 `BATCH_FILE_LIST`（文件级分批）内的生产源码：`src/` 下的 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs` 与 BFF server 层（包根及一级目录，见 `SERVER_ROOT:formal` 声明）的 `.js/.mjs/.cjs`；测试文件（`*.test.*`/`*.spec.*`/`__tests__`/`e2e`/`cypress`）、产物（`dist`/`build`）、`.d.ts` 只能作为只读上下文，不计入已审查前端文件，也不得作为正式问题位置。
+正式扫描文件必须限定为 `BATCH_FILE_LIST`（文件级分批）内的生产源码：`src/` 下的 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs` 与 BFF server 层（包根及一级目录，见 `SERVER_ROOT:formal` 声明）的 `.js/.mjs/.cjs/.ts`（TS 按信号门控：文件级强服务端信号或 server/api/controllers/routes/middleware 目录）；测试文件（`*.test.*`/`*.spec.*`/`__tests__`/`e2e`/`cypress`）、产物（`dist`/`build`）、`.d.ts` 只能作为只读上下文，不计入已审查前端文件，也不得作为正式问题位置。
 `SEMANTIC_LEVEL=typescript-lsp` 时必须用 TS LSP 查询 definition/references/implementations/diagnostics 理解跨目录调用链，并在批次结果中写明「语义增强使用情况」。正式问题必须位于 `BATCH_FILE_LIST` 内的生产源码。
 `SEMANTIC_LEVEL=none` 时才允许回退 import graph + 配置 + 文本检索静态分析。
 

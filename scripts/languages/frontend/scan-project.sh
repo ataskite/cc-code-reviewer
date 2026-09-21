@@ -313,14 +313,20 @@ echo "SOURCE_SCOPE:formal|src/**/*.vue"
 echo "SOURCE_SCOPE:formal|src/**/*.mjs"
 echo "SOURCE_SCOPE:formal|src/**/*.cjs"
 # server 层声明（collect-source-files.sh 的信号门控清单为准确边界，此为声明性口径）
+# server-root 层含 TypeScript（文件级强信号或 server/api/controllers/routes/middleware
+# 目录 + 模块信号；.d.ts 与配置 basename 恒排除）。
 for root in "${SERVER_ROOTS[@]+"${SERVER_ROOTS[@]}"}"; do
   srel="$(server_root_rel "$root")"
   if [ "$srel" = "." ]; then
     echo "SOURCE_SCOPE:formal|./*.js"
     echo "SOURCE_SCOPE:formal|./**/*.js"
+    echo "SOURCE_SCOPE:formal|./*.ts"
+    echo "SOURCE_SCOPE:formal|./**/*.ts"
   else
     echo "SOURCE_SCOPE:formal|$srel/*.js"
     echo "SOURCE_SCOPE:formal|$srel/**/*.js"
+    echo "SOURCE_SCOPE:formal|$srel/*.ts"
+    echo "SOURCE_SCOPE:formal|$srel/**/*.ts"
   fi
 done
 echo "SOURCE_SCOPE:context|**/*.test.tsx"

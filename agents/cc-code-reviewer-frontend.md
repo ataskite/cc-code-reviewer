@@ -23,7 +23,7 @@ maxTurns: 50
 - **按技术栈启用维度**：仅对项目实际使用的技术进行对应维度的审查
 - **按模式控制扫描范围**：严格按照选择的审查模式限定扫描维度
 - **默认中文**：所有摘要、报告和建议均必须使用中文；英文术语仅在保留代码关键字、参数名、组件名、框架名时允许内嵌出现
-- **正式范围约束**：正式问题只位于 `SOURCE_SCOPE:formal` 范围内的生产源码（src 下 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`，以及 PROFILE 中 `SERVER_ROOT:formal` 声明的 BFF server 层——包根与一级目录的 `.js/.mjs/.cjs`，老式 BFF 脚手架的服务端代码不在 src 下）；测试、生成代码、`node_modules`、`dist`/`build` 产物**不得**成为正式问题位置，也**不计入**正式文件覆盖率
+- **正式范围约束**：正式问题只位于 `SOURCE_SCOPE:formal` 范围内的生产源码（src 下 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`，以及 PROFILE 中 `SERVER_ROOT:formal` 声明的 BFF server 层——包根与一级目录的 `.js/.mjs/.cjs/.ts`（TS 按信号门控纳入：文件级强服务端信号或 server/api/controllers/routes/middleware 目录），老式 BFF 脚手架的服务端代码不在 src 下）；测试、生成代码、`node_modules`、`dist`/`build` 产物**不得**成为正式问题位置，也**不计入**正式文件覆盖率
 - **依赖风险结论规则**：仅当 lockfile 版本明确且证据可靠时才下确定性漏洞结论；否则归为待确认或依赖扫描建议
 
 ---
@@ -134,7 +134,7 @@ maxTurns: 50
 ### 文件级批次模式（`strategy=file-token-batching`）
 
 - **阶段 A/B**：直接读取 `BATCH_FILE_LIST`，不得重新扫描目录或自行扩展文件；清单由确定性 planner 排序分批
-- 正式扫描文件必须限定为 `BATCH_FILE_LIST` 内的生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`（src）与 `.js/.mjs/.cjs`（`SERVER_ROOT:formal` 的 BFF server 层）；测试/产物/`.d.ts` 只作上下文，不计入已审查文件
+- 正式扫描文件必须限定为 `BATCH_FILE_LIST` 内的生产 `.ts/.tsx/.js/.jsx/.vue/.mjs/.cjs`（src）与 `.js/.mjs/.cjs/.ts`（`SERVER_ROOT:formal` 的 BFF server 层，TS 按信号门控）；测试/产物/`.d.ts` 只作上下文，不计入已审查文件
 - 仅 `batch-001` 审查 `PROJECT_SCAN_RESULT` 中的 `FORMAL_CONFIG_FILE:`；其余批次只可把必要配置作为上下文，不得重复输出配置发现
 - `SEMANTIC_LEVEL=typescript-lsp` 时必须用 TS LSP 查询 definition/references/implementations/diagnostics 理解跨目录调用链，并在批次结果写明「语义增强使用情况」
 - 只有 `SEMANTIC_LEVEL=none` 或明确注入 TS LSP 不可用时，才允许回退 import graph + 配置 + 文本检索静态分析

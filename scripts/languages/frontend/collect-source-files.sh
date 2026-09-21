@@ -6,17 +6,21 @@ PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd -P)"
 
 # 正式生产源码口径（两层）：
 # 1) src/（及适配器确认的应用源码目录）内的生产 .ts/.tsx/.js/.jsx/.vue/.mjs/.cjs；
-# 2) BFF server-root 层（v1.7.0）：受支持 package 中位于项目根与一级子目录的
-#    Node 服务端 .js/.mjs/.cjs。老式 BFF 脚手架（express/superagent 时代）的
-#    服务端代码不在 src/ 下，src-only 口径会静默漏掉中继/鉴权/会话等漏洞主体文件。
-#    server 层按信号门控发现，不做根级 JS 全收：
-#    - 包级合格：package.json main / scripts.{start,dev} 入口指向 src 外真实 JS 文件，
-#      或包根（剪枝噪声目录与配置 basename 后）存在强服务端信号文件；
-#    - 收集范围：根级 .js/.mjs/.cjs（排除构建/测试配置 basename）+ 一级非噪声目录
-#      （全深度）内带模块信号（require(/module.exports/exports.）的 .js/.mjs/.cjs；
-#    - .ts 不入 server 层（现代 TS BFF 位于 src，由 src 管线覆盖），
-#      根级配置脚本（vite.config.ts/jest.config.ts/.eslintrc.js 等）与 scripts/、
-#      tools/ 等非服务端目录仍一律排除；.d.ts 仍不计入正式源码。
+# 2) BFF server-root 层（v1.7.0，v1.7.2 扩展 TypeScript）：受支持 package 中位于
+#    项目根与一级子目录的 Node 服务端 .js/.mjs/.cjs/.ts。老式 BFF 脚手架
+#    （express/superagent 时代）的服务端代码不在 src/ 下，src-only 口径会静默漏掉
+#    中继/鉴权/会话等漏洞主体文件；现代 TS BFF 也可能位于包根 server.ts 或
+#    controllers/ 等目录。server 层按信号门控发现，不做根级全收：
+#    - 包级合格：package.json main / scripts.{start,dev} 入口（含 tsx/ts-node/
+#      node --loader 等 TS 运行入口）指向 src 外真实 JS/TS 文件，或包根（剪枝噪声
+#      目录与配置 basename 后）存在强服务端信号文件；
+#    - 收集范围：根级 .js/.mjs/.cjs/.ts（排除构建/测试配置 basename）+ 一级非噪声
+#      目录（全深度）内带模块信号的 .js/.mjs/.cjs；TypeScript 额外收紧——仅收文件
+#      自身带强服务端信号（框架引入/路由动词/@Controller/listen/createServer），或
+#      位于 server|api|controllers|routes|middleware 目录且带模块信号，防止把普通
+#      根级 TS 工具文件全部纳入；
+#    - .d.ts 恒不计入正式源码；根级配置脚本（vite.config.ts/jest.config.ts/
+#      .eslintrc.js 等）与 scripts/、tools/ 等非服务端目录仍一律排除。
 #    上限 CC_CODE_REVIEWER_SERVER_ROOT_LIMIT（默认 200，0=禁用），并入数以 stderr
 #    的 SERVER_ROOTS_ADDED=N 披露。
 #
@@ -135,7 +139,8 @@ add_source_root() {
 server_is_noise_dir() {
   case "$(basename "$1")" in
     node_modules|dist|build|coverage|.git|src|\
-    *mock*|test*|*shell|sdk*|tpl*|doc*|static*|assets|public|data*|vite*|webpack*)
+    *mock*|test*|*shell|sdk*|tpl*|doc*|static*|assets|public|data*|vite*|webpack*|\
+    scripts|tools)
       return 0
       ;;
   esac
@@ -147,7 +152,7 @@ server_is_noise_dir() {
 # babel.js 是 gulp babel 插件、archive.js 是 zip 打包脚本——均属构建工具而非服务端代码。
 server_is_config_basename() {
   case "$(basename "$1")" in
-    gulpfile*|*.config.js|*.config.mjs|*.config.cjs|\
+    gulpfile*|*.config.js|*.config.mjs|*.config.cjs|*.config.ts|*.config.cts|*.config.mts|\
     webpack*|*.webpack.js|jest*|vitest*|karma*|rollup*|\
     .eslintrc*|.babelrc*|babel*|postcss*|eslint*|prettier*|archive*)
       return 0
@@ -156,20 +161,38 @@ server_is_config_basename() {
   return 1
 }
 
-# 强服务端信号：express/koa/fastify 依赖、服务启动、路由声明、框架路由注解
-# （[Rr]equestMapping 覆盖 thinkJS 的 this.RequestMapping 大写变体）。
+# 强服务端信号：框架 require/import、服务启动、路由声明、框架路由注解
+# （[Rr]equestMapping 覆盖 thinkJS 的 this.RequestMapping 大写变体；
+# import 形态与 app/server 路由动词、Nest 装饰器覆盖 TypeScript server-root）。
 server_has_strong_signal() {
-  grep -Eqi "require\\(['\"](express|koa|fastify|@nestjs/core|hapi|@hapi/hapi|egg)['\"]\\)|express\\(\\)|\\.listen\\(|createServer|router\\.(get|post|put|delete|all|use)\\(|requestMapping" "$1" 2>/dev/null
+  grep -Eqi "require\s*\(\s*['\"](express|koa|fastify|@nestjs/core|hapi|@hapi/hapi|egg)['\"]\)|from\s+['\"](express|koa|fastify|@nestjs/core|hapi|@hapi/hapi|egg)['\"]|express\s*\(\s*\)|\.listen\s*\(|createServer|router\s*\.\s*(get|post|put|delete|all|use)\s*\(|(app|server)\s*\.\s*(get|post|put|patch|delete|all)\s*\(\s*['\"]|requestMapping|@(Controller|Injectable|Module|Get|Post|Put|Delete|All)\b" "$1" 2>/dev/null
 }
 
-# 弱模块信号：Node 模块形态（require / module.exports / exports.）。
+# 弱模块信号：Node/TS 模块形态（require / module.exports / exports. / import / export）。
 server_has_weak_signal() {
-  grep -Eq "require\\(|module\\.exports|exports\\." "$1" 2>/dev/null
+  grep -Eq "require\s*\(|module\.exports|exports\.|^[[:space:]]*import[[:space:]]|^[[:space:]]*export[[:space:]]" "$1" 2>/dev/null
 }
 
-# package.json 入口信号：main 与 scripts.{start,dev} 中「node 后首个非 flag 参数」
-# （或 main 直值）指向 src 外真实存在的 JS 文件（含无扩展名的 ./bin/www 形态，
-# 依次回退 +.js/+.mjs/+.cjs）。解析失败即不命中，向强信号兜底（fail-closed）。
+# TypeScript server-root 收紧规则：文件自身强服务端信号，或位于服务端目录
+# （server/api/controllers/routes/middleware）且带模块信号——普通根级 TS 工具
+# 文件（含 src 外的构建/代码生成脚本）不纳入。
+server_ts_in_scope() {
+  local f="$1"
+  case "$f" in
+    "$2"*/server/*|"$2"*/api/*|"$2"*/controllers/*|"$2"*/routes/*|"$2"*/middleware/*)
+      server_has_weak_signal "$f"
+      ;;
+    *)
+      server_has_strong_signal "$f"
+      ;;
+  esac
+}
+
+# package.json 入口信号：main 与 scripts.{start,dev} 中「运行器后首个非 flag 参数」
+# （或 main 直值）指向 src 外真实存在的 JS/TS 文件（含无扩展名的 ./bin/www 形态，
+# 依次回退 +.js/+.mjs/+.cjs/+.ts；运行器含 node/nodemon/tsx/ts-node，覆盖
+# `node --loader tsx server.ts`、`ts-node server/index.ts` 等 TS 服务端入口）。
+# 解析失败即不命中，向强信号兜底（fail-closed）。
 pkg_entry_hits_server() {
   local pkg="$1" entry cand
   [ -f "$pkg/package.json" ] || return 1
@@ -181,7 +204,7 @@ pkg_entry_hits_server() {
     case "$entry" in
       ./*) entry="${entry#./}" ;;
     esac
-    for cand in "$entry" "${entry}.js" "${entry}.mjs" "${entry}.cjs"; do
+    for cand in "$entry" "${entry}.js" "${entry}.mjs" "${entry}.cjs" "${entry}.ts"; do
       [ -f "$pkg/$cand" ] && return 0
     done
   done < <(perl -ne '
@@ -189,7 +212,7 @@ pkg_entry_hits_server() {
     while (/"(start|dev)"\s*:\s*"([^"]+)"/g) {
       my @t = split /\s+|&&/, $2;
       for (my $i = 0; $i < @t; $i++) {
-        next unless $t[$i] =~ /^(node|nodemon)$/;
+        next unless $t[$i] =~ /^(node|nodemon|tsx|ts-node)$/;
         for (my $j = $i + 1; $j < @t; $j++) {
           next if $t[$j] =~ /^-+/;
           print "$t[$j]\n";
@@ -214,13 +237,14 @@ pkg_qualifies_server() {
 }
 
 # server 层候选文件枚举：包根 maxdepth 1（排除配置 basename）+
-# 一级非噪声目录全深度。测试/产物排除口径与 src 管线一致。
+# 一级非噪声目录全深度。测试/产物排除口径与 src 管线一致；.d.ts 恒不收集。
 server_layer_candidates() {
   local pkg="$1" d f
   find "$pkg" -maxdepth 1 -type f \
-    \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) \
+    \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.ts' \) \
+    -not -name '*.d.ts' \
     -not -name '*.min.js' -not -name '*.bundle.js' -not -name '*.generated.*' \
-    -not -name '*.test.js' -not -name '*.spec.js' \
+    -not -name '*.test.js' -not -name '*.spec.js' -not -name '*.test.ts' -not -name '*.spec.ts' \
     -print 2>/dev/null | while IFS= read -r f; do
     server_is_config_basename "$f" || printf '%s\n' "$f"
   done
@@ -230,16 +254,18 @@ server_layer_candidates() {
     find "$d" \
       \( -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name '.git' \
         -o -name 'coverage' -o -name '__snapshots__' -o -name 'testdata' -o -name 'fixtures' \) \) -prune -o \
-      -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) \
+      -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.ts' \) \
+      -not -name '*.d.ts' \
       -not -name '*.min.js' -not -name '*.bundle.js' -not -name '*.generated.*' \
-      -not -name '*.test.js' -not -name '*.spec.js' \
+      -not -name '*.test.js' -not -name '*.spec.js' -not -name '*.test.ts' -not -name '*.spec.ts' \
       -not -path '*/__tests__/*' -not -path '*/__snapshots__/*' -not -path '*/testdata/*' -not -path '*/fixtures/*' \
       -print 2>/dev/null
   done < <(find "$pkg" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null)
 }
 
 # 收集合格包的 server 层文件：候选中根级文件全收（已过配置黑名单），
-# 一级目录内文件需带弱模块信号（拦截纯数据/纯文本文件）。
+# 一级目录内文件需带弱模块信号（拦截纯数据/纯文本文件）；TypeScript 额外
+# 走 server_ts_in_scope 收紧规则（见上）。
 collect_pkg_server_files() {
   local pkg="$1" f
   while IFS= read -r f; do
@@ -247,6 +273,11 @@ collect_pkg_server_files() {
     case "$f" in
       "$pkg"/*/*)
         server_has_weak_signal "$f" || continue
+        ;;
+    esac
+    case "$f" in
+      *.ts)
+        server_ts_in_scope "$f" "$pkg" || continue
         ;;
     esac
     printf '%s\n' "$f"

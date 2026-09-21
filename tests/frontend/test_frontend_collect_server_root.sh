@@ -164,3 +164,62 @@ printf '%s\n' "$OUT5Z" | grep -q '/src/A\.vue$'
 ! grep -q 'SERVER_ROOTS_ADDED' "$TMP_DIR/err5z.txt"
 
 echo "PASS: frontend collect-source-files server-root"
+
+# ---- fixture 6：TypeScript server-root（v1.7.2：TS 按信号门控纳入）----
+# 6a. 根级 server.ts（scripts.start 用 tsx 运行入口）→ 纳入
+D6="$TMP_DIR/ts-bff"
+mkdir -p "$D6/src" "$D6/scripts" "$D6/controllers" "$D6/utils"
+cat > "$D6/package.json" <<'JSON'
+{
+  "name": "ts-bff",
+  "scripts": { "start": "tsx server.ts" },
+  "dependencies": { "vue": "^3.4.0", "express": "^4.18.0" }
+}
+JSON
+echo '<template><div/></template>' > "$D6/src/Home.vue"
+cat > "$D6/server.ts" <<'TS'
+import express from 'express';
+const app = express();
+app.post('/relay', (req, res) => { res.json(req.body); });
+app.listen(3000);
+TS
+# 6b. 服务端包 controllers/user.ts（router 动词强信号）→ 纳入
+cat > "$D6/controllers/user.ts" <<'TS'
+import { Router } from 'express';
+const router = Router();
+router.get('/users/:id', (req, res) => { res.json({ id: req.params.id }); });
+export default router;
+TS
+# 排除：配置 basename / scripts 目录 / 测试 / .d.ts / 纯工具 TS
+printf 'import { defineConfig } from "vite";\nexport default defineConfig({});\n' > "$D6/vite.config.ts"
+printf 'export default {};\n' > "$D6/jest.config.ts"
+printf 'import fs from "fs";\nfs.rmdirSync("dist", { recursive: true });\n' > "$D6/scripts/build.ts"
+printf 'import { helper } from "../server";\nexport const x = 1;\n' > "$D6/utils/helper.spec.ts"
+printf 'export declare const y: number;\n' > "$D6/global.d.ts"
+
+OUT6="$(bash "$COLLECTOR" "$D6" 2>"$TMP_DIR/err6.txt")"
+printf '%s\n' "$OUT6" | grep -q '/ts-bff/server\.ts$'
+printf '%s\n' "$OUT6" | grep -q '/ts-bff/controllers/user\.ts$'
+! printf '%s\n' "$OUT6" | grep -q 'vite\.config\.ts'
+! printf '%s\n' "$OUT6" | grep -q 'jest\.config\.ts'
+! printf '%s\n' "$OUT6" | grep -q 'scripts/build\.ts'
+! printf '%s\n' "$OUT6" | grep -q 'helper\.spec\.ts'
+! printf '%s\n' "$OUT6" | grep -q 'global\.d\.ts'
+grep -q 'SERVER_ROOTS_ADDED=2' "$TMP_DIR/err6.txt"   # server.ts + controllers/user.ts（package.json 走伴随层）
+
+# ---- fixture 7：纯前端包中的普通根级 helper.ts 不误收 ----
+D7="$TMP_DIR/pure-fe-ts"
+mkdir -p "$D7/src"
+cat > "$D7/package.json" <<'JSON'
+{"name":"pure-fe-ts","main":"src/index.ts","dependencies":{"vue":"^3.4.0"}}
+JSON
+printf 'export const helper = () => 1;\n' > "$D7/helper.ts"
+printf 'export const A = 1;\n' > "$D7/src/index.ts"
+mkdir -p "$D7/tools"
+printf 'import fs from "fs";\nfs.rmdirSync("dist", { recursive: true });\n' > "$D7/tools/gen.ts"
+
+OUT7="$(bash "$COLLECTOR" "$D7" 2>"$TMP_DIR/err7.txt")"
+printf '%s\n' "$OUT7" | grep -q '/src/index\.ts$'
+! printf '%s\n' "$OUT7" | grep -q 'helper\.ts'
+! printf '%s\n' "$OUT7" | grep -q 'tools/gen\.ts'
+! grep -q 'SERVER_ROOTS_ADDED' "$TMP_DIR/err7.txt"
