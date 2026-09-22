@@ -282,6 +282,16 @@ if target_has_nonterminal_batches; then
 fi
 
 mkdir -p "$RUN_DIR/final"
+# 剥离批次结果内嵌的「## 🛡️ Security 控制覆盖」章节：合并报告只保留跨批聚合段，
+# 避免批次级台账与聚合台账并存导致校验器/读者拿到两套不一致的结论。
+strip_batch_control_sections() {
+  awk '
+    /^##[[:space:]]*🛡️[[:space:]]*Security 控制覆盖/ { in_ctrl = 1; next }
+    in_ctrl && /^##[[:space:]]/ { in_ctrl = 0 }
+    !in_ctrl { print }
+  ' "$1"
+}
+
 COMPLETED_RESULTS="$RUN_DIR/final/.completed-results.md"
 DEDUPED_RESULTS="$RUN_DIR/final/.deduped-results.md"
 DEDUP_STATS_FILE="$RUN_DIR/final/.dedup-stats"
@@ -332,7 +342,7 @@ for bp in "$RUN_DIR"/batches/batch-*.json; do
         target_label="是"; merge_action="已纳入本次合并"
         INCLUDED_BATCHES=$((INCLUDED_BATCHES+1)); INCLUDED_BATCH_IDS+=("$bid"); MERGED_BATCH_IDS+=("$bid")
         COVERED_LOC=$((COVERED_LOC+planned_loc)); COVERED_FILES=$((COVERED_FILES+planned_files))
-        { echo ""; echo "### $bid - $(batch_modules "$bp")"; echo ""; cat "$resolved"; echo ""; } >> "$COMPLETED_RESULTS"
+        { echo ""; echo "### $bid - $(batch_modules "$bp")"; echo ""; strip_batch_control_sections "$resolved"; echo ""; } >> "$COMPLETED_RESULTS"
         awk '/^##[[:space:]]*跨批依赖待复核/{c=1;next} /^##[[:space:]]/{c=0} c&&NF>0{print}' "$resolved" >> "$CROSS_BATCH_LEADS"
       elif is_target_batch "$bid"; then
         target_label="是"; merge_action="结果缺失遗留"; MERGE_BLOCKED=true
@@ -359,7 +369,7 @@ for bp in "$RUN_DIR"/batches/batch-*.json; do
         && [ "$finding_count" -gt 0 ] && [ "$formal_finding_count" -gt 0 ]; then
         target_label="是"; merge_action="部分完成已纳入"
         MERGED_BATCH_IDS+=("$bid")
-        { echo ""; echo "### $bid - $(batch_modules "$bp")"; echo ""; cat "$resolved"; echo ""; } >> "$COMPLETED_RESULTS"
+        { echo ""; echo "### $bid - $(batch_modules "$bp")"; echo ""; strip_batch_control_sections "$resolved"; echo ""; } >> "$COMPLETED_RESULTS"
         awk '/^##[[:space:]]*跨批依赖待复核/{c=1;next} /^##[[:space:]]/{c=0} c&&NF>0{print}' "$resolved" >> "$CROSS_BATCH_LEADS"
       elif is_target_batch "$bid"; then
         # partial 必须同时提供 finding_count>0 和至少一个正式发现块；否则视为
@@ -628,7 +638,8 @@ if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_MODE" = "security" ] && [ -r "$
     my $B = $count{checked_no_finding} // 0;
     my $C = $count{external_evidence_missing} // 0;
     my $D = $count{static_unsupported} // 0;
-    my $E = $count{not_applicable} // 0;
+    # E 按冻结 resolver 排除数对齐（catalog 总集 − 本轮适用；not_applicable 台账行可选且 ≤ E）
+    my $E = scalar(keys %excluded);
     open my $of, ">:encoding(UTF-8)", $section_out or die "write $section_out: $!";
     print {$of} "\n## 🛡️ Security 控制覆盖（仅 Security 模式强制）\n\n";
     print {$of} "- 适用控制：$N\n- 已发现问题：$A\n- 已检查无发现：$B\n- 外部证据缺失：$C\n- 静态不可验证：$D\n- 不适用：$E\n- 对账：N = A + B + C + D\n\n";

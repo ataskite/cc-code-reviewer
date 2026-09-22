@@ -911,6 +911,17 @@ cat > "$SEC_DIR/results/batch-002.md" <<'MD'
 # Batch 002
 ## 发现列表
 （无正式发现）
+### 待确认-1 | [维度6-安全] CSRF 控制状态依赖网关配置
+- 文件：app.js:20
+- **安全规则 ID**：CCR-NODE-CSRF-001
+- **标准映射**：OWASP A01:2025 / API8:2023 / ASVS v5.0.0-V3.3.2 / v5.0.0-V3.5.2 / CWE-352
+- **检测方式**：config
+- 依据：Cookie SameSite 属性由网关注入，仓库内不可见
+- 证据：
+```js
+res.cookie('sid', token, { httpOnly: true }); // ← SameSite 由网关覆盖，仓库内不可见
+```
+- 建议的验证方式：核对网关 Cookie 属性
 ## 🛡️ Security 控制覆盖（仅 Security 模式强制）
 
 - 适用控制：2

@@ -67,11 +67,30 @@ perl -MJSON::PP -e '
     $sec_body =~ /^-\s*${name}：\s*(\d+)\s*$/m or failx("METRIC_MISSING", "缺少计数行「- ${name}：N」");
     $metric{$name} = $1 + 0;
   }
-  $sec_body =~ /^-\s*对账：\s*N = A \+ B \+ C \+ D\s*$/m or failx("RECON_LINE_MISSING", "缺少对账行「- 对账：N = A + B + C + D」");
+  # 对账行：以字面「N = A + B + C + D」开头，行内可附带实际数字复算
+  # （首个「x = a + b + c + d」形态，如「→ 5 = 1 + 4 + 0 + 0 ✓（…）」）；
+  # 数字存在时必须与台账计数完全一致。
+  my ($recon_ok, @recon_nums);
+  for my $line (split /\n/, $sec_body) {
+    # 字面形态「N = A + B + C + D」（可附数字复算后缀）或纯数字形态「6 = 1 + 4 + 1 + 0」
+    next unless $line =~ /^-\s*对账：\s*(?:N = A \+ B \+ C \+ D|\d+\s*=\s*\d+\s*\+\s*\d+\s*\+\s*\d+\s*\+\s*\d+)/;
+    $recon_ok = 1;
+    if ($line =~ /(\d+)\s*=\s*(\d+)\s*\+\s*(\d+)\s*\+\s*(\d+)\s*\+\s*(\d+)/) {
+      @recon_nums = ($1, $2, $3, $4, $5);
+    }
+    last;
+  }
+  failx("RECON_LINE_MISSING", "缺少对账行「- 对账：N = A + B + C + D」") unless $recon_ok;
   my $N = scalar @applicable;
   my $sum_abcd = $metric{"已发现问题"} + $metric{"已检查无发现"} + $metric{"外部证据缺失"} + $metric{"静态不可验证"};
   $metric{"适用控制"} == $N or failx("N_MISMATCH", "适用控制 $metric{qq(适用控制)} != 冻结适用数 $N");
   $sum_abcd == $N or failx("RECON_MISMATCH", "A+B+C+D=$sum_abcd != N=$N");
+  # 数字复算后缀（若 agent 提供）：必须与台账计数完全一致
+  if (@recon_nums && $recon_nums[0] ne "") {
+    my @expect = ($N, $metric{"已发现问题"}, $metric{"已检查无发现"}, $metric{"外部证据缺失"}, $metric{"静态不可验证"});
+    my @got = map { $_ + 0 } @recon_nums;
+    failx("RECON_NUM_MISMATCH", "对账数字 @got 与台账计数 @expect 不一致") unless "@got" eq "@expect";
+  }
 
   # ---- 台账表 ----
   my %row_status;   # id => status
@@ -100,14 +119,17 @@ perl -MJSON::PP -e '
   for my $id (@applicable) {
     exists $row_status{$id} or failx("ROW_MISSING", "适用控制缺少台账行: $id");
   }
-  # 计数与行状态一致
+  # 计数与行状态一致。「不适用 E」按冻结 resolver 排除数对齐（deterministic）；
+  # not_applicable 台账行可选（只能引用 excluded 控制，数量不得超过 E）。
   my %by_status;
   $by_status{ $_ }++ for values %row_status;
   $metric{"已发现问题"} == ($by_status{finding_confirmed} // 0) or failx("COUNT_A_MISMATCH", "已发现问题计数与台账不符");
   $metric{"已检查无发现"} == ($by_status{checked_no_finding} // 0) or failx("COUNT_B_MISMATCH", "已检查无发现计数与台账不符");
   $metric{"外部证据缺失"} == ($by_status{external_evidence_missing} // 0) or failx("COUNT_C_MISMATCH", "外部证据缺失计数与台账不符");
   $metric{"静态不可验证"} == ($by_status{static_unsupported} // 0) or failx("COUNT_D_MISMATCH", "静态不可验证计数与台账不符");
-  $metric{"不适用"} == ($by_status{not_applicable} // 0) or failx("COUNT_E_MISMATCH", "不适用计数与台账不符");
+  my $excluded_n = scalar(keys %excluded);
+  $metric{"不适用"} == $excluded_n or failx("COUNT_E_MISMATCH", "不适用计数 $metric{qq(不适用)} != 冻结排除控制数 $excluded_n");
+  ($by_status{not_applicable} // 0) <= $excluded_n or failx("COUNT_E_MISMATCH", "not_applicable 台账行数超过冻结排除控制数");
 
   # ---- 问题块（### P0-P3/待确认 | ...）与 安全规则 ID 字段 ----
   my @lines = split /\n/, $text, -1;

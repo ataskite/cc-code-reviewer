@@ -119,7 +119,7 @@
 - 外部证据缺失：{C}
 - 静态不可验证：{D}
 - 不适用：{E}
-- 对账：N = A + B + C + D
+- 对账：N = A + B + C + D（可在行内附带实际数字复算后缀，如「→ 5 = 1 + 4 + 0 + 0」，数字必须与计数一致）
 
 | 控制 ID | 标题 | 标准映射 | 检测方式 | 状态 | 证据或限制 |
 |---|---|---|---|---|---|
@@ -127,7 +127,7 @@
 | CCR-NODE-CSRF-001 | Cookie 会话写接口缺少 CSRF 控制 | OWASP A01:2025 / ASVS v5.0.0-V3.3.2 / CWE-352 | config | checked_no_finding | 全部写接口校验 Origin + SameSite=Lax |
 ```
 
-说明：`not_applicable` 行属于 catalog 总集而不属于「适用控制 N」，单独披露 E、不进入 N 对账。`N = A + B + C + D` 必须与冻结 `SECURITY_CONTROLS_PATH` 的适用控制数一致——落盘后由 `scripts/core/validate-security-report.sh` 确定性校验；校验失败时禁止飞书上传与 SARIF 导出。
+说明：`不适用 E` 恒等于冻结 `SECURITY_CONTROLS_PATH` 的排除控制数（catalog 总集 − 本轮适用，来自 resolver 信号判定），不进入 N 对账；`not_applicable` 台账行为可选披露（只能引用排除控制、数量 ≤ E）。`N = A + B + C + D` 必须与冻结 `SECURITY_CONTROLS_PATH` 的适用控制数一致——落盘后由 `scripts/core/validate-security-report.sh` 确定性校验；校验失败时禁止飞书上传与 SARIF 导出。
 
 ### Security 控制条目附加字段（问题块内）
 
