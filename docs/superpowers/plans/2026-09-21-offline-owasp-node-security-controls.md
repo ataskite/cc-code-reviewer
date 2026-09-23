@@ -193,7 +193,7 @@ tests/evals/node-security/
   "category": "external-resource",
   "profiles": ["node-api", "node-bff"],
   "applicability": {
-    "requires_any_signals": ["outbound-http-client"],
+    "review_signals": ["outbound-http-client"],
     "excludes_project_types": []
   },
   "standards": {
