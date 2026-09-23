@@ -590,7 +590,7 @@ if [ "$REVIEW_MODE" = "security" ] && [ "$LANGUAGE_ID" = "frontend" ]; then
   bash "${PLUGIN_ROOT}/scripts/core/resolve-security-controls.sh" \
     "$PROJECT_DIR" "$PROJECT_TYPE" "$REVIEW_INPUT_PATH" "$SECURITY_CONTROLS_PATH" >/dev/null
   test -r "$SECURITY_CONTROLS_PATH"
-  if perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $f,"<",$ARGV[0] or die; <$f> }); exit(($d->{security_profile}//[]) ? 0 : 1)' "$SECURITY_CONTROLS_PATH"; then
+  if perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $f,"<",$ARGV[0] or die; <$f> }); exit(@{$d->{security_profile}//[]} ? 0 : 1)' "$SECURITY_CONTROLS_PATH"; then
     SECURITY_SURFACE_PATH="${REVIEW_INPUT_PATH%.json}-security-surface.json"
     bash "${PLUGIN_ROOT}/scripts/languages/frontend/prepare-security-surface.sh" \
       "$PROJECT_DIR" "$REVIEW_INPUT_PATH" "$SECURITY_CONTROLS_PATH" "$SECURITY_SURFACE_PATH" >/dev/null

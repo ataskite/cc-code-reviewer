@@ -19,6 +19,13 @@ fail() { echo "FAIL(upstream): $*" >&2; exit 1; }
 [ -d "$UPSTREAM/api-top10/2023" ] || fail "missing upstream/api-top10/2023"
 ls "$UPSTREAM"/nodejs-cheat-sheet/ >/dev/null 2>&1 || fail "missing upstream/nodejs-cheat-sheet/"
 
+# Runtime verifier is also exercised directly: each consumer must reject any
+# snapshot byte that no longer matches manifest.json / per-source SHA256SUMS.
+RUNTIME_OUT="$(bash "$ROOT_DIR/scripts/core/validate-security-upstream.sh" "$UPSTREAM")" \
+  || fail "runtime upstream verifier rejected the current snapshot: $RUNTIME_OUT"
+printf '%s\n' "$RUNTIME_OUT" | grep -Eq '^SECURITY_UPSTREAM_OK=SOURCES=4 FILES=[0-9]+$' \
+  || fail "runtime upstream verifier stdout contract violated: $RUNTIME_OUT"
+
 # 单进程 Perl 完成全部 JSON/哈希/NOTICE 断言；任何违例 die（ERROR_UPSTREAM_*）。
 perl -MJSON::PP -MDigest::SHA -e '
   use strict; use warnings;

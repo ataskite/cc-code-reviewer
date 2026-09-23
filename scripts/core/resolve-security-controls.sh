@@ -19,10 +19,15 @@ set -euo pipefail
 #
 # Profile 判定（信号词表封闭，见 references/security/control-catalog.md §4）：
 # - node-api    = PROJECT_TYPE=node，或冻结输入存在 http-server 信号
-# - node-bff    = node-api 成立 且（前端信号[.vue/.jsx/.tsx 或 vue/react 依赖]，或
-#                 outbound-http-client + request-source 同时存在——API 中继形态）
+# - node-bff    = node-api 成立 且 前端信号（.vue/.jsx/.tsx 文件或 vue/react 依赖）——
+#                 前端项目的服务端层即 BFF；外发客户端词表未命中不代表不存在（封装/改名常见）
 # - node-worker = worker-queue 信号（队列/任务/Webhook/消息消费）
-# 控制适用性：控制 profiles ∩ 激活 profile 非空，且 requires_any_signals 为空或命中任一信号。
+# 控制适用性（保守语义）：控制 profiles ∩ 激活 profile 非空即适用。
+# 信号只做两件事：导航（matched_signals 供 agent 优先取证）与确认（basis=signal-confirmed）；
+# 信号未命中只降级为 basis=profile-default（保守保留），绝不构成排除——静态词表无法证明
+# 不存在改名封装/跨文件实现（事故复现：Http.request 封装让 outbound-http-client 全部未命中）。
+# 排除只发生在 profile 层（无服务端代码）。Agent 语义发现被排除控制的风险时可「语义提升」：
+# 以 finding_confirmed 台账行 + 携带规则 ID 的问题块纳入（校验器按此放行）。
 
 if [ $# -ne 4 ]; then
   echo "ERROR_SECURITY_RESOLVE_USAGE=参数须为 <PROJECT_DIR> <PROJECT_TYPE> <REVIEW_INPUT_JSON> <OUTPUT_JSON>" >&2
@@ -127,9 +132,8 @@ perl -MJSON::PP -MCwd=abs_path -MFile::Spec -e '
   # ---- Profile 判定 ----
   my %profile;
   $profile{"node-api"} = 1 if ($project_type // "") eq "node" || $sig{"http-server"};
-  if ($profile{"node-api"}) {
-    $profile{"node-bff"} = 1 if $frontend_signal || ($sig{"outbound-http-client"} && $sig{"request-source"});
-  }
+  my $supported_frontend_project = ($project_type // "") =~ /^frontend-(?:react|vue[23])$/;
+  $profile{"node-bff"} = 1 if $profile{"node-api"} && ($frontend_signal || $supported_frontend_project);
   $profile{"node-worker"} = 1 if $sig{"worker-queue"};
   my @profiles = grep { $profile{$_} } qw(node-api node-bff node-worker);
 
@@ -145,16 +149,18 @@ perl -MJSON::PP -MCwd=abs_path -MFile::Spec -e '
     next if $seen_out{$id}++;
     my @in_prof = grep { $profile{$_} } @{ $c->{profiles} // [] };
     if (!@in_prof) {
-      push @excluded, { id => $id, reason => "profile 未启用（激活 profile: " . (@profiles ? join(",", @profiles) : "无") . "）" };
+      push @excluded, { id => $id, reason => "profile 未启用（激活 profile: " . (@profiles ? join(",", @profiles) : "无") . "）；如语义审查发现该控制风险，可在台账中以 finding_confirmed 语义提升" };
       next;
     }
-    my @req = @{ $c->{applicability}{requires_any_signals} // [] };
+    my @req = @{ $c->{applicability}{review_signals} // [] };
     my @matched = grep { $sig{$_} } @req;
-    if (@req && !@matched) {
-      push @excluded, { id => $id, reason => "冻结输入未命中所需信号: " . join(",", @req) };
-      next;
-    }
-    push @applicable, { id => $id, applicability => "applicable", matched_signals => [@matched] };
+    my $basis = @matched ? "signal-confirmed" : "profile-default";
+    push @applicable, {
+      id => $id,
+      applicability => "applicable",
+      basis => $basis,
+      matched_signals => [@matched],
+    };
   }
 
   my $out = {

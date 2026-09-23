@@ -134,10 +134,17 @@ perl -MJSON::PP -MCwd=abs_path -MFile::Spec -MEncode=decode,FB_CROAK -e '
 
   # 脱敏：键名=值 形态的敏感赋值 → 键名=***；长随机串（≥32 的 base64/hex）→ ***
   # 非 UTF-8 行的 excerpt 退化为 ASCII（保持输出 JSON 字节确定）。
+  # 脱敏（保守）：
+  # 1) 连接串 userinfo（mongodb/postgres/mysql/redis/amqp/http(s)…）密码段掩码；
+  # 2) 敏感键赋值：裸键 / 带引号键（JSON 与对象字面量）/ 括号与点号成员
+  #    （headers["k"]= / headers.k= / "k":）——值形态不做长度假设，≥3 字符即掩码；
+  # 3) 长随机串字面量（≥16 的 base64/hex/token 形态）与 Bearer 值。
   sub mask_excerpt {
     my ($s) = @_;
-    $s = eval { decode("UTF-8", $s, FB_CROAK) } // do { my $x = $s; $x =~ s/[^\x20-\x7E\t]/ /g; $x };    $s =~ s/((?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|authorization|auth|credential)[A-Za-z0-9_]*\s*[:=]\s*)(["\x27]?)[^\s"\x27,;)}{]{4,}\2/${1}***MASKED***/gi;
-    $s =~ s/["\x27][A-Za-z0-9+\/=_-]{32,}["\x27]/***MASKED***/g;
+    $s = eval { decode("UTF-8", $s, FB_CROAK) } // do { my $x = $s; $x =~ s/[^\x20-\x7E\t]/ /g; $x };
+    $s =~ s{\b([a-z][a-z0-9+.\-]*://)([^:/@\s"\x27]+):([^@/\s"\x27]+)@}{$1$2:***MASKED***@}gi;
+    $s =~ s!((?:password|passwd|pwd|secret|client[_-]?secret|token|api[_-]?key|apikey|api[_-]?token|access[_-]?key|access[_-]?token|secret[_-]?key|private[_-]?key|authorization|credential|ticket)[A-Za-z0-9_-]*(?:["\x27]?\s*\])?["\x27]?\s*[:=]\s*)(["\x27]?)[^\s"\x27,;)}\]]{3,}\2?!${1}***MASKED***!gi;
+    $s =~ s/["\x27][A-Za-z0-9+\/_=-]{16,}["\x27]/***MASKED***/g;
     $s =~ s/(bearer\s+)[A-Za-z0-9._-]{8,}/${1}***MASKED***/gi;
     $s =~ s/\s+/ /g;
     $s =~ s/^\s+|\s+$//g;

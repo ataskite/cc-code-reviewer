@@ -1,0 +1,6 @@
+{
+  "name": "ssrf-ipv6-mapped-bypass",
+  "private": true,
+  "main": "server.js",
+  "dependencies": { "express": "^4.18.0" }
+}

@@ -77,7 +77,7 @@ README 与清单存在、`expected-controls.json` 是合法 JSON、case 集合�
 CCR-NODE-BFFHEADER-001、CCR-NODE-SSRF-001、CCR-NODE-SESSION-001、
 CCR-NODE-CMD-001、CCR-NODE-PATH-001、CCR-NODE-BOLA-001、CCR-NODE-BFLA-001
 
-## 夹具清单（17 个 case）
+## 夹具清单（19 个 case）
 
 | 组 | case | 类型 | 关联控制 |
 | --- | --- | --- | --- |

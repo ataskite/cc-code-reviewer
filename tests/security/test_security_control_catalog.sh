@@ -86,7 +86,7 @@ perl -MJSON::PP -e '
     failx("control $id standards missing subkeys") unless ref($st) eq "HASH" && defined $st->{owasp_top10} && defined $st->{owasp_api_top10} && defined $st->{asvs} && defined $st->{cwe};
     no_dup($_, "$_ of $id") for ($st->{owasp_top10}, $st->{owasp_api_top10}, $st->{asvs}, $st->{cwe});
     failx("control $id cwe format invalid: @{ $st->{cwe} }") if grep { !/^CWE-\d+$/ } @{ $st->{cwe} };
-    no_dup($c->{applicability}{requires_any_signals} // [], "signals of $id");
+    no_dup($c->{applicability}{review_signals} // [], "signals of $id");
   }
   failx("catalog must contain >= 12 controls") unless @$controls >= 12;
   for my $fb (@first_batch) {
@@ -116,13 +116,22 @@ perl -MJSON::PP -e '
   # 标准映射存在性：ASVS Shortcode / Top10 ID / API Top10 ID 必须能在本地快照找到。
   my $asvs = load_json("$upstream/asvs/5.0.0/OWASP_Application_Security_Verification_Standard_5.0.0_en.json");
   my %asvs_ids;
+  my %asvs_description;
   my $walk; $walk = sub {
     my ($n) = @_;
     return unless ref($n) eq "HASH";
-    $asvs_ids{ $n->{Shortcode} } = 1 if defined $n->{Shortcode};
+    if (defined $n->{Shortcode}) {
+      $asvs_ids{ $n->{Shortcode} } = 1;
+      $asvs_description{ $n->{Shortcode} } = $n->{Description} // "";
+    }
     $walk->($_) for @{ $n->{Items} // [] };
   };
   $walk->($_) for @{ $asvs->{Requirements} // [] };
+  my ($ssrf) = grep { $_->{id} eq "CCR-NODE-SSRF-001" } @$controls;
+  join(",", @{ $ssrf->{standards}{asvs} || [] }) eq "v5.0.0-V1.3.6"
+    or failx("SSRF control must map to its semantically verified ASVS SSRF requirement V1.3.6 only");
+  $asvs_description{"V1.3.6"} =~ /Server-side Request Forgery/i
+    or failx("ASVS V1.3.6 no longer identifies SSRF; review the control mapping");
   for my $c (@$controls) {
     for my $a (@{ $c->{standards}{asvs} }) {
       failx("control $c->{id} asvs id must carry v5.0.0- prefix: $a") unless $a =~ /^v5\.0\.0-/;

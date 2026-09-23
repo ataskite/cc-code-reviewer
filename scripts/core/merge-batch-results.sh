@@ -546,20 +546,25 @@ if [ "$FAILED_BATCHES" -gt 0 ]; then
 fi
 
 # Security 控制覆盖跨批聚合（仅 frontend + security 且 RUN_DIR 冻结 controls 时）：
-# 按 control ID 聚合各已纳入批次的台账行，优先级 finding_confirmed > external_evidence_missing
+# 按 control ID 聚合本轮有结果且被合并的批次（completed + 有正式发现的 partial），优先级 finding_confirmed > external_evidence_missing
 # > static_unsupported > checked_no_finding；not_applicable 行不计入适用对账（单独披露 E）。
-# 全局 checked_no_finding 仅当所有已纳入批次行均不高于该级别时成立；遗留批次存在时对
-# checked_no_finding 控制追加「部分批次未完成」披露，不假装通过。冻结适用控制若没有任何
-# 已纳入批次报告，聚合为 external_evidence_missing（批次台账不完整），不得静默判为通过。
+# 全局 checked_no_finding 仅当所有合并结果批次都提供有效完整台账时成立；partial 批次的
+# checked_no_finding/无发现不能作为通过。冻结适用控制若本轮目标批次没有结果或台账缺行，
+# 聚合为 external_evidence_missing（批次台账不完整），不得静默判为通过。
 SECURITY_COVERAGE_SUMMARY_LINE=""
 SECURITY_COVERAGE_SECTION_FILE="$RUN_DIR/.security-coverage-section.md"
 SECURITY_COVERAGE_SECTION=""
 if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_MODE" = "security" ] && [ -r "$RUN_DIR/security-controls.json" ]; then
-  SECURITY_INCLUDED_IDS="$(printf '%s ' ${INCLUDED_BATCH_IDS[@]+"${INCLUDED_BATCH_IDS[@]}"})"
+  SECURITY_RESULT_IDS="$(printf '%s ' ${MERGED_BATCH_IDS[@]+"${MERGED_BATCH_IDS[@]}"})"
+  SECURITY_PARTIAL_IDS="$(printf '%s ' ${PARTIAL_BATCH_IDS[@]+"${PARTIAL_BATCH_IDS[@]}"})"
+  SECURITY_TARGET_IDS="$(printf '%s ' ${TARGET_BATCH_IDS[@]+"${TARGET_BATCH_IDS[@]}"})"
   perl -MJSON::PP -MEncode=decode,FB_CROAK -e '
     use strict; use warnings; use utf8;
-    my ($run, $plan_path, $section_out, $included_ids_arg, $leftover_arg) = @ARGV;
-    my @included_ids = grep { length } split /\s+/, $included_ids_arg;
+    my ($run, $plan_path, $section_out, $result_ids_arg, $partial_ids_arg, $target_ids_arg, $leftover_arg) = @ARGV;
+    my @result_ids = grep { length } split /\s+/, $result_ids_arg;
+    my @partial_ids = grep { length } split /\s+/, $partial_ids_arg;
+    my @target_ids = grep { length } split /\s+/, $target_ids_arg;
+    my %partial = map { $_ => 1 } @partial_ids;
     my $leftover = 0 + $leftover_arg;
     sub loadj { my ($p)=@_; open my $f,"<",$p or die "read $p: $!"; local $/; return decode_json(<$f>); }
     binmode(STDOUT, ":utf8");
@@ -582,52 +587,118 @@ if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_MODE" = "security" ] && [ -r "$
       }
     }
     my %rank = (finding_confirmed => 4, external_evidence_missing => 3, static_unsupported => 2, checked_no_finding => 1, not_applicable => 0);
-    my %agg;        # id => [rank, status]
-    my %evidence;   # id => joined evidence
-    for my $bid (@included_ids) {
+    # 逐批对账（R2）：每个已纳入批次的台账行有效性独立判定——缺节/缺行/批内重复/
+    # 非法状态都记为该批「未提供有效行」。全局 checked_no_finding 只有在全部已纳入
+    # 批次都给出有效行且均不高于该级别时才成立；任何批次缺失即降级为
+    # external_evidence_missing 并点名批次，不得把「没检查」汇总成「已检查无发现」。
+    my %verdict;      # id -> { bid => status }（有效行）
+    my %invalid_at;   # id -> [bid, ...]（该批缺行/重复/非法/缺节）
+    my %no_section;   # bid -> 1（整个台账章节缺失）
+    my %evidence;     # id -> 证据（批次后缀标注）
+    my %excl_row;     # excluded id -> not_applicable（展示行，可选）
+    my $elevated_n = 0;
+    my @elevated_ids;
+    sub ev_append { my ($id, $piece) = @_; return unless length $piece; $evidence{$id} = (exists $evidence{$id} && length $evidence{$id}) ? "$evidence{$id}；$piece" : $piece; }
+    my %has_result = map { $_ => 1 } @result_ids;
+    # 目标批次若本轮被调度但没有可合并结果（例如 completed 状态却丢失文件），
+    # 它对每条适用控制都构成证据缺口。未选择的其他批次不影响本轮目标范围。
+    for my $bid (@target_ids) {
+      next if $has_result{$bid};
+      $no_section{$bid} = 1;
+      push @{ $invalid_at{$_} }, $bid for @applicable;
+    }
+    for my $bid (@result_ids) {
       my $rp = "$run/results/$bid.md";
-      next unless -r $rp;
-      open my $f, "<", $rp or next;
-      my $in_sec = 0;
-      my %seen_in_batch;
+      my $f;
+      if (!-r $rp || !open($f, "<", $rp)) {
+        $no_section{$bid} = 1;
+        push @{ $invalid_at{$_} }, $bid for @applicable;
+        next;
+      }
+      my ($in_sec, $has_section) = (0, 0);
+      my (%seen_cnt, %row_status, %row_ev);
       while (my $raw = <$f>) {
-        # 按 UTF-8 解码（失败按字节兜底），与 use utf8 的字符模式正则一致
         my $l = eval { decode("UTF-8", $raw, FB_CROAK) } // $raw;
         $in_sec = 1 if $l =~ /^##\s*🛡️\s*Security 控制覆盖/;
         last if $in_sec && $l =~ /^##\s/ && $l !~ /🛡️/;
         next unless $in_sec && $l =~ /^\|\s*(CCR-NODE-[A-Z0-9]+-[0-9]{3})\s*\|/;
+        $has_section = 1;
         my @cells = map { my $c = $_; $c =~ s/^\s+|\s+$//g; $c } split /\|/, $l;
         shift @cells if @cells && $cells[0] eq "";
         pop @cells if @cells && $cells[-1] eq "";
         next unless @cells >= 5;
         my ($id, $status, $ev) = ($cells[0], $cells[4], $cells[5] // "");
-        next unless $rank{$status};
-        next if $seen_in_batch{$id}++;   # 批内重复行以首行为准（批次结果自身应已对账）
-        if (!exists $agg{$id} || $rank{$status} > $agg{$id}[0]) {
-          $agg{$id} = [$rank{$status}, $status];
-        }
-        if (length $ev) {
-          $evidence{$id} = exists $evidence{$id} && index($evidence{$id}, $ev) < 0 ? "$evidence{$id}；$ev" : ($evidence{$id} // $ev);
+        $seen_cnt{$id}++;
+        if ($seen_cnt{$id} == 1 && $rank{$status}) {
+          $row_status{$id} = $status;
+          $row_ev{$id} = $ev;
         }
       }
       close $f;
+      $no_section{$bid} = 1 unless $has_section;
+      for my $id (@applicable) {
+        if (defined $row_status{$id} && ($seen_cnt{$id} // 0) == 1) {
+          if ($partial{$bid} && $row_status{$id} ne "finding_confirmed") {
+            push @{ $invalid_at{$id} }, $bid;
+            ev_append($id, "partial 批次 $bid 的静态无发现/覆盖结论不完整");
+          } else {
+            $verdict{$id}{$bid} = $row_status{$id};
+            ev_append($id, length($row_ev{$id} // "") ? "$row_ev{$id}（$bid）" : "");
+          }
+        } else {
+          push @{ $invalid_at{$id} }, $bid;
+        }
+      }
+      # excluded 控制：not_applicable 展示行 / finding_confirmed 语义提升
+      for my $id (sort keys %excluded) {
+        next unless defined $row_status{$id} && ($seen_cnt{$id} // 0) == 1;
+        if ($row_status{$id} eq "finding_confirmed") {
+          $verdict{$id}{$bid} = "finding_confirmed";
+          ev_append($id, "语义提升（$bid 发现该控制风险）");
+        } elsif ($row_status{$id} eq "not_applicable") {
+          $excl_row{$id} = "not_applicable";
+        }
+      }
     }
-    # 冻结适用控制必须全部出现在聚合表；无任何批次报告 → external_evidence_missing。
+    my %final;
+    my $downgraded_n = 0;
     for my $id (@applicable) {
-      next if exists $agg{$id};
-      $agg{$id} = [3, "external_evidence_missing"];
-      $evidence{$id} = "全部已纳入批次均未报告该控制（批次台账不完整，需重跑对应批次）";
+      my $v = $verdict{$id} || {};
+      my @st = values %$v;
+      if (!@st) {
+        $final{$id} = "external_evidence_missing";
+        ev_append($id, "已合并批次均未提供该控制有效台账（" . (@result_ids ? join(",", @result_ids) : "无") . "），需重跑对应批次");
+        next;
+      }
+      my ($best) = sort { $rank{$b} <=> $rank{$a} } @st;
+      if ($best ne "finding_confirmed" && @{ $invalid_at{$id} || [] }) {
+        $final{$id} = "external_evidence_missing";
+        $downgraded_n++;
+        ev_append($id, "批次 " . join(",", @{ $invalid_at{$id} }) . " 未提供该控制有效台账行（缺节/缺行/重复/非法状态），全量无发现结论不成立");
+      } else {
+        $final{$id} = $best;
+      }
+    }
+    for my $id (sort keys %excluded) {
+      my $v = $verdict{$id} || {};
+      if (grep { $_ eq "finding_confirmed" } values %$v) {
+        $final{$id} = "finding_confirmed";
+        $elevated_n++;
+        push @elevated_ids, $id;
+      }
     }
     my %count;
+    $count{ $final{$_} }++ for @applicable;
     my @rows;
     for my $id (@applicable, sort keys %excluded) {
-      my $e = $agg{$id};
-      next unless $e;   # excluded 且无批次披露 → 不强行造行
-      my $status = $e->[1];
-      $count{$status}++;
+      my $status = $final{$id} // $excl_row{$id};
+      next unless defined $status;   # excluded 且无任何批次披露 → 不强行造行
       my $meta = $cat_meta{$id} || { title => $id, mapping => "", detect => "" };
       my $ev = $evidence{$id} // "";
-      if ($leftover > 0 && $status eq "checked_no_finding") {
+      if ($final{$id} && $final{$id} eq "finding_confirmed" && $excluded{$id}) {
+        $ev = length($ev) ? "$ev（语义提升：原被 profile 排除，Agent 语义审查确认风险）" : "语义提升：原被 profile 排除，Agent 语义审查确认风险";
+      }
+      if ($leftover > 0 && ($status // "") eq "checked_no_finding") {
         $ev = length($ev) ? "$ev（部分批次未完成，结论以全量合并为准）" : "部分批次未完成，结论以全量合并为准";
       }
       $ev =~ s/\|/\\|/g;
@@ -638,18 +709,21 @@ if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_MODE" = "security" ] && [ -r "$
     my $B = $count{checked_no_finding} // 0;
     my $C = $count{external_evidence_missing} // 0;
     my $D = $count{static_unsupported} // 0;
-    # E 按冻结 resolver 排除数对齐（catalog 总集 − 本轮适用；not_applicable 台账行可选且 ≤ E）
-    my $E = scalar(keys %excluded);
+    # E = 冻结排除数 − 语义提升数；提升的控制以 finding_confirmed 行出现在台账中
+    my $E = scalar(keys %excluded) - $elevated_n;
     open my $of, ">:encoding(UTF-8)", $section_out or die "write $section_out: $!";
     print {$of} "\n## 🛡️ Security 控制覆盖（仅 Security 模式强制）\n\n";
-    print {$of} "- 适用控制：$N\n- 已发现问题：$A\n- 已检查无发现：$B\n- 外部证据缺失：$C\n- 静态不可验证：$D\n- 不适用：$E\n- 对账：N = A + B + C + D\n\n";
+    print {$of} "- 适用控制：$N\n- 已发现问题：$A\n- 已检查无发现：$B\n- 外部证据缺失：$C\n- 静态不可验证：$D\n- 不适用：$E\n";
+    print {$of} "- 语义提升：$elevated_n\n" if $elevated_n > 0;
+    print {$of} "- 对账：N = A + B + C + D\n\n";
     print {$of} "| 控制 ID | 标题 | 标准映射 | 检测方式 | 状态 | 证据或限制 |\n|---|---|---|---|---|---|\n";
     print {$of} "$_\n" for @rows;
-    print {$of} "\n台账按 control ID 跨批聚合：优先级 finding_confirmed > external_evidence_missing > static_unsupported > checked_no_finding；适用控制对账 N = A + B + C + D，not_applicable 单独披露不计入对账。\n";
+    print {$of} "\n台账按 control ID 跨批逐批对账聚合：优先级 finding_confirmed > external_evidence_missing > static_unsupported > checked_no_finding；只有全部已纳入批次均提供该控制有效台账行时才可形成全量 checked_no_finding（缺节/缺行/重复/非法状态一律降级为 external_evidence_missing 并点名批次）；语义提升 = 原 profile 排除控制经语义审查确认风险后纳入；not_applicable 单独披露不计入对账。\n";
     close $of;
-    my $ctrl_json = JSON::PP->new->canonical->utf8->encode({ map { $_ => $agg{$_}[1] } (sort keys %agg) });
-    print "{\"applicable\":$N,\"finding_confirmed\":$A,\"checked_no_finding\":$B,\"external_evidence_missing\":$C,\"static_unsupported\":$D,\"not_applicable\":$E,\"staged\":" . ($leftover > 0 ? "true" : "false") . ",\"controls\":$ctrl_json}\n";
-  ' "$RUN_DIR" "$PLAN_PATH" "$SECURITY_COVERAGE_SECTION_FILE" "$SECURITY_INCLUDED_IDS" "$LEFTOVER_BATCHES" > "$RUN_DIR/.security-coverage-summary.txt" 2>"$RUN_DIR/.security-coverage-err.txt" || {
+    my $ctrl_json = JSON::PP->new->canonical->utf8->encode({ map { $_ => ($final{$_} // $excl_row{$_}) } (grep { defined($final{$_} // $excl_row{$_}) } (sort keys %excluded, @applicable)) });
+    my $missing_json = JSON::PP->new->canonical->utf8->encode([sort keys %no_section]);
+    print "{\"applicable\":$N,\"finding_confirmed\":$A,\"checked_no_finding\":$B,\"external_evidence_missing\":$C,\"static_unsupported\":$D,\"not_applicable\":$E,\"elevated\":$elevated_n,\"elevated_controls\":" . JSON::PP->new->canonical->utf8->encode(\@elevated_ids) . ",\"ledger_missing_batches\":$missing_json,\"downgraded_controls\":$downgraded_n,\"staged\":" . ($leftover > 0 ? "true" : "false") . ",\"controls\":$ctrl_json}\n";
+  ' "$RUN_DIR" "$PLAN_PATH" "$SECURITY_COVERAGE_SECTION_FILE" "$SECURITY_RESULT_IDS" "$SECURITY_PARTIAL_IDS" "$SECURITY_TARGET_IDS" "$LEFTOVER_BATCHES" > "$RUN_DIR/.security-coverage-summary.txt" 2>"$RUN_DIR/.security-coverage-err.txt" || {
     echo "WARN_SECURITY_COVERAGE_AGGREGATION_FAILED=$(cat "$RUN_DIR/.security-coverage-err.txt" | head -1)" >&2
   }
   if [ -s "$RUN_DIR/.security-coverage-summary.txt" ] && [ -s "$SECURITY_COVERAGE_SECTION_FILE" ]; then

@@ -33,6 +33,9 @@ fi
 [ -r "$UPSTREAM_MANIFEST" ] || { echo "ERROR_SECURITY_CATALOG_UPSTREAM_MISSING=$UPSTREAM_MANIFEST" >&2; exit 1; }
 UPSTREAM_ROOT="$(cd "$(dirname "$UPSTREAM_MANIFEST")" && pwd -P)"
 
+# Verify frozen file bytes before trusting ASVS/Top10 IDs from the local copy.
+bash "$SCRIPT_DIR/validate-security-upstream.sh" "$UPSTREAM_ROOT" >/dev/null
+
 MANIFEST_SHA="$(sha256_file "$UPSTREAM_MANIFEST")"
 
 perl -MJSON::PP -e '

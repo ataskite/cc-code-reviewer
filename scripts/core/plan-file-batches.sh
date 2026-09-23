@@ -278,7 +278,7 @@ if [ "$LANGUAGE_ID" = "frontend" ] && [ "$REVIEW_MODE" = "security" ]; then
   SURFACE_FROZEN="$RUN_DIR/security-surface.json"
   SURFACE_SHA="null"
   SURFACE_DECL="null"
-  if perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $f,"<",$ARGV[0] or die; <$f> }); exit(($d->{security_profile}//[]) ? 0 : 1)' "$CONTROLS_FROZEN"; then
+  if perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $f,"<",$ARGV[0] or die; <$f> }); exit(@{$d->{security_profile}//[]} ? 0 : 1)' "$CONTROLS_FROZEN"; then
     bash "$SCRIPT_DIR/../languages/frontend/prepare-security-surface.sh" \
       "$PROJECT_DIR" "$RUN_DIR/review-input.json" "$CONTROLS_FROZEN" "$SURFACE_FROZEN" >/dev/null
     SURFACE_SHA="\"$(sha256_file "$SURFACE_FROZEN")\""

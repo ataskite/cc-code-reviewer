@@ -890,7 +890,7 @@ cat > "$SEC_DIR/results/batch-001.md" <<'MD'
 ### P0-1 | [维度6-安全] SSRF
 - 文件：app.js:12
 - **安全规则 ID**：CCR-NODE-SSRF-001
-- **标准映射**：OWASP A01:2025 / API7:2023 / API10:2023 / ASVS v5.0.0-V1.3.6 / v5.0.0-V4.2.5 / CWE-918
+- **标准映射**：OWASP A01:2025 / API7:2023 / API10:2023 / ASVS v5.0.0-V1.3.6 / CWE-918
 - **检测方式**：taint
 ## 🛡️ Security 控制覆盖（仅 Security 模式强制）
 
@@ -961,4 +961,3 @@ SMOUT2="$(MERGE_WAIT_TIMEOUT_SECONDS=0 RUN_BATCH_IDS=batch-001 \
 SEC_REPORT2="$(printf '%s\n' "$SMOUT2" | sed -n 's/^FINAL_REPORT_PATH=//p')"
 grep -q '部分批次未完成，结论以全量合并为准' "$SEC_REPORT2"
 bash "$ROOT_DIR/scripts/core/validate-security-report.sh" "$SEC_REPORT2" "$SEC_DIR/security-controls.json" >/dev/null
-

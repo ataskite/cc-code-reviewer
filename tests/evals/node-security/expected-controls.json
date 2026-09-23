@@ -32,7 +32,21 @@
     "expected_findings": [],
     "forbidden_findings": ["CCR-NODE-SSRF-001"],
     "expected_control_status": { "CCR-NODE-SSRF-001": "checked_no_finding" },
-    "notes": "对照：URL 解析后 scheme 白名单 + DNS 解析 IP 段校验 + redirect manual 每跳复验；三条 required_controls 齐备"
+    "notes": "对照：仅 HTTPS；规范化并校验 IPv4/IPv6 所有 DNS 结果；使用校验过的 IP 建立连接并保留 TLS hostname 校验；重定向逐跳解析/校验/固定 IP"
+  },
+  {
+    "case": "ssrf/dns-rebinding",
+    "expected_findings": ["CCR-NODE-SSRF-001"],
+    "forbidden_findings": [],
+    "expected_control_status": { "CCR-NODE-SSRF-001": "finding_confirmed" },
+    "notes": "DNS rebinding：DNS 查询校验后仍将域名交给 fetch 二次解析，校验结果未绑定实际连接目标"
+  },
+  {
+    "case": "ssrf/ipv6-mapped-bypass",
+    "expected_findings": ["CCR-NODE-SSRF-001"],
+    "forbidden_findings": [],
+    "expected_control_status": { "CCR-NODE-SSRF-001": "finding_confirmed" },
+    "notes": "IP 段校验使用不完整字符串/前缀规则，漏掉 IPv4-mapped IPv6 loopback 与部分 IPv6 link-local"
   },
   {
     "case": "ssrf/redirect-bypass",

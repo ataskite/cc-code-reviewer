@@ -52,7 +52,7 @@ cat > "$TMP/report-ok.md" <<'MD'
 
 | 控制 ID | 标题 | 标准映射 | 检测方式 | 状态 | 证据或限制 |
 |---|---|---|---|---|---|
-| CCR-NODE-SSRF-001 | 用户可控数据进入服务端外发请求目标 | OWASP A01:2025 / API7:2023 / API10:2023 / ASVS v5.0.0-V1.3.6 / v5.0.0-V4.2.5 / CWE-918 | taint | finding_confirmed | 见 P0-1 |
+| CCR-NODE-SSRF-001 | 用户可控数据进入服务端外发请求目标 | OWASP A01:2025 / API7:2023 / API10:2023 / ASVS v5.0.0-V1.3.6 / CWE-918 | taint | finding_confirmed | 见 P0-1 |
 | CCR-NODE-CSRF-001 | Cookie 会话写接口缺少 CSRF 控制 | OWASP A01:2025 / API8:2023 / ASVS v5.0.0-V3.3.2 / CWE-352 | config | checked_no_finding | 写接口校验 Origin + SameSite=Lax |
 | CCR-NODE-CMD-001 | 用户输入进入 child_process | OWASP A05:2025 / ASVS v5.0.0-V1.2.5 / CWE-78 | pattern | not_applicable | 冻结输入无 child_process 信号 |
 
@@ -62,7 +62,7 @@ cat > "$TMP/report-ok.md" <<'MD'
 
 - 文件：app.js:12
 - **安全规则 ID**：CCR-NODE-SSRF-001
-- **标准映射**：OWASP A01:2025 / API7:2023 / API10:2023 / ASVS v5.0.0-V1.3.6 / v5.0.0-V4.2.5 / CWE-918
+- **标准映射**：OWASP A01:2025 / API7:2023 / API10:2023 / ASVS v5.0.0-V1.3.6 / CWE-918
 - **检测方式**：taint
 - **证据状态**：静态已证实
 - **主体/资源/决策链**：不适用
@@ -118,7 +118,7 @@ mutate no-block 's/\*\*安全规则 ID\*\*：CCR-NODE-SSRF-001/**安全规则 ID
 expect_fail no-block ERROR_SECURITY_REPORT_BLOCK_MISSING
 
 # 7. 映射漂移（标准映射改成别的 ID）
-mutate mapping 's/- \*\*标准映射\*\*：OWASP A01:2025 \/ API7:2023 \/ API10:2023 \/ ASVS v5\.0\.0-V1\.3\.6 \/ v5\.0\.0-V4\.2\.5 \/ CWE-918/- **标准映射**：OWASP A05:2025 \/ ASVS v5.0.0-V1.2.5 \/ CWE-78/'
+mutate mapping 's/- \*\*标准映射\*\*：OWASP A01:2025 \/ API7:2023 \/ API10:2023 \/ ASVS v5\.0\.0-V1\.3\.6 \/ CWE-918/- **标准映射**：OWASP A05:2025 \/ ASVS v5.0.0-V1.2.5 \/ CWE-78/'
 expect_fail mapping ERROR_SECURITY_REPORT_MAPPING_DRIFT
 
 # 8. 检测方式字段缺失
@@ -129,7 +129,13 @@ expect_fail no-detect ERROR_SECURITY_REPORT_BLOCK_DETECT_MISSING
 mutate app-na 's/\| taint \| finding_confirmed/| taint | not_applicable/'
 expect_fail app-na ERROR_SECURITY_REPORT_APPLICABLE_NA
 
-# 10. 缺控制覆盖章节
+# 10. profile 排除控制可由正式语义发现提升；提升数单列，不计入适用控制 A-D
+mutate elevated 's/^- 不适用：1$/- 不适用：0/m; s{\| CCR-NODE-CMD-001 \|([^\n]*\|) not_applicable \|}{| CCR-NODE-CMD-001 |$1 finding_confirmed |}; s{^- 对账：N = A \+ B \+ C \+ D$}{- 语义提升：1\n- 对账：N = A + B + C + D}m; s{^## ✅ 最佳实践亮点}{### P1 | [维度6-安全] exec 接受外部输入\n\n- **安全规则 ID**：CCR-NODE-CMD-001\n- **标准映射**：OWASP A05:2025 / API10:2023 / ASVS v5.0.0-V1.2.5 / CWE-78\n- **检测方式**：pattern\n- 问题与证据\n\n## ✅ 最佳实践亮点}m'
+OUT_ELEVATED="$(bash "$VALIDATOR" "$TMP/report-elevated.md" "$TMP/controls.json")" || fail "validator rejected an excluded control elevated by a formal finding: $OUT_ELEVATED"
+printf '%s\n' "$OUT_ELEVATED" | grep -Eq '^SECURITY_REPORT_OK=.*/report-elevated\.md CONTROLS=2 FINDINGS=2 PENDING=0$' \
+  || fail "semantic elevation stdout contract violated: $OUT_ELEVATED"
+
+# 11. 缺控制覆盖章节
 mutate no-section 's/^## 🛡️ Security 控制覆盖/## Security 控制覆盖（另一写法）/m'
 expect_fail no-section ERROR_SECURITY_REPORT_SECTION_MISSING
 

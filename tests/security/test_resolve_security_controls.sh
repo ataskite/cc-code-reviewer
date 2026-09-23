@@ -53,12 +53,18 @@ app.post('/orders', function (req, res) {
 app.listen(3000);
 JS
 make_review_input "$TMP/in2.json" frontend "$D2/package.json" "$D2/server.js"
-OUT2="$("$RESOLVER" "$D2" node "$TMP/in2.json" "$TMP/out2.json" || fail "resolver failed on express api")"
-printf '%s\n' "$OUT2" | grep -q 'SECURITY_PROFILES=node-api CONTROLS=' || fail "express api must enable node-api only: $OUT2"
-grep -q ^CCR-NODE-NOSQL-001$ <(perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $fh, q[<], $ARGV[0] or die; <$fh> }); print join("\n", map { $_->{id} } @{$d->{controls}})' "$TMP/out2.json") \
-  || fail "nosql control must be applicable for mongoose fixture"
-grep -q ^CCR-NODE-SESSION-001$ <(perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $fh, q[<], $ARGV[0] or die; <$fh> }); print join("\n", map { $_->{id} } @{$d->{excluded_controls}})' "$TMP/out2.json") \
-  || fail "session control must be excluded without session signal"
+OUT2="$(bash "$RESOLVER" "$D2" node "$TMP/in2.json" "$TMP/out2.json" || fail "resolver failed on express api")"
+printf '%s\n' "$OUT2" | grep -q 'SECURITY_PROFILES=node-api CONTROLS=11 ' || fail "express api must enable node-api with all 11 profile controls: $OUT2"
+ids2="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $f, "<", $ARGV[0] or die; <$f> }); print join("\n", map { $_->{id} } @{$d->{controls}})' "$TMP/out2.json")"
+printf '%s\n' "$ids2" | grep -qx 'CCR-NODE-NOSQL-001' || fail "nosql control must be applicable for mongoose fixture"
+printf '%s\n' "$ids2" | grep -qx 'CCR-NODE-SESSION-001' || fail "session control must stay applicable (profile-default; signals never exclude)"
+basis2="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $f, "<", $ARGV[0] or die; <$f>}); my ($c) = grep { $_->{id} eq "CCR-NODE-NOSQL-001" } @{$d->{controls}}; print $c->{basis}' "$TMP/out2.json")"
+[ "$basis2" = "signal-confirmed" ] || fail "nosql basis must be signal-confirmed"
+basis2b="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $f, "<", $ARGV[0] or die; <$f>}); my ($c) = grep { $_->{id} eq "CCR-NODE-SESSION-001" } @{$d->{controls}}; print $c->{basis}' "$TMP/out2.json")"
+[ "$basis2b" = "profile-default" ] || fail "session basis must be profile-default"
+excl2="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $f, "<", $ARGV[0] or die; <$f> }); print join("\n", map { $_->{id} } @{$d->{excluded_controls}})' "$TMP/out2.json")"
+printf '%s\n' "$excl2" | grep -qx 'CCR-NODE-BFFHEADER-001' || fail "pure node api excludes bff-only control (profile-level)"
+! printf '%s\n' "$excl2" | grep -q 'CCR-NODE-SSRF-001' || fail "signals must never exclude a control from an enabled profile"
 
 # ---- fixture 3：Vue + 根级 BFF（express + axios 头透传）----
 D3="$TMP/vue-bff"; mkdir -p "$D3/src/views"
@@ -77,7 +83,7 @@ app.listen(8080);
 JS
 make_review_input "$TMP/in3.json" frontend "$D3/package.json" "$D3/src/views/Home.vue" "$D3/app.js"
 OUT3="$("$RESOLVER" "$D3" frontend-vue2 "$TMP/in3.json" "$TMP/out3.json" || fail "resolver failed on vue bff")"
-printf '%s\n' "$OUT3" | grep -q 'SECURITY_PROFILES=node-api,node-bff CONTROLS=' || fail "vue bff must enable node-api+node-bff: $OUT3"
+printf '%s\n' "$OUT3" | grep -q 'SECURITY_PROFILES=node-api,node-bff CONTROLS=12 ' || fail "vue bff must enable node-api+node-bff with all 12 controls: $OUT3"
 grep -q ^CCR-NODE-BFFHEADER-001$ <(perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $fh, q[<], $ARGV[0] or die; <$fh> }); print join("\n", map { $_->{id} } @{$d->{controls}})' "$TMP/out3.json") \
   || fail "bffheader control must be applicable for vue bff fixture"
 
@@ -95,7 +101,7 @@ new Worker('jobs', async (job) => {
 JS
 make_review_input "$TMP/in4.json" frontend "$D4/package.json" "$D4/worker.js"
 OUT4="$("$RESOLVER" "$D4" node "$TMP/in4.json" "$TMP/out4.json" || fail "resolver failed on mq worker")"
-printf '%s\n' "$OUT4" | grep -q 'SECURITY_PROFILES=node-api,node-worker CONTROLS=' || fail "mq worker must enable node-worker: $OUT4"
+printf '%s\n' "$OUT4" | grep -q 'SECURITY_PROFILES=node-api,node-worker CONTROLS=11 ' || fail "mq worker must enable node-worker with node-api union: $OUT4"
 grep -q ^CCR-NODE-CMD-001$ <(perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $fh, q[<], $ARGV[0] or die; <$fh> }); print join("\n", map { $_->{id} } @{$d->{controls}})' "$TMP/out4.json") \
   || fail "cmd control must be applicable for worker fixture"
 
@@ -137,9 +143,25 @@ if "$RESOLVER" "$D2" node "$TMP/in-escape.json" "$TMP/escape-out.json" >/dev/nul
 fi
 grep -q 'ERROR_SECURITY_RESOLVE_INPUT_SCOPE' "$TMP/err3.txt" || fail "outside path must emit ERROR_SECURITY_RESOLVE_INPUT_SCOPE"
 
+# ---- 运行时 fail closed：本地上游任一快照字节与 manifest 不符时拒绝解析 ----
+TAMPER_BASE="$TMP/plugin/references/security"
+mkdir -p "$TAMPER_BASE/catalog" "$TAMPER_BASE/upstream"
+cp -R "$ROOT_DIR/references/security/catalog/." "$TAMPER_BASE/catalog/"
+cp -R "$ROOT_DIR/references/security/upstream/." "$TAMPER_BASE/upstream/"
+CS_FILE="$(find "$TAMPER_BASE/upstream/nodejs-cheat-sheet" -type f -name Nodejs_Security_Cheat_Sheet.md -print -quit)"
+printf '\n<!-- tampered bytes -->\n' >> "$CS_FILE"
+if CC_CODE_REVIEWER_SECURITY_CATALOG="$TAMPER_BASE/catalog/node-security-controls.json" \
+  "$RESOLVER" "$D3" frontend-vue2 "$TMP/in3.json" "$TMP/tampered-upstream-out.json" >/dev/null 2>"$TMP/err-upstream.txt"; then
+  fail "resolver accepted an upstream snapshot whose bytes differ from manifest hashes"
+fi
+grep -q 'ERROR_SECURITY_UPSTREAM_' "$TMP/err-upstream.txt" || fail "tampered upstream must surface ERROR_SECURITY_UPSTREAM_*"
+
 # ---- fail closed：catalog 被篡改 ----
+# perl 必须读 ARGV 文件而非 <STDIN>：本测试作为 run_all.sh 循环体执行时，宿主
+# 循环经 stdin 向后传 find 文件流，读 <STDIN> 会吃掉剩余清单使套件静默截断、
+# 假报全绿（实际事故：其后的 31 个测试被跳过）。
 BAD_CAT="$TMP/bad-catalog.json"
-perl -MJSON::PP -0777 -e 'local $/; my $t=<STDIN>; $t =~ s/"catalog_id":\s*"[^"]*"/"catalog_id":"x"/; print $t' \
+perl -MJSON::PP -0777 -e 'my $t = do { local $/; open my $f, q[<], $ARGV[0] or die; <$f> }; $t =~ s/"catalog_id":\s*"[^"]*"/"catalog_id":"x"/; print $t' \
   "$ROOT_DIR/references/security/catalog/node-security-controls.json" > "$BAD_CAT"
 if CC_CODE_REVIEWER_SECURITY_CATALOG="$BAD_CAT" "$RESOLVER" "$D2" node "$TMP/in2.json" "$TMP/badcat-out.json" >/dev/null 2>"$TMP/err4.txt"; then
   fail "resolver accepted tampered catalog"

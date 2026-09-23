@@ -1,0 +1,6 @@
+{
+  "name": "ssrf-dns-rebinding",
+  "private": true,
+  "main": "server.js",
+  "dependencies": { "express": "^4.18.0" }
+}

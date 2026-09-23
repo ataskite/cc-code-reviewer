@@ -108,7 +108,7 @@
 
 ## 🛡️ Security 控制覆盖（仅 Security 模式且注入 `SECURITY_CONTROLS_PATH` 时强制）
 
-当 `SECURITY_CONTROLS_PATH` 已注入（frontend + security，Node Security Control Catalog 适用）时，授权面覆盖之后必须输出本节；其余场景省略。每个适用控制必须且只能出现一行，状态为封闭集合：`finding_confirmed`（已发现问题）/ `checked_no_finding`（已检查无发现）/ `external_evidence_missing`（外部证据缺失）/ `static_unsupported`（静态不可验证）；被 resolver 排除的控制如需披露只能以 `not_applicable`（不适用）行出现。`static_unsupported` 不是通过——必须写明缺失证据与最小验证方式。
+当 `SECURITY_CONTROLS_PATH` 已注入（frontend + security）时，授权面覆盖之后必须输出本节。每个适用控制必须且只能出现一行，状态为封闭集合：`finding_confirmed`（已发现问题）/ `checked_no_finding`（已检查无发现）/ `external_evidence_missing`（外部证据缺失）/ `static_unsupported`（静态不可验证）。被 resolver 排除的控制通常以 `not_applicable`（不适用）披露；若代码证据显示 profile/范围判定漏掉了真实风险，可用 `finding_confirmed` 语义提升并按下述规则单列。`static_unsupported` 不是通过——必须写明缺失证据与最小验证方式。纯浏览器项目没有 Node profile 时，适用控制数为 0，全部 Node 控制以不适用计数披露。
 
 ```markdown
 ## 🛡️ Security 控制覆盖（仅 Security 模式强制）
@@ -119,6 +119,7 @@
 - 外部证据缺失：{C}
 - 静态不可验证：{D}
 - 不适用：{E}
+- 语义提升：{F}（仅 F > 0 时输出；排除控制经代码证据提升为正式发现）
 - 对账：N = A + B + C + D（可在行内附带实际数字复算后缀，如「→ 5 = 1 + 4 + 0 + 0」，数字必须与计数一致）
 
 | 控制 ID | 标题 | 标准映射 | 检测方式 | 状态 | 证据或限制 |
@@ -127,7 +128,7 @@
 | CCR-NODE-CSRF-001 | Cookie 会话写接口缺少 CSRF 控制 | OWASP A01:2025 / ASVS v5.0.0-V3.3.2 / CWE-352 | config | checked_no_finding | 全部写接口校验 Origin + SameSite=Lax |
 ```
 
-说明：`不适用 E` 恒等于冻结 `SECURITY_CONTROLS_PATH` 的排除控制数（catalog 总集 − 本轮适用，来自 resolver 信号判定），不进入 N 对账；`not_applicable` 台账行为可选披露（只能引用排除控制、数量 ≤ E）。`N = A + B + C + D` 必须与冻结 `SECURITY_CONTROLS_PATH` 的适用控制数一致——落盘后由 `scripts/core/validate-security-report.sh` 确定性校验；校验失败时禁止飞书上传与 SARIF 导出。
+说明：`不适用 E` 等于冻结排除控制数减去语义提升数；语义提升控制作为 `finding_confirmed` 行披露，并单列计数，不进入适用控制 N 的 A-D 对账。排除控制可以用 `not_applicable` 行说明理由。零 profile 时 N=0、E=排除控制数。`N = A + B + C + D` 必须与冻结控制适用数一致——落盘后由 `scripts/core/validate-security-report.sh` 确定性校验；校验失败时禁止飞书上传与 SARIF 导出。
 
 ### Security 控制条目附加字段（问题块内）
 
@@ -137,7 +138,7 @@
 - **标准映射**：与控制目录一致的映射串（如 `OWASP A01:2025 / API7:2023 / ASVS v5.0.0-V1.3.6 / CWE-918`）；顺序可不同、内容不得漂移。
 - **检测方式**：`pattern` / `taint` / `semantic` / `config` / `dependency` / `runtime`（与控制目录一致）。
 
-`finding_confirmed` 状态的控制必须有携带其规则 ID 的 P0-P3 正式问题块；`external_evidence_missing` 状态的控制必须有携带其规则 ID 的问题块（通常为待确认项）。非控制对应的安全问题（如弱算法加固）不携带规则 ID 字段，照常按 Security 附加字段输出。
+`finding_confirmed` 状态的控制必须有携带其规则 ID 的 P0-P3 正式问题块。`external_evidence_missing` 是覆盖缺口，台账证据栏必须说明具体缺少什么证据及对应批次/范围；只有当它同时代表一个待确认的安全风险时，才另写携带规则 ID 的待确认项。单纯批次未提供控制台账不得伪装成漏洞发现。非控制对应的安全问题（如弱算法加固）不携带规则 ID 字段，照常按 Security 附加字段输出。
 
 ## ✅ 最佳实践亮点
 

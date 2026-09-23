@@ -1,7 +1,7 @@
 # Node Security Control Catalog 使用说明
 
 **Catalog 文件：** `references/security/catalog/node-security-controls.json`（唯一提交态事实来源）
-**校验：** `bash scripts/core/validate-security-control-catalog.sh`
+**校验：** `bash scripts/core/validate-security-upstream.sh` → `bash scripts/core/validate-security-control-catalog.sh`
 **绑定：** catalog 顶层 `upstream_manifest_sha256` 绑定离线上游快照 `references/security/upstream/manifest.json` 的字节哈希；上游快照或 catalog 任一漂移都会被校验器与恢复门禁 fail-closed 拒绝。
 
 ## 1. 定位与边界
@@ -44,9 +44,9 @@
 - 敏感业务流自动化滥用
 - API 资产清单（影子/旧版本接口）
 
-## 4. 信号词表（封闭，供 applicability 与 resolver 共用）
+## 4. 信号词表（封闭，供审查导航与适用依据使用）
 
-`requires_any_signals` 为空表示 profile 启用即适用；非空表示命中任一信号才适用。
+`review_signals` 记录 resolver 能识别的静态文本线索。命中时写入 `matched_signals`，并将控制标记为 `basis=signal-confirmed`；未命中时仍保留 profile 适用的控制，标记 `basis=profile-default`。词表未命中无法证明封装、别名、跨文件传播或动态路由不存在，因此不得据此提前排除控制。
 
 | 信号 | 含义（resolver 的静态文本特征） |
 |---|---|
@@ -66,7 +66,7 @@
 ## 5. Profile 语义
 
 - `node-api`：Node HTTP API / 服务端入口（PROJECT_TYPE=node 或检测到 http-server 信号）。
-- `node-bff`：前端项目内的 BFF/中继层（前端信号 + server-root 服务端代码，或 API + 外发客户端 + 请求源的中继形态）；在 node-api 基础上叠加 BFFHEADER 等特有控制。
+- `node-bff`：项目类型为受支持的 React/Vue 前端且发现 Node 服务端入口；即使当前增量只选择服务端文件，也按项目类型保留 BFF 控制。选中范围内的前端文件/依赖也可补充该 profile 线索。
 - `node-worker`：队列/任务/Webhook/消息消费者（无 HTTP 入口，消息载荷仍是不可信输入）。
 
 Profile 文件只引用控制 ID，不复制控制内容；同一控制可属于多个 profile。
@@ -83,10 +83,11 @@ Profile 文件只引用控制 ID，不复制控制内容；同一控制可属于
 | `static_unsupported` | 静态不可验证 |
 | `not_applicable` | 不适用 |
 
-`static_unsupported` 不是通过——必须说明缺失证据与最小验证方式。台账对账规则见 `references/report-format.md` 的「Security 控制覆盖」章节。
+`static_unsupported` 不是通过——必须说明缺失证据与最小验证方式。profile 排除项通常标记 `not_applicable`；若正式代码证据证明项目分类/范围判断遗漏了真实风险，允许 `finding_confirmed` 语义提升，并单列计数。台账对账规则见 `references/report-format.md` 的「Security 控制覆盖」章节。
 
 ## 7. 运行时产物
 
+- `validate-security-upstream.sh` 在安全审查运行时逐文件复核 manifest 与 SHA256SUMS 哈希；任一字节漂移则 fail closed。
 - `resolve-security-controls.sh` → `security-controls.json`（本轮适用控制 + 排除原因；确定性输出，字节稳定）
 - `prepare-security-surface.sh` → `security-surface.json`（入口/身份/Source/Sink/配置候选索引；只是导航，不是发现清单，不得直接生成正式结论或决定 P0）
 

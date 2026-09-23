@@ -36,9 +36,9 @@
         "profiles": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["node-api", "node-bff", "node-worker"] } },
         "applicability": {
           "type": "object",
-          "required": ["requires_any_signals", "excludes_project_types"],
+          "required": ["review_signals", "excludes_project_types"],
           "properties": {
-            "requires_any_signals": { "type": "array", "items": { "type": "string" }, "description_zh": "封闭信号词表（见 control-catalog.md）；为空表示 profile 启用即适用。" },
+            "review_signals": { "type": "array", "items": { "type": "string" }, "description_zh": "封闭信号词表，只用于审查导航和适用依据；未命中不得排除 profile 控制。" },
             "excludes_project_types": { "type": "array", "items": { "type": "string" } }
           }
         },

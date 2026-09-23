@@ -46,11 +46,18 @@ perl -MJSON::PP -e '
   my @applicable = map { $_->{id} // () } @{ $frozen->{controls} // [] };
   my %excluded = map { ($_->{id} // "") => 1 } @{ $frozen->{excluded_controls} // [] };
   my %allowed = map { $_ => 1 } (@applicable, keys %excluded);
-  failx("CONTROLS_EMPTY", "frozen controls contain no applicable control") unless @applicable;
 
   my $catalog = eval { decode_json(slurp($catalog_path)) };
   failx("CATALOG_INVALID", $catalog_path) if $@ || ref($catalog) ne "HASH";
   my %cat_by_id = map { ($_->{id} // "") => $_ } @{ $catalog->{controls} // [] };
+  if (!@applicable) {
+    my @profiles = @{ $frozen->{security_profile} // [] };
+    @profiles == 0 && %excluded
+      or failx("CONTROLS_EMPTY", "仅当无 Node profile 且控制均明确排除时，才允许零适用控制");
+    for my $id (keys %cat_by_id) {
+      $excluded{$id} or failx("CONTROLS_EMPTY", "零适用控制时 catalog 控制未明确排除: $id");
+    }
+  }
 
   my $text = slurp($report_path);
   $text =~ s/\r\n/\n/g;
@@ -109,7 +116,8 @@ perl -MJSON::PP -e '
     my %closed = map { $_ => 1 } qw(finding_confirmed checked_no_finding external_evidence_missing static_unsupported not_applicable);
     $closed{$status} or failx("STATUS_INVALID", "$id => $status");
     if ($excluded{$id}) {
-      $status eq "not_applicable" or failx("EXCLUDED_NOT_NA", "excluded 控制 $id 只能是 not_applicable，实际 $status");
+      $status eq "not_applicable" || $status eq "finding_confirmed"
+        or failx("EXCLUDED_NOT_NA", "excluded 控制 $id 只能是 not_applicable 或 finding_confirmed（语义提升），实际 $status");
     } else {
       $status ne "not_applicable" or failx("APPLICABLE_NA", "适用控制 $id 不得标记 not_applicable（应给 checked_no_finding 或证据缺口）");
     }
@@ -122,14 +130,25 @@ perl -MJSON::PP -e '
   # 计数与行状态一致。「不适用 E」按冻结 resolver 排除数对齐（deterministic）；
   # not_applicable 台账行可选（只能引用 excluded 控制，数量不得超过 E）。
   my %by_status;
-  $by_status{ $_ }++ for values %row_status;
+  $by_status{ $row_status{$_} }++ for grep { exists $row_status{$_} } @applicable;
   $metric{"已发现问题"} == ($by_status{finding_confirmed} // 0) or failx("COUNT_A_MISMATCH", "已发现问题计数与台账不符");
   $metric{"已检查无发现"} == ($by_status{checked_no_finding} // 0) or failx("COUNT_B_MISMATCH", "已检查无发现计数与台账不符");
   $metric{"外部证据缺失"} == ($by_status{external_evidence_missing} // 0) or failx("COUNT_C_MISMATCH", "外部证据缺失计数与台账不符");
   $metric{"静态不可验证"} == ($by_status{static_unsupported} // 0) or failx("COUNT_D_MISMATCH", "静态不可验证计数与台账不符");
+  # 语义提升：excluded 控制以 finding_confirmed 行纳入（Agent 语义证据确认风险）
+  my $elevated_n = 0;
+  for my $id (keys %excluded) {
+    $elevated_n++ if ($row_status{$id} // "") eq "finding_confirmed";
+  }
   my $excluded_n = scalar(keys %excluded);
-  $metric{"不适用"} == $excluded_n or failx("COUNT_E_MISMATCH", "不适用计数 $metric{qq(不适用)} != 冻结排除控制数 $excluded_n");
-  ($by_status{not_applicable} // 0) <= $excluded_n or failx("COUNT_E_MISMATCH", "not_applicable 台账行数超过冻结排除控制数");
+  my $expected_E = $excluded_n - $elevated_n;
+  $metric{"不适用"} == $expected_E or failx("COUNT_E_MISMATCH", "不适用计数 $metric{qq(不适用)} != 冻结排除控制数 $excluded_n − 语义提升 $elevated_n");
+  ($by_status{not_applicable} // 0) <= $expected_E or failx("COUNT_E_MISMATCH", "not_applicable 台账行数超过不适用计数");
+  my ($elevation_metric) = $sec_body =~ /^-\s*语义提升：\s*(\d+)\s*$/m;
+  defined($elevation_metric) || !$elevated_n
+    or failx("ELEVATION_MISSING", "台账存在 $elevated_n 个语义提升控制，但报告缺少「- 语义提升：N」计数行");
+  defined($elevation_metric) && $elevation_metric != $elevated_n
+    and failx("ELEVATION_MISMATCH", "语义提升计数 $elevation_metric 与台账 finding_confirmed 提升行数 $elevated_n 不一致");
 
   # ---- 问题块（### P0-P3/待确认 | ...）与 安全规则 ID 字段 ----
   my @lines = split /\n/, $text, -1;
@@ -147,7 +166,11 @@ perl -MJSON::PP -e '
     my $body = join "\n", @$b;
     next unless $body =~ /\*\*安全规则 ID\*\*：\s*(CCR-NODE-[A-Z0-9]+-[0-9]{3})/;
     my $id = $1;
-    exists $allowed{$id} && !$excluded{$id} or failx("BLOCK_ID_OUT_OF_SCOPE", "问题块引用非适用控制: $id");
+    exists $allowed{$id} or failx("BLOCK_ID_OUT_OF_SCOPE", "问题块引用范围外控制: $id");
+    if ($excluded{$id}) {
+      ($row_status{$id} // "") eq "finding_confirmed"
+        or failx("BLOCK_NOT_ELEVATED", "问题块引用被排除控制 $id，但台账中没有该控制的 finding_confirmed 语义提升行");
+    }
     my ($map_line) = $body =~ /\*\*标准映射\*\*：\s*(.+)$/m or failx("BLOCK_MAPPING_MISSING", "$id 问题块缺少标准映射字段");
     $body =~ /\*\*检测方式\*\*：\s*(.+)$/m or failx("BLOCK_DETECT_MISSING", "$id 问题块缺少检测方式字段");
     # 标准映射与 catalog 归一化一致
@@ -169,10 +192,16 @@ perl -MJSON::PP -e '
     push @{ $blocks_by_id{$id} }, [$prio, $body];
     if ($prio =~ /^P[0-3]$/) { $findings++; } else { $pending++; }
   }
-  # finding_confirmed 必须有正式问题块；external_evidence_missing 必须有问题块
-  for my $id (@applicable) {
-    my $st = $row_status{$id};
-    next unless $st eq "finding_confirmed" || $st eq "external_evidence_missing";
+  # finding_confirmed 必须有正式问题块；external_evidence_missing 是覆盖缺口，
+  # 台账证据栏给出具体缺口即可，不应被误计成漏洞问题。
+  for my $id (@applicable, sort keys %excluded) {
+    my $st = $row_status{$id} // "";
+    if ($st eq "external_evidence_missing") {
+      length($row_evidence{$id} // "")
+        or failx("EVIDENCE_MISSING", "external_evidence_missing 控制 $id 必须在台账证据栏说明具体缺口");
+      next;
+    }
+    next unless $st eq "finding_confirmed";
     my $blk = $blocks_by_id{$id} || [];
     @$blk or failx("BLOCK_MISSING", "$st 控制 $id 缺少携带该规则 ID 的问题块");
     if ($st eq "finding_confirmed") {

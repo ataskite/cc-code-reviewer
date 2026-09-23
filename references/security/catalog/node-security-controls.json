@@ -11,7 +11,7 @@
       "category": "identity",
       "profiles": ["node-bff"],
       "applicability": {
-        "requires_any_signals": ["outbound-http-client"],
+        "review_signals": ["outbound-http-client"],
         "excludes_project_types": []
       },
       "standards": {
@@ -39,7 +39,7 @@
       "category": "identity",
       "profiles": ["node-api", "node-bff"],
       "applicability": {
-        "requires_any_signals": ["request-source"],
+        "review_signals": ["request-source"],
         "excludes_project_types": []
       },
       "standards": {
@@ -67,7 +67,7 @@
       "category": "authorization",
       "profiles": ["node-api", "node-bff"],
       "applicability": {
-        "requires_any_signals": ["session-usage"],
+        "review_signals": ["session-usage"],
         "excludes_project_types": []
       },
       "standards": {
@@ -95,13 +95,13 @@
       "category": "external-resource",
       "profiles": ["node-api", "node-bff"],
       "applicability": {
-        "requires_any_signals": ["outbound-http-client"],
+        "review_signals": ["outbound-http-client"],
         "excludes_project_types": []
       },
       "standards": {
         "owasp_top10": ["A01:2025"],
         "owasp_api_top10": ["API7:2023", "API10:2023"],
-        "asvs": ["v5.0.0-V1.3.6", "v5.0.0-V4.2.5"],
+        "asvs": ["v5.0.0-V1.3.6"],
         "cwe": ["CWE-918"]
       },
       "detectability": {
@@ -123,7 +123,7 @@
       "category": "injection",
       "profiles": ["node-api", "node-bff", "node-worker"],
       "applicability": {
-        "requires_any_signals": ["child-process"],
+        "review_signals": ["child-process"],
         "excludes_project_types": []
       },
       "standards": {
@@ -151,7 +151,7 @@
       "category": "file",
       "profiles": ["node-api", "node-bff"],
       "applicability": {
-        "requires_any_signals": ["fs-path-ops"],
+        "review_signals": ["fs-path-ops"],
         "excludes_project_types": []
       },
       "standards": {
@@ -179,7 +179,7 @@
       "category": "injection",
       "profiles": ["node-api", "node-bff"],
       "applicability": {
-        "requires_any_signals": ["deep-merge"],
+        "review_signals": ["deep-merge"],
         "excludes_project_types": []
       },
       "standards": {
@@ -207,7 +207,7 @@
       "category": "injection",
       "profiles": ["node-api", "node-bff"],
       "applicability": {
-        "requires_any_signals": ["nosql-client"],
+        "review_signals": ["nosql-client"],
         "excludes_project_types": []
       },
       "standards": {
@@ -235,7 +235,7 @@
       "category": "injection",
       "profiles": ["node-api", "node-bff", "node-worker"],
       "applicability": {
-        "requires_any_signals": ["deserialize-usage"],
+        "review_signals": ["deserialize-usage"],
         "excludes_project_types": []
       },
       "standards": {
@@ -263,7 +263,7 @@
       "category": "authorization",
       "profiles": ["node-api", "node-bff"],
       "applicability": {
-        "requires_any_signals": [],
+        "review_signals": [],
         "excludes_project_types": []
       },
       "standards": {
@@ -291,7 +291,7 @@
       "category": "authorization",
       "profiles": ["node-api", "node-bff"],
       "applicability": {
-        "requires_any_signals": [],
+        "review_signals": [],
         "excludes_project_types": []
       },
       "standards": {
@@ -319,7 +319,7 @@
       "category": "authorization",
       "profiles": ["node-api", "node-bff"],
       "applicability": {
-        "requires_any_signals": ["session-usage"],
+        "review_signals": ["session-usage"],
         "excludes_project_types": []
       },
       "standards": {
