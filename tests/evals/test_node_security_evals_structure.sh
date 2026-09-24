@@ -93,7 +93,8 @@ while IFS=$'\t' read -r kind id; do
 done <<<"$control_lines"
 
 # --- 2/3. 磁盘 case 目录与 JSON case 集合双向一致 ------------------------------
-disk_cases="$(cd "$EVAL_ROOT" && find . -mindepth 2 -maxdepth 2 -type d ! -name node_modules | sed 's|^\./||' | sort)"
+# results/ 是模型评测证据目录（results/<日期>/...），不是夹具 case；其余二级目录都是 case
+disk_cases="$(cd "$EVAL_ROOT" && find . -mindepth 2 -maxdepth 2 -type d ! -name node_modules ! -path './results/*' | sed 's|^\./||' | sort)"
 [[ -n "$disk_cases" ]] || fail "no case directories under $EVAL_ROOT"
 
 json_cases_sorted="$(printf '%s' "$json_cases" | sort)"
