@@ -69,9 +69,11 @@ perl -MJSON::PP -e '
     or failx("SECTION_UNPARSEABLE", "控制覆盖章节边界无法解析");
 
   # ---- 计数行 ----
+  # 计数行：数字必须是首个 token；与对账行同策略，允许行内附带说明尾注
+  # （模型 agent 常把口径解释写在该行；数字语义不受影响，对账仍逐项强校验）。
   my %metric;
   for my $name (qw(适用控制 已发现问题 已检查无发现 外部证据缺失 静态不可验证 不适用)) {
-    $sec_body =~ /^-\s*${name}：\s*(\d+)\s*$/m or failx("METRIC_MISSING", "缺少计数行「- ${name}：N」");
+    $sec_body =~ /^-\s*${name}：\s*(\d+)\b/m or failx("METRIC_MISSING", "缺少计数行「- ${name}：N」");
     $metric{$name} = $1 + 0;
   }
   # 对账行：以字面「N = A + B + C + D」开头，行内可附带实际数字复算

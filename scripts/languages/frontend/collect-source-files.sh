@@ -355,7 +355,7 @@ COMP_TMP="$(mktemp "${TMPDIR:-/tmp}/fecf-comp.XXXXXX")"
 SERVER_TMP="$(mktemp "${TMPDIR:-/tmp}/fecf-server.XXXXXX")"
 trap 'rm -f "$MAIN_TMP" "$MAIN_TMP.s" "$COMP_TMP" "$COMP_TMP.s" "$COMP_TMP.new" "$COMP_TMP.add" "$SERVER_TMP" "$SERVER_TMP.s" "$SERVER_TMP.add"' EXIT
 
-for root in "${SOURCE_ROOTS[@]}"; do
+for root in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
   find "$root" -mindepth 1 \
     \( \
       -type d \( -name 'node_modules' -o -name 'dist' -o -name 'build' -o -name 'coverage' \
@@ -377,7 +377,7 @@ done
 SERVER_ADDED=0
 SERVER_TRUNCATED_NOTE=""
 if [ "$SERVER_ROOT_LIMIT" -gt 0 ] && [ "${#SERVER_PKGS[@]}" -gt 0 ]; then
-  for pkg in "${SERVER_PKGS[@]}"; do
+  for pkg in "${SERVER_PKGS[@]+"${SERVER_PKGS[@]}"}"; do
     collect_pkg_server_files "$pkg" >> "$SERVER_TMP"
   done
   LC_ALL=C sort -u "$SERVER_TMP" > "$SERVER_TMP.s" || true
@@ -395,7 +395,7 @@ fi
 
 # package.json 候选：按 SOURCE_ROOT 的包根（src 的父目录）与 SERVER_PKGS 推导，
 # 天然只覆盖受支持 package；同一包根多次出现时由最终 sort -u 收敛。
-for root in "${SOURCE_ROOTS[@]}"; do
+for root in "${SOURCE_ROOTS[@]+"${SOURCE_ROOTS[@]}"}"; do
   pkg_root="$(dirname "$root")"
   [ -f "$pkg_root/package.json" ] && printf '%s\n' "$pkg_root/package.json" >> "$COMP_TMP"
 done
