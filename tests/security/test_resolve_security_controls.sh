@@ -54,7 +54,7 @@ app.listen(3000);
 JS
 make_review_input "$TMP/in2.json" frontend "$D2/package.json" "$D2/server.js"
 OUT2="$(bash "$RESOLVER" "$D2" node "$TMP/in2.json" "$TMP/out2.json" || fail "resolver failed on express api")"
-printf '%s\n' "$OUT2" | grep -q 'SECURITY_PROFILES=node-api CONTROLS=11 ' || fail "express api must enable node-api with all 11 profile controls: $OUT2"
+printf '%s\n' "$OUT2" | grep -q 'SECURITY_PROFILES=node-api CONTROLS=15 ' || fail "express api must enable node-api with all 15 profile controls: $OUT2"
 ids2="$(perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $f, "<", $ARGV[0] or die; <$f> }); print join("\n", map { $_->{id} } @{$d->{controls}})' "$TMP/out2.json")"
 printf '%s\n' "$ids2" | grep -qx 'CCR-NODE-NOSQL-001' || fail "nosql control must be applicable for mongoose fixture"
 printf '%s\n' "$ids2" | grep -qx 'CCR-NODE-SESSION-001' || fail "session control must stay applicable (profile-default; signals never exclude)"
@@ -83,7 +83,7 @@ app.listen(8080);
 JS
 make_review_input "$TMP/in3.json" frontend "$D3/package.json" "$D3/src/views/Home.vue" "$D3/app.js"
 OUT3="$("$RESOLVER" "$D3" frontend-vue2 "$TMP/in3.json" "$TMP/out3.json" || fail "resolver failed on vue bff")"
-printf '%s\n' "$OUT3" | grep -q 'SECURITY_PROFILES=node-api,node-bff CONTROLS=12 ' || fail "vue bff must enable node-api+node-bff with all 12 controls: $OUT3"
+printf '%s\n' "$OUT3" | grep -q 'SECURITY_PROFILES=node-api,node-bff CONTROLS=16 ' || fail "vue bff must enable node-api+node-bff with all 16 controls: $OUT3"
 grep -q ^CCR-NODE-BFFHEADER-001$ <(perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $fh, q[<], $ARGV[0] or die; <$fh> }); print join("\n", map { $_->{id} } @{$d->{controls}})' "$TMP/out3.json") \
   || fail "bffheader control must be applicable for vue bff fixture"
 
@@ -101,7 +101,7 @@ new Worker('jobs', async (job) => {
 JS
 make_review_input "$TMP/in4.json" frontend "$D4/package.json" "$D4/worker.js"
 OUT4="$("$RESOLVER" "$D4" node "$TMP/in4.json" "$TMP/out4.json" || fail "resolver failed on mq worker")"
-printf '%s\n' "$OUT4" | grep -q 'SECURITY_PROFILES=node-api,node-worker CONTROLS=11 ' || fail "mq worker must enable node-worker with node-api union: $OUT4"
+printf '%s\n' "$OUT4" | grep -q 'SECURITY_PROFILES=node-api,node-worker CONTROLS=15 ' || fail "mq worker must enable node-worker with node-api union: $OUT4"
 grep -q ^CCR-NODE-CMD-001$ <(perl -MJSON::PP -0777 -e 'my $d=decode_json(do { local $/; open my $fh, q[<], $ARGV[0] or die; <$fh> }); print join("\n", map { $_->{id} } @{$d->{controls}})' "$TMP/out4.json") \
   || fail "cmd control must be applicable for worker fixture"
 

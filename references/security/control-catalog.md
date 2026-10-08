@@ -11,7 +11,7 @@
 - catalog 与 `references/security/enterprise-security-framework.md` 的职责边界：统一安全框架仍是三语言 Agent 的安全语义权威（证据等级、P0 门槛、授权面二次扫描）；catalog 只为 Node/BFF 提供**稳定控制 ID 与标准映射**，供运行时适用性解析、报告台账、SARIF 规则 ID 与恢复门禁消费。
 - 审查运行时**零网络依赖**：`upstream/**` 中的 `source_url` 只用于来源审计与显式维护升级（`scripts/maintenance/update-owasp-baseline.sh`），任何 Skill、Agent、脚本不得在审查时访问外部 URL。
 
-## 2. 首批控制（12 条）
+## 2. 控制目录（16 条：首批 12 条 + 代理与身份专项 4 条）
 
 | ID | 主题 | category | 检测主方式 | 候选级别 |
 |---|---|---|---|---|
@@ -27,6 +27,12 @@
 | CCR-NODE-BOLA-001 | 主体—对象绑定缺失（水平越权） | authorization | semantic | P0 |
 | CCR-NODE-BFLA-001 | 低权限主体执行高权限动作（垂直越权） | authorization | semantic | P0 |
 | CCR-NODE-CSRF-001 | Cookie 会话写接口缺少 CSRF 控制 | authorization | config | P1 |
+| CCR-NODE-HOSTROUTE-001 | 固定网络目标下客户端覆盖路由身份 | external-resource | taint | P1 |
+| CCR-NODE-PROXYCAP-001 | 服务端代理能力与调用者权限未绑定 | authorization | semantic | P1 |
+| CCR-NODE-JWTAUTH-001 | JWT 接受链验证不完整或失败放行 | identity | semantic | P1 |
+| CCR-NODE-PROXYTRUST-001 | forwarded 来源与代理拓扑信任不匹配 | configuration-supply-chain | config | P1 |
+
+新增四条同时适用于 `node-api` 与 `node-bff`，独立 Node BFF 不会因未归类为混合前端而漏掉。详细离线取证、误报边界、修复与负向测试见 `references/languages/frontend/node-proxy-auth-rules.md`；Security Skill 显式注入并校验可读，单 Agent 与分批 Agent 均必须读取。
 
 `severity_candidate` 只是候选级别，不替代 P0 五项硬门槛（见统一安全框架 §6）。每条控制的标准映射（Top10/API Top10/ASVS/CWE）均在上游快照中核验存在，校验器逐条复核——无占位 ID。
 
@@ -60,6 +66,9 @@
 | `nosql-client` | `mongodb` / `mongoose` / `MongoClient` |
 | `deserialize-usage` | `node-serialize` / `unserialize(` / `yaml.load(` 等危险反序列化 |
 | `worker-queue` | kafkajs/amqplib/bullmq/bee-queue/agenda/node-cron/`channel.consume(`/webhook 消费 |
+| `proxy-routing` | Host/authority、hostRewrite/autoRewrite、servername、proxy/capability 路由线索 |
+| `jwt-usage` | jsonwebtoken/jose、jwt.verify/decode/sign、jwtVerify/decodeJwt |
+| `proxy-trust` | trust proxy、Forwarded/X-Forwarded-*、req.ip/hostname/protocol、socket.remoteAddress |
 
 信号只决定「本轮要检查什么」（适用控制解析），**不能决定是否存在漏洞**；`pattern` 命中只是候选，必须由 Agent 回到实际代码闭合 Source→Propagation→Sink→Missing Control 证据链。
 

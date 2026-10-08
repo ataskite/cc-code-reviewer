@@ -458,6 +458,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 
 ```bash
 REPORT_FORMAT_PATH="${PLUGIN_ROOT}/references/report-format.md"
+NODE_PROXY_AUTH_RULES_PATH="未启用"
 if [ "$LANGUAGE_ID" = "frontend" ]; then
   REVIEW_FRAMEWORK_PATH="${PLUGIN_ROOT}/references/languages/frontend/review-framework.md"
   REACT_RULES_PATH="${PLUGIN_ROOT}/references/languages/frontend/react-rules.md"
@@ -468,6 +469,10 @@ if [ "$LANGUAGE_ID" = "frontend" ]; then
   test -r "$REACT_RULES_PATH"
   test -r "$VUE_RULES_PATH"
   test -r "$NODE_RULES_PATH"
+  if [ "$REVIEW_MODE" = "security" ]; then
+    NODE_PROXY_AUTH_RULES_PATH="${PLUGIN_ROOT}/references/languages/frontend/node-proxy-auth-rules.md"
+    test -r "$NODE_PROXY_AUTH_RULES_PATH"
+  fi
   test -r "$SOURCE_SCOPE_PATH"
 elif [ "$LANGUAGE_ID" = "python" ]; then
   REVIEW_FRAMEWORK_PATH="${PLUGIN_ROOT}/references/languages/python/review-framework.md"
@@ -713,6 +718,7 @@ test -r "$REVIEW_UNITS_PATH"
 | React 规则路径 | {REACT_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Vue 规则路径 | {VUE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Node 规则路径 | {NODE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
+| Node 代理与身份专项路径 | {NODE_PROXY_AUTH_RULES_PATH}（仅 security+frontend，必须读取；离线） |
 | Django 规则路径 | {DJANGO_RULES_PATH}（仅 LANGUAGE_ID=python） |
 | FastAPI 规则路径 | {FASTAPI_RULES_PATH}（仅 LANGUAGE_ID=python） |
 | 源码范围路径 | {SOURCE_SCOPE_PATH}（仅 LANGUAGE_ID=frontend 或 python） |
@@ -1562,6 +1568,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | React 规则路径 | {REACT_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Vue 规则路径 | {VUE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
 | Node 规则路径 | {NODE_RULES_PATH}（仅 LANGUAGE_ID=frontend） |
+| Node 代理与身份专项路径 | {NODE_PROXY_AUTH_RULES_PATH}（仅 security+frontend，必须读取；离线） |
 | Django 规则路径 | {DJANGO_RULES_PATH}（仅 LANGUAGE_ID=python） |
 | FastAPI 规则路径 | {FASTAPI_RULES_PATH}（仅 LANGUAGE_ID=python） |
 | 源码范围路径 | {SOURCE_SCOPE_PATH}（仅 LANGUAGE_ID=frontend 或 python） |
@@ -1628,6 +1635,7 @@ bash "${PLUGIN_ROOT}/scripts/core/show-batch-status.sh" "$PROJECT_DIR"
 | `REACT_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/react-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/react-rules.md` |
 | `VUE_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/vue-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/vue-rules.md` |
 | `NODE_RULES_PATH` | 仅 `LANGUAGE_ID=frontend`：`references/languages/frontend/node-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/node-rules.md` |
+| `NODE_PROXY_AUTH_RULES_PATH` | 仅 security+frontend：`references/languages/frontend/node-proxy-auth-rules.md`，启动子 agent 前必须校验可读；其他模式未启用 | `/path/to/plugin/references/languages/frontend/node-proxy-auth-rules.md` |
 | `DJANGO_RULES_PATH` | 仅 `LANGUAGE_ID=python`：`references/languages/python/django-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/python/django-rules.md` |
 | `FASTAPI_RULES_PATH` | 仅 `LANGUAGE_ID=python`：`references/languages/python/fastapi-rules.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/python/fastapi-rules.md` |
 | `SOURCE_SCOPE_PATH` | 仅 `LANGUAGE_ID=frontend` 或 `python`：对应 `references/languages/{lang}/source-scope.md`，启动子 agent 前必须校验可读 | `/path/to/plugin/references/languages/frontend/source-scope.md` |

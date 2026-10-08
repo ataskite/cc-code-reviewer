@@ -1,0 +1,9 @@
+{
+  "name": "eval-jwt-validation-decode-only",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.0"
+  }
+}

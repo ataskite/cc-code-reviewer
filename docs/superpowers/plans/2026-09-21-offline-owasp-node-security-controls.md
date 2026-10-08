@@ -948,20 +948,29 @@ bash tests/frontend/test_frontend_collect_server_root.sh
 
 全部满足才可声称实施完成：
 
-- [ ] OWASP 四类来源均已本地固化，manifest、NOTICE、hash 完整且测试通过。
-- [ ] 运行时在断网环境不尝试访问外部 URL。
-- [ ] 12 条首批控制的标准映射都由本地上游快照验证，无占位 ID。
-- [ ] 单 Agent Security 路径生成并注入 controls/surface。
-- [ ] Frontend 文件级 batch 冻结 controls/surface/catalog/upstream hash。
-- [ ] Security 恢复门禁能拒绝任一快照或 catalog 漂移。
-- [ ] Security 报告包含授权面覆盖与控制覆盖，两套台账均对账。
-- [ ] Security 报告校验失败时不上传、不导出 SARIF。
-- [ ] SARIF Security `ruleId` 使用 `CCR-NODE-*`，历史/非 Security 报告保持兼容。
-- [ ] Node server-root TypeScript 正式范围有正反测试。
-- [ ] vulnerable/secure/renamed-wrapped fixtures 齐备，README 明确模型评测边界。
-- [ ] 三端 runtime 文档与 Skill/Agent 参数同步。
-- [ ] `bash tests/run_all.sh` 全绿，`git diff --check` 通过。
-- [ ] 未修改 `VERSION`，未发布 release。
+- [x] OWASP 四类来源均已本地固化，manifest、NOTICE、hash 完整且测试通过。
+- [x] 运行时在断网环境不尝试访问外部 URL。
+- [x] 12 条首批控制的标准映射都由本地上游快照验证，无占位 ID。
+- [x] 单 Agent Security 路径生成并注入 controls/surface。
+- [x] Frontend 文件级 batch 冻结 controls/surface/catalog/upstream hash。
+- [x] Security 恢复门禁能拒绝任一快照或 catalog 漂移。
+- [x] Security 报告包含授权面覆盖与控制覆盖，两套台账均对账。
+- [x] Security 报告校验失败时不上传、不导出 SARIF。
+- [x] SARIF Security `ruleId` 使用 `CCR-NODE-*`，历史/非 Security 报告保持兼容。
+- [x] Node server-root TypeScript 正式范围有正反测试。
+- [x] vulnerable/secure/renamed-wrapped fixtures 齐备，README 明确模型评测边界。
+- [x] 三端 runtime 文档与 Skill/Agent 参数同步。
+- [x] `bash tests/run_all.sh` 全绿，`git diff --check` 通过。
+- [x] 未修改 `VERSION`，未发布 release。
+
+**2026-09-27 收口复核：**上述勾选指本仓库的 OWASP/Node Security 审查能力与契约验收；
+本次全量测试与 `git diff --check` 均已通过（临时日志不作为长期证据，复核时重跑
+`bash tests/run_all.sh`）。19 份已提交模型报告可由
+`tests/evals/node-security/replay-results.sh` 在离线 checkout 中重建 controls 后复核，
+结果为 19 PASS / 0 FAIL；`tests/evals/test_node_security_results_replay.sh` 还验证篡改报告
+必须失败。这是既有评测证据可复核，不是重新运行模型。**真实业务的 4 个 BFF 应用尚未
+因本计划自动完成审查**；仍需逐应用冻结代码/配置版本，补齐入口×代理×鉴权矩阵、
+Ingress/出站策略和负向测试证据，再单独给出业务风险关闭结论。
 
 ---
 
@@ -1006,3 +1015,18 @@ docs/superpowers/plans/2026-09-21-offline-owasp-node-security-controls.md。
 7. 完成后按计划第 20 节提供完整审核证据包，交给 Codex 审核。
 ```
 
+## 22. 2026-10-08：用户授权完成第 1、2 项增强
+
+范围仅限审查能力增强，不扩大到 lockfile/Ingress/IaC 正式采集或四个生产 BFF 审计。
+
+- [x] 固定 TCP/URL 下的 Host 路由身份独立控制 HOSTROUTE；保留真实路由/数据影响的外部证据边界。
+- [x] 服务端代理能力 PROXYCAP：主体 × service/Host/path/method × 参数 schema，重构而非透传，不能用 Host/方法枚举替代能力授权。
+- [x] JWT JWTAUTH：签名、算法、可信 key、iss/aud、exp/nbf、失败拒绝；decode/异常回退不能成为身份接受链。
+- [x] PROXYTRUST：可信直接对端、真实拓扑、forwarded 清洗与安全决策绑定；未知拓扑保留缺证据。
+- [x] catalog 0.2.0 共 16 控制，新增四条适用 node-api/node-bff；runtime 离线，surface 仅候选。
+- [x] 单 Agent / 分批 Skill 显式注入 NODE_PROXY_AUTH_RULES_PATH 并校验可读，Agent 强制读取本地专项；对应文档与契约同步。
+- [x] 新增 11 个夹具（总 30）与独立 Agent 前向验证，11/11 预期通过；原始报告与冻结基线见 tests/evals/node-security/results/2026-10-08/RESULTS.md。不是完整交互端到端或真实项目检出率。
+- [x] 历史 19-case 模型报告冻结旧 catalog/profiles/预期，独立离线回放；不把历史结果当作新控制的验证。
+- [x] 新控制必填行、导航确定性、strict 状态与篡改拒绝纳入回归；待确认风险与正式误报分开计。
+
+交付仍在 feat/frontend-bff-security 工作区；未修改 VERSION、发布、提交或更新已安装插件。生产风险关闭还需真实四个 BFF 与部署证据，不能因本项完成自动勾选。

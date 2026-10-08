@@ -12,7 +12,7 @@ EVAL_ROOT="$SCRIPT_DIR/node-security"
 README="$EVAL_ROOT/README.md"
 EXPECTED_JSON="$EVAL_ROOT/expected-controls.json"
 
-# 当前已实现审查规则的 7 条控制（catalog 共 12 条，其余未实现不得出现在预期里）
+# 有专门模型评测夹具的 11 条控制（catalog 共 16 条，夹具不等于模型验证）
 ALLOWED_CONTROLS=(
   CCR-NODE-BFFHEADER-001
   CCR-NODE-SSRF-001
@@ -21,6 +21,10 @@ ALLOWED_CONTROLS=(
   CCR-NODE-PATH-001
   CCR-NODE-BOLA-001
   CCR-NODE-BFLA-001
+  CCR-NODE-HOSTROUTE-001
+  CCR-NODE-PROXYCAP-001
+  CCR-NODE-JWTAUTH-001
+  CCR-NODE-PROXYTRUST-001
 )
 
 fail() {

@@ -57,6 +57,7 @@ maxTurns: 50
 | React 规则路径 | {references/languages/frontend/react-rules.md 绝对路径} |
 | Vue 规则路径 | {references/languages/frontend/vue-rules.md 绝对路径} |
 | Node 规则路径 | {references/languages/frontend/node-rules.md 绝对路径} |
+| Node 代理与身份专项路径 | {NODE_PROXY_AUTH_RULES_PATH 绝对路径（仅 security+frontend，必须读取；离线）} |
 | 源码范围路径 | {references/languages/frontend/source-scope.md 绝对路径} |
 | 报告格式路径 | {REPORT_FORMAT_PATH} |
 | 项目 ignore 文件路径 | {IGNORE_RULES_PATH 或 未配置} |
@@ -97,7 +98,7 @@ maxTurns: 50
 - **项目审查规则解析结果**（`REVIEW_RULES_RESOLVED_PATH`）：只为本批正式文件附加检查重点，不屏蔽发现、不覆盖前端专项规则。
 
 **参考文件读取规则**：
-- 执行审查前，必须先读取：`前端审查框架路径`、`React 规则路径`、`Vue 规则路径`、`Node 规则路径`、`源码范围路径`、`报告格式路径`；`REVIEW_MODE=security` 时还必须读取 `企业级 Security 框架路径`。路径为空、不是绝对路径、文件不存在或不可读时立即停止并返回缺失路径。
+- 执行审查前，必须先读取：`前端审查框架路径`、`React 规则路径`、`Vue 规则路径`、`Node 规则路径`、`源码范围路径`、`报告格式路径`；`REVIEW_MODE=security` 时还必须读取 `企业级 Security 框架路径` 和 `Node 代理与身份专项路径`。路径为空、不是绝对路径、文件不存在或不可读时立即停止并返回缺失路径。
 - 如果任一路径为空、不是绝对路径、文件不存在或不可读，立即停止并向主 agent 返回失败原因和缺失路径；不得使用猜测路径继续
 - 只有在主 agent 未注入这些字段的历史兼容场景，才允许回退读取当前 agent 文件相邻的 `../references/languages/frontend/*.md`
 
@@ -240,6 +241,8 @@ maxTurns: 50
 **安全设计不变量反例追踪（强制）**：关联单元出现受保护动作、授权证据、主体—资源关系、外部数据传播或敏感数据边界时，即使单文件尚未产生正式问题，也必须完成安全契约并寻找未明确授权状态到受保护动作的路径。检索目标只能来自已读取代码中的现场符号；追踪后再按证据定级，不得因跨文件才成立而静默丢弃，也不得仅凭不变量假设升级。
 
 **Security 控制覆盖台账（仅 security+frontend 注入 `SECURITY_CONTROLS_PATH` 时，强制）**：`SECURITY_CONTROLS_PATH` 中每条适用控制必须且只能出现一次台账结论，状态取值封闭为 `finding_confirmed`（已发现问题）/ `checked_no_finding`（已检查无发现）/ `external_evidence_missing`（外部证据缺失）/ `static_unsupported`（静态不可验证）/ `not_applicable`（不适用，须写明理由）。`review_signals` 未命中不代表控制不适用；它仅用于优先导航，profile 内控制仍须审查。被 profile 排除的控制通常标记 `not_applicable`；只有代码证据明确证明范围/profile 分类遗漏真实风险时，才可语义提升为 `finding_confirmed`，在报告计数中单列「语义提升」，并输出携带该规则 ID 的正式问题块。纯浏览器无 Node profile 时，适用控制为 0、排除控制列为不适用。`pattern` 命中只是候选——必须确认输入可控、生产可达、防护缺失才可定论；`semantic` 控制（BOLA/BFLA）与授权面台账联动执行、不重复计数；`static_unsupported` / `external_evidence_missing` 必须写明具体缺失证据，不得当作通过。台账随报告输出为「Security 控制覆盖」章节（格式见 `references/report-format.md`）。
+
+**Node 代理与身份专项（仅 Security，强制）**：按 `NODE_PROXY_AUTH_RULES_PATH` 执行 HOSTROUTE / PROXYCAP / JWTAUTH / PROXYTRUST 四条控制，分别追踪网络目标与路由身份、主体与能力授权、JWT 接受链、可信对端与 forwarded 安全决策。固定 URL、verify/helper 名称或 trust proxy 配置不构成防护证明。外部路由、认证网关或拓扑证据缺失须披露，不得凭未知断言完整攻击链或已安全。
 
 **授权面二次扫描（仅 `REVIEW_MODE=security`，强制）**：全部正式文件完成首轮阅读后，按 `SECURITY_FRAMEWORK_PATH` 的“授权面二次扫描”重新遍历授权面台账，即使首轮没有越权候选也必须执行。对每行分别验证同角色异对象、低权限高功能、跨租户/组织、对象属性、批量/嵌套资源和替代执行路径六类差分反例；不适用必须有证据。`未绑定` 形成正式发现，`外部证据缺失` 形成待确认项；只有全部行已有结论且适用反例都有阻断证据或缺口时，才可写“未发现越权问题”。前端展示控制只能作为入口线索；不得把登录态、不可预测 ID、路由 meta、按钮隐藏、注解/helper 名称或“内部接口”标签当作后端授权成立证据。
 

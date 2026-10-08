@@ -6,9 +6,11 @@
 
 - 插件版本/commit：工作分支 `feat/frontend-bff-security` @ 886c66a（评测基线含 R1-R5 验收修复）
 - 模型档位：ZCode 会话模型继承（GLM-5.3），子 agent 逐 case 独立执行（无跨 case 上下文）
-- 模式：security 全量（存量审查）；冻结产物逐 case 预生成（review-input → controls → surface，`/tmp/cc-eval-20260923/artifacts`）
+- 模式：security 全量（存量审查）；评测时冻结产物逐 case 预生成（review-input → controls → surface）。当时的 `/tmp/cc-eval-20260923/artifacts` 仅是运行时暂存，不是复核依赖；现可从仓库 fixture 离线重建 controls
 - 报告路径：本目录 `<case>.md`（19 份原始模型报告）
 - 判定工具：`validate-security-report.sh`（确定性校验）+ `compare-eval-report.pl`（预期比对；漏报/误报/状态漂移）
+- 冻结基线：本目录 `baseline/` 固化评测当时的 12 控制 catalog/profiles 与 19-case 预期；不能用旧报告证明新增四控制的表现。
+- 离线复核：在仓库根目录运行 `bash tests/evals/node-security/replay-results.sh`，应输出 `EVAL_REPORTS_OK=19 PASS=19 FAIL=0`；该操作只复核已保存报告，不重新调用模型
 
 ## 结果矩阵
 
@@ -38,7 +40,7 @@ ssrf/vulnerable | validator-OK | PASS | findings=1
 
 ## 关键观察
 
-1. **vulnerable/wrapped 命中率 11/11**：全部不安全样例按预期 `finding_confirmed`，renamed-wrapped 双层改名传播（BFFHEADER/CMD）被语义追踪命中，非名称词表。
+1. **不安全样例命中 12/12**：全部不安全样例按预期 `finding_confirmed`，包括 vulnerable、renamed-wrapped、SSRF 绕过和授权 unbound；renamed-wrapped 双层改名传播（BFFHEADER/CMD）被语义追踪命中，非名称词表。
 2. **secure 对照零误报 7/7**：重写后的 ssrf/secure（IP pin + TLS servername + 逐跳复验）被逐项语义核验后判无发现——与 R5 修复前的"清单勾选式放行"形成对照；execfile-bound/root-bound/owner-bound/function-bound/allowlist-bound 均逐条举证防护生效点。
 3. **R5 新增绕过样例全部命中**：dns-rebinding（校验与连接脱节）、ipv6-mapped-bypass（归一化缺口）、redirect-bypass（首跳校验不覆盖后续跳）均被识别并定级。
 4. **语义提升链路实测有效**：bff 系夹具（纯 Node 项目，BFFHEADER 被 profile 排除）中 agent 凭代码证据将排除控制提升为 finding_confirmed 并保持对账（E=排除数−提升数）。
@@ -52,4 +54,4 @@ ssrf/vulnerable | validator-OK | PASS | findings=1
 
 ## 边界声明
 
-本记录证明的是**当前模型档位在 19 个脱敏最小夹具上的召回/误报表现**，不等价于真实仓库检出率；四个 BFF 的统一排查仍需按验收意见单独执行（冻结版本、入口/代理/鉴权矩阵、Ingress/出站策略、负向测试证据）。
+本记录证明的是**当时模型档位与当时 12 控制基线在 19 个脱敏最小夹具上的召回/误报表现**，不等价于真实仓库检出率；四个 BFF 的统一排查仍需按验收意见单独执行（冻结版本、入口/代理/鉴权矩阵、Ingress/出站策略、负向测试证据）。

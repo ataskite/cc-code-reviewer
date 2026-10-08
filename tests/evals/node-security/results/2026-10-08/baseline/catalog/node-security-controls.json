@@ -1,0 +1,601 @@
+{
+  "schema_version": 1,
+  "catalog_id": "cc-code-reviewer-node-security",
+  "catalog_version": "0.2.0",
+  "upstream_manifest_sha256": "44601e08b8d9a036b9cea822aa57dd22757119b284874cedbf6f0cf5a9f6baea",
+  "notes_zh": "Node/BFF 安全控制唯一提交态事实来源。标准映射 ID 全部在 references/security/upstream 本地快照中核验存在，无占位 ID。ID 一经发布不可复用或改义；人类可读说明见 references/security/control-catalog.md。",
+  "controls": [
+    {
+      "id": "CCR-NODE-BFFHEADER-001",
+      "title_zh": "客户端请求头批量透传到上游服务",
+      "category": "identity",
+      "profiles": ["node-bff"],
+      "applicability": {
+        "review_signals": ["outbound-http-client"],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": ["A07:2025"],
+        "owasp_api_top10": ["API2:2023"],
+        "asvs": ["v5.0.0-V4.1.3"],
+        "cwe": ["CWE-290"]
+      },
+      "detectability": {
+        "primary": "taint",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": ["request.headers", "request.body"],
+      "sinks": ["http-client-headers", "proxy-request"],
+      "required_controls": ["explicit-header-allowlist", "strip-hop-by-hop", "identity-header-regeneration"],
+      "required_evidence": ["entry", "source", "propagation", "sink", "missing_control"],
+      "severity_candidate": "P0",
+      "description_zh": "BFF/网关层把客户端可控请求头（含 Authorization、X-User-Id、X-Tenant-Id、Cookie 等身份头）原样或浅拷贝后整体转发给上游内部服务。上游若信任这些头作为身份来源，客户端可直接伪造任意身份/租户（IMA 事故形态）。",
+      "remediation_zh": "按显式白名单逐头构造上游请求；转发前剥离 hop-by-hop 头与客户端可控身份头；身份头必须由 BFF 侧认证结果重新生成（服务端派生），不透传客户端值；无法确认上游是否消费身份头时列为待确认并给出最小验证方式（构造伪造头请求观察上游行为）。"
+    },
+    {
+      "id": "CCR-NODE-IDENTITY-001",
+      "title_zh": "客户端字段覆盖服务端身份或租户上下文",
+      "category": "identity",
+      "profiles": ["node-api", "node-bff"],
+      "applicability": {
+        "review_signals": ["request-source"],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": ["A01:2025", "A07:2025"],
+        "owasp_api_top10": ["API3:2023"],
+        "asvs": ["v5.0.0-V4.1.3", "v5.0.0-V8.4.1"],
+        "cwe": ["CWE-285"]
+      },
+      "detectability": {
+        "primary": "taint",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": ["request.body", "request.query", "request.headers"],
+      "sinks": ["identity-context", "tenant-context", "session-claims"],
+      "required_controls": ["server-derived-identity", "tenant-from-trusted-source", "client-override-denied"],
+      "required_evidence": ["entry", "source", "propagation", "sink", "missing_control"],
+      "severity_candidate": "P0",
+      "description_zh": "请求体/查询/header 中的 userId、tenantId、orgId、role、isAdmin 等字段被直接用于构造服务端身份或租户上下文（例如 ctx.user = req.body.user），客户端可覆盖任意主体实现跨租户/提权。",
+      "remediation_zh": "身份与租户字段只允许来自服务端可信来源（session、JWT 校验结果、网关注入并剥离客户端同名字段）；对进入业务逻辑的请求对象做字段白名单剥离；构造差分用例验证客户端覆盖不生效。"
+    },
+    {
+      "id": "CCR-NODE-SESSION-001",
+      "title_zh": "请求对象批量写入 Session（mass assignment）",
+      "category": "authorization",
+      "profiles": ["node-api", "node-bff"],
+      "applicability": {
+        "review_signals": ["session-usage"],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": ["A08:2025"],
+        "owasp_api_top10": ["API3:2023"],
+        "asvs": ["v5.0.0-V8.2.3"],
+        "cwe": ["CWE-915"]
+      },
+      "detectability": {
+        "primary": "pattern",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": false
+      },
+      "sources": ["request.body"],
+      "sinks": ["session-write"],
+      "required_controls": ["field-allowlist", "schema-validation"],
+      "required_evidence": ["entry", "source", "sink", "missing_control"],
+      "severity_candidate": "P1",
+      "description_zh": "把 req.body 整体（或 for-in 逐键）写入 req.session（如 req.session = req.body、req.session[x] = req.body[x]），攻击者可注入 isAdmin、role、userId、tenantId 等任意会话字段实现提权或跨租户。",
+      "remediation_zh": "会话字段逐字段显式赋值且来源服务端可信；必须写入用户可控字段时使用 schema（joi/zod/ajv）+ 字段白名单收敛；对既有会话迁移时先剥离权限类字段。"
+    },
+    {
+      "id": "CCR-NODE-SSRF-001",
+      "title_zh": "用户可控数据进入服务端外发请求目标",
+      "category": "external-resource",
+      "profiles": ["node-api", "node-bff"],
+      "applicability": {
+        "review_signals": ["outbound-http-client"],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": ["A01:2025"],
+        "owasp_api_top10": ["API7:2023", "API10:2023"],
+        "asvs": ["v5.0.0-V1.3.6"],
+        "cwe": ["CWE-918"]
+      },
+      "detectability": {
+        "primary": "taint",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": ["request.body", "request.query", "request.params", "request.headers"],
+      "sinks": ["fetch", "axios", "got", "http.request", "https.request"],
+      "required_controls": ["scheme_allowlist", "resolved_host_allowlist", "redirect_revalidation"],
+      "required_evidence": ["entry", "source", "propagation", "sink", "missing_control"],
+      "severity_candidate": "P0",
+      "description_zh": "用户可控的 URL/Host/Path/重定向目标未经协议、域名/IP 白名单校验直接进入服务端外发请求，可探测内网、云元数据端点（169.254.169.254）或经 302 重定向绕过校验（v1.7.1 已有真实事故负面清单）。",
+      "remediation_zh": "对完整 URL 解析后校验 scheme 白名单（http/https）；校验解析后的真实 IP（含 DNS 解析结果）属于出口白名单；关闭或复验重定向（maxRedirects=0 或每跳重新校验）；拒绝 literal IP 与内网/链路本地网段；私网解析结果拒绝。"
+    },
+    {
+      "id": "CCR-NODE-CMD-001",
+      "title_zh": "用户输入进入 child_process 命令执行",
+      "category": "injection",
+      "profiles": ["node-api", "node-bff", "node-worker"],
+      "applicability": {
+        "review_signals": ["child-process"],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": ["A05:2025"],
+        "owasp_api_top10": ["API10:2023"],
+        "asvs": ["v5.0.0-V1.2.5"],
+        "cwe": ["CWE-78"]
+      },
+      "detectability": {
+        "primary": "pattern",
+        "requires_semantic_review": false,
+        "runtime_verification_possible": false
+      },
+      "sources": ["request.body", "request.query", "request.params", "message.payload"],
+      "sinks": ["child_process.exec", "child_process.execSync", "child_process.spawn(shell:true)"],
+      "required_controls": ["execFile-array-args", "no-shell-concat", "argv-allowlist"],
+      "required_evidence": ["entry", "source", "propagation", "sink", "missing_control"],
+      "severity_candidate": "P0",
+      "description_zh": "用户输入经字符串拼接进入 exec/execSync/spawn(shell:true) 的 shell 命令行（;、$()、反引号即可逃逸），导致任意命令执行。",
+      "remediation_zh": "改用 execFile/execFileSync 并以数组传参（不经 shell）；命令名与参数白名单化；确需 shell 时对输入做严格转义并评估必要性；证据闭合的命令注入按注入直通定级 P0。"
+    },
+    {
+      "id": "CCR-NODE-PATH-001",
+      "title_zh": "用户输入进入文件读取/下载路径",
+      "category": "file",
+      "profiles": ["node-api", "node-bff"],
+      "applicability": {
+        "review_signals": ["fs-path-ops"],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": ["A01:2025"],
+        "owasp_api_top10": ["API8:2023"],
+        "asvs": ["v5.0.0-V5.3.2", "v5.0.0-V5.4.1"],
+        "cwe": ["CWE-22"]
+      },
+      "detectability": {
+        "primary": "taint",
+        "requires_semantic_review": false,
+        "runtime_verification_possible": false
+      },
+      "sources": ["request.params", "request.query", "request.body"],
+      "sinks": ["fs.readFile", "res.sendFile", "res.download", "fs.createReadStream"],
+      "required_controls": ["path.resolve-root-check", "basename-normalization", "allowlist-dir"],
+      "required_evidence": ["entry", "source", "propagation", "sink", "missing_control"],
+      "severity_candidate": "P0",
+      "description_zh": "用户可控文件名/路径拼接进 fs 读取或 sendFile/download 响应，../ 序列穿越根目录读取任意文件；path.join 只做拼接并不会中和 ../。",
+      "remediation_zh": "path.resolve 到根目录后校验结果仍以根前缀开头（含边界分隔符）；文件名先取 basename 剥离目录段；目录白名单限定；下载响应校验最终绝对路径。证据闭合的根逃逸路径穿越定级 P0。"
+    },
+    {
+      "id": "CCR-NODE-PROTO-001",
+      "title_zh": "原型污染危险键进入深合并",
+      "category": "injection",
+      "profiles": ["node-api", "node-bff"],
+      "applicability": {
+        "review_signals": ["deep-merge"],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": ["A05:2025"],
+        "owasp_api_top10": ["API3:2023"],
+        "asvs": ["v5.0.0-V1.3.3"],
+        "cwe": ["CWE-1321"]
+      },
+      "detectability": {
+        "primary": "pattern",
+        "requires_semantic_review": false,
+        "runtime_verification_possible": false
+      },
+      "sources": ["request.body", "request.query", "json-payload"],
+      "sinks": ["deep-merge", "recursive-object-assign", "lodash-merge"],
+      "required_controls": ["proto-key-filter", "schema-validation", "safe-clone"],
+      "required_evidence": ["entry", "source", "propagation", "sink", "missing_control"],
+      "severity_candidate": "P0",
+      "description_zh": "req.body/解析后的 JSON 进入递归合并/extend/defaults，__proto__、constructor.prototype 键沿原型链写入 Object.prototype，污染全局对象后可升级为 RCE 或鉴权绕过（污染 isAdmin 等）。",
+      "remediation_zh": "合并前递归剥离 __proto__/constructor.prototype 键；用 Object.create(null) 或 Map 承载不可信对象；升级修复过原型污染的 lodash/merge 实现；入参先过 schema 校验。"
+    },
+    {
+      "id": "CCR-NODE-NOSQL-001",
+      "title_zh": "未过滤对象进入 NoSQL 查询",
+      "category": "injection",
+      "profiles": ["node-api", "node-bff"],
+      "applicability": {
+        "review_signals": ["nosql-client"],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": ["A05:2025"],
+        "owasp_api_top10": [],
+        "asvs": ["v5.0.0-V1.2.4"],
+        "cwe": ["CWE-943"]
+      },
+      "detectability": {
+        "primary": "taint",
+        "requires_semantic_review": false,
+        "runtime_verification_possible": false
+      },
+      "sources": ["request.body", "request.query"],
+      "sinks": ["mongodb-query", "mongoose-find", "collection-find"],
+      "required_controls": ["operator-allowlist", "schema-validation", "cast-object-id"],
+      "required_evidence": ["entry", "source", "propagation", "sink", "missing_control"],
+      "severity_candidate": "P1",
+      "description_zh": "req.body/req.query 整体（或其子对象）直接作为 MongoDB/Mongoose 查询条件，攻击者注入 $ne/$gt/$where/$regex 等操作符绕过认证或构造全表条件（NoSQL 操作符注入）。",
+      "remediation_zh": "查询条件显式逐字段构造并做类型收敛（ObjectID cast、字符串/数字校验）；递归剥离 $ 前缀键或使用 operator 白名单；登录/查询入口对 body 做 schema 校验。"
+    },
+    {
+      "id": "CCR-NODE-DESER-001",
+      "title_zh": "不可信数据进入危险反序列化",
+      "category": "injection",
+      "profiles": ["node-api", "node-bff", "node-worker"],
+      "applicability": {
+        "review_signals": ["deserialize-usage"],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": ["A08:2025"],
+        "owasp_api_top10": ["API8:2023"],
+        "asvs": ["v5.0.0-V1.5.2"],
+        "cwe": ["CWE-502"]
+      },
+      "detectability": {
+        "primary": "pattern",
+        "requires_semantic_review": false,
+        "runtime_verification_possible": false
+      },
+      "sources": ["request.body", "external-payload", "cache-value", "message.payload"],
+      "sinks": ["node-serialize.unserialize", "yaml.load", "funcstream-deserialize"],
+      "required_controls": ["type-allowlist", "json-only", "integrity-check"],
+      "required_evidence": ["entry", "source", "propagation", "sink", "missing_control"],
+      "severity_candidate": "P0",
+      "description_zh": "请求体/外部回调/缓存值进入 node-serialize unserialize、yaml.load（非 safeLoad）等危险反序列化入口，序列化数据中的立即执行函数（IIFE）或任意类型实例化导致 RCE。",
+      "remediation_zh": "跨边界只使用 JSON.parse（无函数/类型还原）；yaml 用 load 的 safe 等价（YAML.safeLoad/safe mode）或迁移 schema 化数据；必须自定义序列化时做类型白名单 + 完整性签名。"
+    },
+    {
+      "id": "CCR-NODE-BOLA-001",
+      "title_zh": "主体—对象绑定缺失（水平越权/BOLA）",
+      "category": "authorization",
+      "profiles": ["node-api", "node-bff"],
+      "applicability": {
+        "review_signals": [],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": ["A01:2025"],
+        "owasp_api_top10": ["API1:2023"],
+        "asvs": ["v5.0.0-V8.2.2", "v5.0.0-V8.3.3"],
+        "cwe": ["CWE-639"]
+      },
+      "detectability": {
+        "primary": "semantic",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": ["request.params", "request.query", "request.body"],
+      "sinks": ["db-find-by-id", "object-response", "object-update", "object-delete"],
+      "required_controls": ["owner-tenant-binding", "per-object-authorization", "batch-per-item-check"],
+      "required_evidence": ["entry", "subject", "resource", "decision_point", "sink", "missing_control"],
+      "severity_candidate": "P0",
+      "description_zh": "读/改/删/导出以对象 ID 定位但查询条件不含主体绑定（owner/tenant/org 过滤），同角色替换 ID 即可访问他人资源；列表、批量、导出、下载、嵌套子资源同样未复用单资源授权。",
+      "remediation_zh": "查询/更新条件强制并入主体绑定字段；每个对象级入口单独授权（不能因登录即放行）；批量入口逐项校验；嵌套资源校验父资源归属；与授权面台账联动构造同角色异对象差分用例。"
+    },
+    {
+      "id": "CCR-NODE-BFLA-001",
+      "title_zh": "低权限主体可执行高权限动作（垂直越权/BFLA）",
+      "category": "authorization",
+      "profiles": ["node-api", "node-bff"],
+      "applicability": {
+        "review_signals": [],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": ["A01:2025"],
+        "owasp_api_top10": ["API5:2023"],
+        "asvs": ["v5.0.0-V8.2.1"],
+        "cwe": ["CWE-285"]
+      },
+      "detectability": {
+        "primary": "semantic",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": ["request.route", "request.body", "http-method"],
+      "sinks": ["admin-action", "privileged-write", "config-change", "mass-export"],
+      "required_controls": ["role-check-middleware", "per-route-authorization", "deny-by-default"],
+      "required_evidence": ["entry", "subject", "action", "decision_point", "sink", "missing_control"],
+      "severity_candidate": "P0",
+      "description_zh": "管理、审批、配置、导出、删除等高权限动作只依赖登录态（甚至完全无角色判断）即放行，普通用户可直接调用；HTTP method 变化或内部路由变体绕过同样成立。",
+      "remediation_zh": "每个高权限路由挂独立角色/scope 校验中间件（deny by default）；校验点必须在动作执行前生效且异常/缺失时拒绝；检查 method 变体与替代执行路径（异步任务、内部 RPC、旧版本接口）。"
+    },
+    {
+      "id": "CCR-NODE-CSRF-001",
+      "title_zh": "Cookie 会话写接口缺少 CSRF 控制",
+      "category": "authorization",
+      "profiles": ["node-api", "node-bff"],
+      "applicability": {
+        "review_signals": ["session-usage"],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": ["A01:2025"],
+        "owasp_api_top10": ["API8:2023"],
+        "asvs": ["v5.0.0-V3.3.2", "v5.0.0-V3.5.2"],
+        "cwe": ["CWE-352"]
+      },
+      "detectability": {
+        "primary": "config",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": false
+      },
+      "sources": ["cookie-session", "browser-origin"],
+      "sinks": ["state-changing-endpoint"],
+      "required_controls": ["csrf-token", "sameSite-cookie", "origin-check"],
+      "required_evidence": ["entry", "auth-mode", "state-change", "missing_control"],
+      "severity_candidate": "P1",
+      "description_zh": "依赖 Cookie 会话认证的状态变更接口（写/删/配置）缺少 CSRF token 或 SameSite 防护，第三方站点可携浏览器凭据触发跨站写操作。纯 Bearer header 认证且证据可见时豁免（须给出证据）。",
+      "remediation_zh": "写接口启用 CSRF token（csurf/双提交）或校验 Origin/Sec-Fetch-Site；会话 Cookie 设置 SameSite=Lax/Strict；认证方式为纯 Bearer 头时在控制台账写明豁免证据而非默认豁免。"
+    }
+    ,
+    {
+      "id": "CCR-NODE-HOSTROUTE-001",
+      "title_zh": "客户端控制出站 Host 或路由身份",
+      "category": "external-resource",
+      "profiles": [
+        "node-api",
+        "node-bff"
+      ],
+      "applicability": {
+        "review_signals": [
+          "outbound-http-client",
+          "proxy-routing"
+        ],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": [
+          "A01:2025"
+        ],
+        "owasp_api_top10": [
+          "API7:2023",
+          "API8:2023"
+        ],
+        "asvs": [
+          "v5.0.0-V4.1.3",
+          "v5.0.0-V1.3.6"
+        ],
+        "cwe": [
+          "CWE-918",
+          "CWE-346"
+        ]
+      },
+      "detectability": {
+        "primary": "taint",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": [
+        "request.headers",
+        "request.body",
+        "request.query"
+      ],
+      "sinks": [
+        "http-host-header",
+        "http2-authority",
+        "proxy-host-rewrite",
+        "tls-servername"
+      ],
+      "required_controls": [
+        "server-owned-routing-identity",
+        "destination-routing-binding",
+        "client-routing-override-denied"
+      ],
+      "required_evidence": [
+        "entry",
+        "source",
+        "propagation",
+        "sink",
+        "missing_control"
+      ],
+      "severity_candidate": "P1",
+      "description_zh": "客户端 header.Host、headers、:authority、代理 hostRewrite 或 TLS servername 影响出站路由身份。固定 TCP/URL 目标仍可能经共享 Ingress 的 vhost 路由访问另一服务；只删除小写 host、校验连接 URL 或允许任意内部域名不能证明控制成立。确认代码侧可控链；Ingress 实际映射与数据影响缺失时标记待确认，不能假设已访问敏感服务。",
+      "remediation_zh": "由服务端能力声明绑定 destination、Host/:authority 和 TLS servername；忽略或拒绝客户端同名字段（含大小写及数组/重复头变体）；允许必要路由头时绑定到具体获授权服务。补来源×Host×目标服务配置与非生产伪造 Host 验证。"
+    },
+    {
+      "id": "CCR-NODE-PROXYCAP-001",
+      "title_zh": "客户端扩大代理目标、路径或方法能力",
+      "category": "authorization",
+      "profiles": [
+        "node-api",
+        "node-bff"
+      ],
+      "applicability": {
+        "review_signals": [
+          "outbound-http-client",
+          "proxy-routing"
+        ],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": [
+          "A01:2025"
+        ],
+        "owasp_api_top10": [
+          "API5:2023",
+          "API10:2023"
+        ],
+        "asvs": [
+          "v5.0.0-V8.2.1",
+          "v5.0.0-V8.3.1",
+          "v5.0.0-V8.3.3"
+        ],
+        "cwe": [
+          "CWE-285",
+          "CWE-441"
+        ]
+      },
+      "detectability": {
+        "primary": "semantic",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": [
+        "request.body",
+        "request.query",
+        "request.params"
+      ],
+      "sinks": [
+        "proxy-request",
+        "privileged-upstream-action"
+      ],
+      "required_controls": [
+        "server-owned-capability-map",
+        "subject-capability-authorization",
+        "fixed-service-path-method",
+        "business-parameter-schema",
+        "no-client-options-override"
+      ],
+      "required_evidence": [
+        "entry",
+        "source",
+        "propagation",
+        "sink",
+        "missing_control"
+      ],
+      "severity_candidate": "P1",
+      "description_zh": "通用 proxy 让客户端指定 service/upstream/origin/baseURL/url/path/port/method，或通过对象 spread/配置合并覆盖服务端已选能力，使 BFF 的服务身份执行用户未获授权的下游动作。允许客户端选择 capability 名称本身不是漏洞；必须验证主体到 capability 的授权及实际生效的服务/路径/方法组合。",
+      "remediation_zh": "采用服务端 capability 或等价固定业务路由，将服务、路径模板、方法、参数 schema 和主体权限绑定；未知能力默认拒绝；路径参数逐项编码，业务 data 与传输选项分离，拒绝或忽略客户端 url/method/headers 等覆盖。不能仅限制方法集合或内部 host 而暴露全部路径。"
+    },
+    {
+      "id": "CCR-NODE-JWTAUTH-001",
+      "title_zh": "JWT 身份接受路径缺少完整验证",
+      "category": "identity",
+      "profiles": [
+        "node-api",
+        "node-bff"
+      ],
+      "applicability": {
+        "review_signals": [
+          "jwt-usage"
+        ],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": [
+          "A07:2025"
+        ],
+        "owasp_api_top10": [
+          "API2:2023"
+        ],
+        "asvs": [
+          "v5.0.0-V9.1.1",
+          "v5.0.0-V9.1.2",
+          "v5.0.0-V9.1.3",
+          "v5.0.0-V9.2.1",
+          "v5.0.0-V9.2.3"
+        ],
+        "cwe": [
+          "CWE-347"
+        ]
+      },
+      "detectability": {
+        "primary": "semantic",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": [
+        "bearer-token",
+        "cookie-token",
+        "token-key-locator"
+      ],
+      "sinks": [
+        "authenticated-identity",
+        "authorized-action"
+      ],
+      "required_controls": [
+        "signature-verification-before-claims",
+        "fixed-algorithm-allowlist",
+        "trusted-key-source",
+        "expected-issuer-audience",
+        "expiration-and-not-before",
+        "verification-failure-denied"
+      ],
+      "required_evidence": [
+        "entry",
+        "source",
+        "propagation",
+        "sink",
+        "missing_control"
+      ],
+      "severity_candidate": "P1",
+      "description_zh": "把 decode/未验签 claims 当身份，按不可信 alg/jku/jwk/x5u 选算法或密钥，未绑定预期 iss/aud，忽略 exp/nbf，或验签异常后仍执行业务。仅有 verify 方法名或网关认证声明不证明有效；必须追踪所有接受状态到身份消费点。没有 JWT 接受路径时明确说明无该技术面。",
+      "remediation_zh": "使用可信实现进行验签，固定允许算法与可信密钥/JWKS issuer，绑定预期 issuer 和 audience，要求必要 exp 并核验 exp/nbf；拒绝缺失/伪造/过期/不匹配 token，异常终止路径，不采用 decode 回退。外部 IdP/JWKS/网关策略无法核实时列外部证据缺失并给出 token 差分验证。"
+    },
+    {
+      "id": "CCR-NODE-PROXYTRUST-001",
+      "title_zh": "代理来源及转发头被错误用于安全决策",
+      "category": "configuration-supply-chain",
+      "profiles": [
+        "node-api",
+        "node-bff"
+      ],
+      "applicability": {
+        "review_signals": [
+          "proxy-trust"
+        ],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": [
+          "A02:2025"
+        ],
+        "owasp_api_top10": [
+          "API8:2023"
+        ],
+        "asvs": [
+          "v5.0.0-V4.1.3",
+          "v5.0.0-V15.3.4"
+        ],
+        "cwe": [
+          "CWE-346"
+        ]
+      },
+      "detectability": {
+        "primary": "config",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": [
+        "request.forwarded-headers",
+        "request.socket.remoteAddress"
+      ],
+      "sinks": [
+        "client-ip-authorization",
+        "tenant-host-selection",
+        "secure-cookie-decision",
+        "rate-limit-key"
+      ],
+      "required_controls": [
+        "trusted-immediate-peer",
+        "topology-bound-proxy-trust",
+        "edge-header-replacement",
+        "no-untrusted-forwarded-decision"
+      ],
+      "required_evidence": [
+        "entry",
+        "source",
+        "propagation",
+        "sink",
+        "missing_control"
+      ],
+      "severity_candidate": "P1",
+      "description_zh": "trust proxy=true/任意跳数/宽泛网段或直接读取 Forwarded/X-Forwarded-*/X-Real-IP，导致来源 IP、hostname、protocol 被用于鉴权、租户选择、Cookie 安全或限流。配置存在本身不是漏洞：必须证明攻击者能影响决策。仅跳数或地址白名单而真实多路径代理拓扑、入口剥离未知时必须保留外部证据缺失。",
+      "remediation_zh": "按实际可信直接代理配置精确地址/谓词并验证所有访问路径；入口剥离并重建外部同名头。无代理需求时关闭 trust proxy，安全决策使用可信服务身份/连接来源。非生产验证直连伪造 XFF/Host/Proto、短路径和多跳均不能改变权限或租户。"
+    }
+  ]
+}

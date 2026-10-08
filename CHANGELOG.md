@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.7.2 — 离线 OWASP Node/BFF Security 控制与代理身份专项（2026-10-08）
+
+### 新增
+
+- **官方 OWASP 离线基线**：固定 ASVS 5.0.0、Top 10:2025、API Security Top 10:2023 与 Node.js Security Cheat Sheet 快照，随插件分发 manifest、SHA256SUMS 和许可证/来源 NOTICE；审查运行时零网络依赖，上游更新只走显式维护流程。
+- **Node Security Control Catalog**：16 条稳定 `CCR-NODE-*` 控制，标准映射以本地快照核验；按冻结输入启用 node-api/node-bff/node-worker profile，词表未命中不提前排除 profile 内控制。攻击面索引仅作导航，不自动定漏洞或严重度。
+- **代理与身份专项四控制**：HOSTROUTE 检查固定 TCP/URL 下客户端 Host/authority/SNI 改路由；PROXYCAP 检查服务端 service/Host/path/method 能力和调用者授权；JWTAUTH 检查签名、固定算法、可信密钥、iss/aud、时效与失败拒绝；PROXYTRUST 检查可信对端、真实代理拓扑与 forwarded 安全决策。新四条同时适用独立 Node API 和混合前端 BFF。
+- **本地必读规则接线**：Security 前端单 Agent 与分批流程显式注入 `NODE_PROXY_AUTH_RULES_PATH`，启动前校验可读；规则包含证据链、误报边界、重构而非透传的修复方案和授权测试环境负向验证方法。
+- **控制覆盖与输出门禁**：每条适用控制逐行入账，五状态和计数确定性校验；校验失败保留本地报告但阻断 SARIF/飞书输出。SARIF 使用稳定控制 ID；分批逐批台账缺口可见，恢复校验冻结 controls/surface/catalog/upstream 哈希。
+- **BFF TypeScript server-root 范围**：在既有 JS server-root 基础上按服务端信号收集 TS，排除 `.d.ts`、普通根级工具和构建配置，避免漏掉 src 外的 TypeScript 服务端入口。
+
+### 修复与验证
+
+- 修复报告映射/对账、范围分类与跨批控制覆盖验收问题；surface 对 quoted/member/URI-userinfo 等敏感值统一脱敏，避免导航证据二次泄露。
+- 修复评测比对器的本地校验路径、参数安全传递、UTF-8/问题块解析；正式确认与待确认风险分开统计。新对照用例严格校验状态，缺证据不能替代安全通过。
+- 测试套件断开单项测试 stdin，避免测试消费文件清单导致套件静默截断；评测结果目录不计入夹具目录。
+- 夹具总计 30 个、11 条控制有专门夹具。历史 19-case 模型报告和新增 11-case 独立 Agent 前向报告分别冻结基线并可离线回放；不同模型/不同基线结果不合并成统一召回率。新增验证不宣称完整交互端到端或生产检出率。
+
+### 升级与边界
+
+- `VERSION` 与 Claude Code/Codex/ZCode 版本化 manifest 同步为 1.7.2；Codex Marketplace 继续从 local source 读取版本，不新增重复版本字段。
+- 更新已安装的 Marketplace 插件后重新加载或开启新会话，并确认实际加载 1.7.2；不能只重载旧缓存就声称已升级。
+- 控制覆盖不代表 OWASP 认证/ASVS 全量合规。Ingress 路由、认证配置、真实代理拓扑等未知事实明确保留外部证据缺失；四个实际 BFF 的审计和业务风险关闭需另外执行。
+
 ## 1.7.1 — 前端与 BFF 安全规则补全：Node 注入负面清单与 OWASP Top 10 常规模式对齐
 
 ### 新增

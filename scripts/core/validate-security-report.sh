@@ -14,7 +14,7 @@ set -euo pipefail
 #   {finding_confirmed, checked_no_finding, external_evidence_missing, static_unsupported}；
 #   excluded_controls 只能以 not_applicable 行出现（最多一次）；表外 ID = 范围外引用，拒绝。
 # - finding_confirmed 至少有一个携带该 安全规则 ID 的正式问题块（P0-P3）；
-#   external_evidence_missing 至少有一个携带该 ID 的问题块（通常为待确认）。
+#   external_evidence_missing 在台账说明具体缺口；仅同时代表待确认风险时另写问题块。
 # - 携带「**安全规则 ID**：CCR-NODE-*」的问题块必须同时携带 标准映射 与 检测方式
 #   字段，且标准映射与 catalog 归一化一致（顺序无关、内容不可漂移）。
 # - 本脚本只应被 Security（frontend）报告调用；报告无控制覆盖章节即失败。

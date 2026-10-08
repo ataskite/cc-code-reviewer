@@ -98,7 +98,7 @@ perl -MJSON::PP -MCwd=abs_path -MFile::Spec -MEncode=decode,FB_CROAK -e '
   my @identity_pats = (
     ["session-identity",  qr{req\s*\.\s*session\b|ctx\s*\.\s*session\b|express-session|cookie-session}],
     ["authorization-header", qr{headers\s*\[\s*["\x27]authorization["\x27]\s*\]|get\s*\(\s*["\x27]authorization["\x27]|authorization["\x27]\s*:|bearer\s}],
-    ["jwt-usage",         qr{jsonwebtoken|jwt\s*\.\s*(?:verify|decode|sign)\s*\(}],
+    ["jwt-usage",         qr{jsonwebtoken|\bjose\b|\b(?:jwtVerify|decodeJwt)\s*\(|jwt\s*\.\s*(?:verify|decode|sign)\s*\(}],
     ["client-identity-header", qr{headers\s*\[\s*["\x27]x-(?:user|uid|tenant|org|account)[^"\x27]*["\x27]|req\s*\.\s*headers\s*\.\s*(?:x[A-Z]|x-)}i],
     ["service-account-env", qr{process\s*\.\s*env\s*\.\s*[A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL)}],
   );
@@ -129,6 +129,10 @@ perl -MJSON::PP -MCwd=abs_path -MFile::Spec -MEncode=decode,FB_CROAK -e '
     ["auth-middleware",   qr{requireAuth|ensureAuthenticated|isAuthenticated|authMiddleware|verifyToken|checkPermission|requireRole|isAdmin|can\s*\(|passport\s*\.|authenticate\s*\(}],
     ["csrf-control",      qr{csurf|csrfToken|_csrf|sameSite}],
     ["security-headers",  qr{helmet|X-Frame-Options|Content-Security-Policy|X-Content-Type-Options|hsts}],
+    ["routing-identity",  qr{\b(?:hostRewrite|autoRewrite|servername)\b|\bHost\s*:|["\x27](?:Host|host|:authority)["\x27]\s*:|\.\s*(?:Host|host)\s*[:=]}i],
+    ["proxy-capability",  qr{\bcapabilit(?:y|ies)\b|\b(?:baseURL|origin)\s*:|\bmethod\s*:|\.\.\.\s*(?:req|ctx)\s*\.}i],
+    ["proxy-trust",       qr{trust\s+proxy|x-forwarded-(?:for|host|proto)|\bForwarded\b|req\s*\.\s*(?:ip|ips|hostname|protocol)\b|socket\s*\.\s*remoteAddress}i],
+    ["jwt-verification-options", qr{\balgorithms\s*:|\bissuer\s*:|\baudience\s*:|ignoreExpiration|ignoreNotBefore|\b(?:jku|x5u|jwks)\b}i],
     ["rate-limit",        qr{rateLimit|rate-limit|express-rate-limit|throttle\s*\(}],
   );
 

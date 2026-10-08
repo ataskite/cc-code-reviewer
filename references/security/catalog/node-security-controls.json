@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "catalog_id": "cc-code-reviewer-node-security",
-  "catalog_version": "0.1.0",
+  "catalog_version": "0.2.0",
   "upstream_manifest_sha256": "44601e08b8d9a036b9cea822aa57dd22757119b284874cedbf6f0cf5a9f6baea",
   "notes_zh": "Node/BFF 安全控制唯一提交态事实来源。标准映射 ID 全部在 references/security/upstream 本地快照中核验存在，无占位 ID。ID 一经发布不可复用或改义；人类可读说明见 references/security/control-catalog.md。",
   "controls": [
@@ -340,6 +340,261 @@
       "severity_candidate": "P1",
       "description_zh": "依赖 Cookie 会话认证的状态变更接口（写/删/配置）缺少 CSRF token 或 SameSite 防护，第三方站点可携浏览器凭据触发跨站写操作。纯 Bearer header 认证且证据可见时豁免（须给出证据）。",
       "remediation_zh": "写接口启用 CSRF token（csurf/双提交）或校验 Origin/Sec-Fetch-Site；会话 Cookie 设置 SameSite=Lax/Strict；认证方式为纯 Bearer 头时在控制台账写明豁免证据而非默认豁免。"
+    },
+    {
+      "id": "CCR-NODE-HOSTROUTE-001",
+      "title_zh": "客户端控制出站 Host 或路由身份",
+      "category": "external-resource",
+      "profiles": [
+        "node-api",
+        "node-bff"
+      ],
+      "applicability": {
+        "review_signals": [
+          "outbound-http-client",
+          "proxy-routing"
+        ],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": [
+          "A01:2025"
+        ],
+        "owasp_api_top10": [
+          "API7:2023",
+          "API8:2023"
+        ],
+        "asvs": [
+          "v5.0.0-V4.1.3",
+          "v5.0.0-V1.3.6"
+        ],
+        "cwe": [
+          "CWE-918",
+          "CWE-346"
+        ]
+      },
+      "detectability": {
+        "primary": "taint",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": [
+        "request.headers",
+        "request.body",
+        "request.query"
+      ],
+      "sinks": [
+        "http-host-header",
+        "http2-authority",
+        "proxy-host-rewrite",
+        "tls-servername"
+      ],
+      "required_controls": [
+        "server-owned-routing-identity",
+        "destination-routing-binding",
+        "client-routing-override-denied"
+      ],
+      "required_evidence": [
+        "entry",
+        "source",
+        "propagation",
+        "sink",
+        "missing_control"
+      ],
+      "severity_candidate": "P1",
+      "description_zh": "客户端 header.Host、headers、:authority、代理 hostRewrite 或 TLS servername 影响出站路由身份。固定 TCP/URL 目标仍可能经共享 Ingress 的 vhost 路由访问另一服务；只删除小写 host、校验连接 URL 或允许任意内部域名不能证明控制成立。确认代码侧可控链；Ingress 实际映射与数据影响缺失时标记待确认，不能假设已访问敏感服务。",
+      "remediation_zh": "由服务端能力声明绑定 destination、Host/:authority 和 TLS servername；忽略或拒绝客户端同名字段（含大小写及数组/重复头变体）；允许必要路由头时绑定到具体获授权服务。补来源×Host×目标服务配置与非生产伪造 Host 验证。"
+    },
+    {
+      "id": "CCR-NODE-PROXYCAP-001",
+      "title_zh": "客户端扩大代理目标、路径或方法能力",
+      "category": "authorization",
+      "profiles": [
+        "node-api",
+        "node-bff"
+      ],
+      "applicability": {
+        "review_signals": [
+          "outbound-http-client",
+          "proxy-routing"
+        ],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": [
+          "A01:2025"
+        ],
+        "owasp_api_top10": [
+          "API5:2023",
+          "API10:2023"
+        ],
+        "asvs": [
+          "v5.0.0-V8.2.1",
+          "v5.0.0-V8.3.1",
+          "v5.0.0-V8.3.3"
+        ],
+        "cwe": [
+          "CWE-285",
+          "CWE-441"
+        ]
+      },
+      "detectability": {
+        "primary": "semantic",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": [
+        "request.body",
+        "request.query",
+        "request.params"
+      ],
+      "sinks": [
+        "proxy-request",
+        "privileged-upstream-action"
+      ],
+      "required_controls": [
+        "server-owned-capability-map",
+        "subject-capability-authorization",
+        "fixed-service-path-method",
+        "business-parameter-schema",
+        "no-client-options-override"
+      ],
+      "required_evidence": [
+        "entry",
+        "source",
+        "propagation",
+        "sink",
+        "missing_control"
+      ],
+      "severity_candidate": "P1",
+      "description_zh": "通用 proxy 让客户端指定 service/upstream/origin/baseURL/url/path/port/method，或通过对象 spread/配置合并覆盖服务端已选能力，使 BFF 的服务身份执行用户未获授权的下游动作。允许客户端选择 capability 名称本身不是漏洞；必须验证主体到 capability 的授权及实际生效的服务/路径/方法组合。",
+      "remediation_zh": "采用服务端 capability 或等价固定业务路由，将服务、路径模板、方法、参数 schema 和主体权限绑定；未知能力默认拒绝；路径参数逐项编码，业务 data 与传输选项分离，拒绝或忽略客户端 url/method/headers 等覆盖。不能仅限制方法集合或内部 host 而暴露全部路径。"
+    },
+    {
+      "id": "CCR-NODE-JWTAUTH-001",
+      "title_zh": "JWT 身份接受路径缺少完整验证",
+      "category": "identity",
+      "profiles": [
+        "node-api",
+        "node-bff"
+      ],
+      "applicability": {
+        "review_signals": [
+          "jwt-usage"
+        ],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": [
+          "A07:2025"
+        ],
+        "owasp_api_top10": [
+          "API2:2023"
+        ],
+        "asvs": [
+          "v5.0.0-V9.1.1",
+          "v5.0.0-V9.1.2",
+          "v5.0.0-V9.1.3",
+          "v5.0.0-V9.2.1",
+          "v5.0.0-V9.2.3"
+        ],
+        "cwe": [
+          "CWE-347"
+        ]
+      },
+      "detectability": {
+        "primary": "semantic",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": [
+        "bearer-token",
+        "cookie-token",
+        "token-key-locator"
+      ],
+      "sinks": [
+        "authenticated-identity",
+        "authorized-action"
+      ],
+      "required_controls": [
+        "signature-verification-before-claims",
+        "fixed-algorithm-allowlist",
+        "trusted-key-source",
+        "expected-issuer-audience",
+        "expiration-and-not-before",
+        "verification-failure-denied"
+      ],
+      "required_evidence": [
+        "entry",
+        "source",
+        "propagation",
+        "sink",
+        "missing_control"
+      ],
+      "severity_candidate": "P1",
+      "description_zh": "把 decode/未验签 claims 当身份，按不可信 alg/jku/jwk/x5u 选算法或密钥，未绑定预期 iss/aud，忽略 exp/nbf，或验签异常后仍执行业务。仅有 verify 方法名或网关认证声明不证明有效；必须追踪所有接受状态到身份消费点。没有 JWT 接受路径时明确说明无该技术面。",
+      "remediation_zh": "使用可信实现进行验签，固定允许算法与可信密钥/JWKS issuer，绑定预期 issuer 和 audience，要求必要 exp 并核验 exp/nbf；拒绝缺失/伪造/过期/不匹配 token，异常终止路径，不采用 decode 回退。外部 IdP/JWKS/网关策略无法核实时列外部证据缺失并给出 token 差分验证。"
+    },
+    {
+      "id": "CCR-NODE-PROXYTRUST-001",
+      "title_zh": "代理来源及转发头被错误用于安全决策",
+      "category": "configuration-supply-chain",
+      "profiles": [
+        "node-api",
+        "node-bff"
+      ],
+      "applicability": {
+        "review_signals": [
+          "proxy-trust"
+        ],
+        "excludes_project_types": []
+      },
+      "standards": {
+        "owasp_top10": [
+          "A02:2025"
+        ],
+        "owasp_api_top10": [
+          "API8:2023"
+        ],
+        "asvs": [
+          "v5.0.0-V4.1.3",
+          "v5.0.0-V15.3.4"
+        ],
+        "cwe": [
+          "CWE-346"
+        ]
+      },
+      "detectability": {
+        "primary": "config",
+        "requires_semantic_review": true,
+        "runtime_verification_possible": true
+      },
+      "sources": [
+        "request.forwarded-headers",
+        "request.socket.remoteAddress"
+      ],
+      "sinks": [
+        "client-ip-authorization",
+        "tenant-host-selection",
+        "secure-cookie-decision",
+        "rate-limit-key"
+      ],
+      "required_controls": [
+        "trusted-immediate-peer",
+        "topology-bound-proxy-trust",
+        "edge-header-replacement",
+        "no-untrusted-forwarded-decision"
+      ],
+      "required_evidence": [
+        "entry",
+        "source",
+        "propagation",
+        "sink",
+        "missing_control"
+      ],
+      "severity_candidate": "P1",
+      "description_zh": "trust proxy=true/任意跳数/宽泛网段或直接读取 Forwarded/X-Forwarded-*/X-Real-IP，导致来源 IP、hostname、protocol 被用于鉴权、租户选择、Cookie 安全或限流。配置存在本身不是漏洞：必须证明攻击者能影响决策。仅跳数或地址白名单而真实多路径代理拓扑、入口剥离未知时必须保留外部证据缺失。",
+      "remediation_zh": "按实际可信直接代理配置精确地址/谓词并验证所有访问路径；入口剥离并重建外部同名头。无代理需求时关闭 trust proxy，安全决策使用可信服务身份/连接来源。非生产验证直连伪造 XFF/Host/Proto、短路径和多跳均不能改变权限或租户。"
     }
   ]
 }

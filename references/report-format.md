@@ -132,6 +132,8 @@
 
 ### Security 控制条目附加字段（问题块内）
 
+Node/BFF 新增 HOSTROUTE / PROXYCAP / JWTAUTH / PROXYTRUST 四条适用控制亦必须逐条入账。Host 可控的代码证据与实际 Ingress 路由/敏感服务影响分开陈述；外部认证配置、代理拓扑和 forwarded 清洗未知时写明缺失证据，不能默认通过或凭配置猜定漏洞。
+
 当问题块对应某条 CCR-NODE 控制（`REVIEW_MODE=security` 且注入控制目录）时，除上文「Security 模式问题条目附加字段」外，还必须追加：
 
 - **安全规则 ID**：`CCR-NODE-*` 稳定控制 ID（必须属于本轮适用控制集合）。

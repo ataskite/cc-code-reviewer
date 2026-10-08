@@ -85,6 +85,7 @@
 - **开放重定向**：用户可控 URL 跳转
 - **权限前置误判**：按钮隐藏、菜单过滤、路由 meta 只属于前端展示控制，不得当作后端授权证据
 - **BFF/Node 鉴权透传**：接口鉴权、token 透传、401/403 处理、租户隔离
+- **Node 代理与身份专项（Security）**：固定 URL 但 Host/authority 改路由、主体 × 服务端 capability（service/Host/path/method）、JWT 签名/算法/可信 key/iss/aud/时效/失败拒绝、trust proxy × 真实拓扑；按 `node-proxy-auth-rules.md` 四条稳定控制取证，未知外部路由/认证/拓扑不得当通过或已证实攻击。
 - **授权面差分反例**：Security 模式下，Node/BFF 需按统一 Security 框架完成授权面二次扫描；浏览器端只登记可见入口、对象标识和敏感字段线索，不能据此证明后端已授权
 - **不安全 URL 拼接**：SSRF 向量（前端→BFF/Node）——query/body 的 url、fullUrl、path、callback、webhook 等用户可控字段进入服务端 HTTP 客户端（http.request/axios/superagent 等）前必须白名单校验协议与 host；`rb.origin ? rb.url : host+url` 的任意 origin 分支是 SSRF 直通；只挡 Host 头不够（`@` userinfo、协议相对 URL、重定向均可绕过），目标 host 白名单才是有效缓解；BFF 中继层出口头负面清单见 node-rules.md「BFF 中继层负面清单」（IMA 事件实证）
 - **Node 注入面**：原型污染（深合并消化请求对象）、命令注入（child_process）、路径穿越（sendFile/fs 路径拼接）、SSTI、NoSQL 操作符注入、不安全反序列化、ReDoS——检测特征与正解见 node-rules.md「Node 服务端注入与危险 API 负面清单」；命中即安全问题候选，证据闭合时按「注入与 RCE 直通定级」定 P0

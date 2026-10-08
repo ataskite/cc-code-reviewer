@@ -1,135 +1,332 @@
 [
   {
     "case": "bff-header-forwarding/vulnerable",
-    "expected_findings": ["CCR-NODE-BFFHEADER-001"],
+    "expected_findings": [
+      "CCR-NODE-BFFHEADER-001"
+    ],
     "forbidden_findings": [],
-    "expected_control_status": { "CCR-NODE-BFFHEADER-001": "finding_confirmed" },
+    "expected_control_status": {
+      "CCR-NODE-BFFHEADER-001": "finding_confirmed"
+    },
     "notes": "预期证据链：entry POST /api/orders → source req.headers 整体 → propagation axios.post 第三参 headers → sink 内网上游；缺失控制：显式头白名单 / hop-by-hop 剥离 / 身份头服务端重生成"
   },
   {
     "case": "bff-header-forwarding/secure",
     "expected_findings": [],
-    "forbidden_findings": ["CCR-NODE-BFFHEADER-001"],
-    "expected_control_status": { "CCR-NODE-BFFHEADER-001": "checked_no_finding" },
+    "forbidden_findings": [
+      "CCR-NODE-BFFHEADER-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-BFFHEADER-001": "checked_no_finding"
+    },
     "notes": "对照：逐头白名单构造上游 headers，身份头由服务端 session 重新生成，剥离 hop-by-hop；控制应判 checked_no_finding"
   },
   {
     "case": "bff-header-forwarding/renamed-wrapped",
-    "expected_findings": ["CCR-NODE-BFFHEADER-001"],
+    "expected_findings": [
+      "CCR-NODE-BFFHEADER-001"
+    ],
     "forbidden_findings": [],
-    "expected_control_status": { "CCR-NODE-BFFHEADER-001": "finding_confirmed" },
+    "expected_control_status": {
+      "CCR-NODE-BFFHEADER-001": "finding_confirmed"
+    },
     "notes": "语义泛化：路由层只见 pipeToCoreSvc，headers 经 pickMeta(headers) → decorate(outboundOpts) 两层 util 传播后仍整体透传；禁止依赖函数名词表命中"
   },
   {
     "case": "ssrf/vulnerable",
-    "expected_findings": ["CCR-NODE-SSRF-001"],
+    "expected_findings": [
+      "CCR-NODE-SSRF-001"
+    ],
     "forbidden_findings": [],
-    "expected_control_status": { "CCR-NODE-SSRF-001": "finding_confirmed" },
+    "expected_control_status": {
+      "CCR-NODE-SSRF-001": "finding_confirmed"
+    },
     "notes": "预期证据链：entry POST /api/notify → req.body.webhookUrl → fetch 无 scheme/主机/IP 白名单 → sink 服务端外发"
   },
   {
     "case": "ssrf/secure",
     "expected_findings": [],
-    "forbidden_findings": ["CCR-NODE-SSRF-001"],
-    "expected_control_status": { "CCR-NODE-SSRF-001": "checked_no_finding" },
+    "forbidden_findings": [
+      "CCR-NODE-SSRF-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-SSRF-001": "checked_no_finding"
+    },
     "notes": "对照：仅 HTTPS；规范化并校验 IPv4/IPv6 所有 DNS 结果；使用校验过的 IP 建立连接并保留 TLS hostname 校验；重定向逐跳解析/校验/固定 IP"
   },
   {
     "case": "ssrf/dns-rebinding",
-    "expected_findings": ["CCR-NODE-SSRF-001"],
+    "expected_findings": [
+      "CCR-NODE-SSRF-001"
+    ],
     "forbidden_findings": [],
-    "expected_control_status": { "CCR-NODE-SSRF-001": "finding_confirmed" },
+    "expected_control_status": {
+      "CCR-NODE-SSRF-001": "finding_confirmed"
+    },
     "notes": "DNS rebinding：DNS 查询校验后仍将域名交给 fetch 二次解析，校验结果未绑定实际连接目标"
   },
   {
     "case": "ssrf/ipv6-mapped-bypass",
-    "expected_findings": ["CCR-NODE-SSRF-001"],
+    "expected_findings": [
+      "CCR-NODE-SSRF-001"
+    ],
     "forbidden_findings": [],
-    "expected_control_status": { "CCR-NODE-SSRF-001": "finding_confirmed" },
+    "expected_control_status": {
+      "CCR-NODE-SSRF-001": "finding_confirmed"
+    },
     "notes": "IP 段校验使用不完整字符串/前缀规则，漏掉 IPv4-mapped IPv6 loopback 与部分 IPv6 link-local"
   },
   {
     "case": "ssrf/redirect-bypass",
-    "expected_findings": ["CCR-NODE-SSRF-001"],
+    "expected_findings": [
+      "CCR-NODE-SSRF-001"
+    ],
     "forbidden_findings": [],
-    "expected_control_status": { "CCR-NODE-SSRF-001": "finding_confirmed" },
+    "expected_control_status": {
+      "CCR-NODE-SSRF-001": "finding_confirmed"
+    },
     "notes": "重定向绕过：仅校验初始 host，maxRedirects 自动跟随 Location，公网 302 可跳到内网元数据地址；redirect_revalidation 缺失即应报"
   },
   {
     "case": "session-mass-assignment/vulnerable",
-    "expected_findings": ["CCR-NODE-SESSION-001"],
+    "expected_findings": [
+      "CCR-NODE-SESSION-001"
+    ],
     "forbidden_findings": [],
-    "expected_control_status": { "CCR-NODE-SESSION-001": "finding_confirmed" },
+    "expected_control_status": {
+      "CCR-NODE-SESSION-001": "finding_confirmed"
+    },
     "notes": "for-in 逐键把 req.body 写入 req.session，role/isAdmin 注入路径完整；证据链 entry → source req.body → sink session-write → 缺失字段白名单"
   },
   {
     "case": "session-mass-assignment/allowlist-bound",
     "expected_findings": [],
-    "forbidden_findings": ["CCR-NODE-SESSION-001"],
-    "expected_control_status": { "CCR-NODE-SESSION-001": "checked_no_finding" },
+    "forbidden_findings": [
+      "CCR-NODE-SESSION-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-SESSION-001": "checked_no_finding"
+    },
     "notes": "对照：joi schema unknown(false) 校验 + 显式字段白名单写入 session，权限类字段永不接受客户端输入"
   },
   {
     "case": "command-injection/vulnerable",
-    "expected_findings": ["CCR-NODE-CMD-001"],
+    "expected_findings": [
+      "CCR-NODE-CMD-001"
+    ],
     "forbidden_findings": [],
-    "expected_control_status": { "CCR-NODE-CMD-001": "finding_confirmed" },
+    "expected_control_status": {
+      "CCR-NODE-CMD-001": "finding_confirmed"
+    },
     "notes": "exec('convert ' + req.query.file + ...) 字符串拼接进 shell，;/$/反引号均可逃逸"
   },
   {
     "case": "command-injection/execfile-bound",
     "expected_findings": [],
-    "forbidden_findings": ["CCR-NODE-CMD-001"],
-    "expected_control_status": { "CCR-NODE-CMD-001": "checked_no_finding" },
+    "forbidden_findings": [
+      "CCR-NODE-CMD-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-CMD-001": "checked_no_finding"
+    },
     "notes": "对照：文件名 basename 收敛 + execFile 数组传参，不经 shell 解释"
   },
   {
     "case": "command-injection/renamed-wrapped",
-    "expected_findings": ["CCR-NODE-CMD-001"],
+    "expected_findings": [
+      "CCR-NODE-CMD-001"
+    ],
     "forbidden_findings": [],
-    "expected_control_status": { "CCR-NODE-CMD-001": "finding_confirmed" },
+    "expected_control_status": {
+      "CCR-NODE-CMD-001": "finding_confirmed"
+    },
     "notes": "语义泛化：路由层只见 runTransformTask(name)，内部经 buildCmd 拼接后 exec（默认 /bin/sh -c）两层传播；禁止依赖 convert/函数名词表命中"
   },
   {
     "case": "path-traversal/vulnerable",
-    "expected_findings": ["CCR-NODE-PATH-001"],
+    "expected_findings": [
+      "CCR-NODE-PATH-001"
+    ],
     "forbidden_findings": [],
-    "expected_control_status": { "CCR-NODE-PATH-001": "finding_confirmed" },
+    "expected_control_status": {
+      "CCR-NODE-PATH-001": "finding_confirmed"
+    },
     "notes": "path.join('/data', req.params.name) 不中和 ../，readFileSync 后 res.send，可逃出 DATA_ROOT 任意读取"
   },
   {
     "case": "path-traversal/root-bound",
     "expected_findings": [],
-    "forbidden_findings": ["CCR-NODE-PATH-001"],
-    "expected_control_status": { "CCR-NODE-PATH-001": "checked_no_finding" },
+    "forbidden_findings": [
+      "CCR-NODE-PATH-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-PATH-001": "checked_no_finding"
+    },
     "notes": "对照：basename + path.resolve(ROOT, name) + startsWith(ROOT + path.sep) 越界即拒绝后读取"
   },
   {
     "case": "authorization/bola-unbound",
-    "expected_findings": ["CCR-NODE-BOLA-001"],
+    "expected_findings": [
+      "CCR-NODE-BOLA-001"
+    ],
     "forbidden_findings": [],
-    "expected_control_status": { "CCR-NODE-BOLA-001": "finding_confirmed" },
+    "expected_control_status": {
+      "CCR-NODE-BOLA-001": "finding_confirmed"
+    },
     "notes": "GET /orders/:id 仅登录态 Order.findById(req.params.id)，查询条件无 ownerId 绑定，同角色替换 ID 即可读他人订单"
   },
   {
     "case": "authorization/owner-bound",
     "expected_findings": [],
-    "forbidden_findings": ["CCR-NODE-BOLA-001"],
-    "expected_control_status": { "CCR-NODE-BOLA-001": "checked_no_finding" },
+    "forbidden_findings": [
+      "CCR-NODE-BOLA-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-BOLA-001": "checked_no_finding"
+    },
     "notes": "对照：Order.findOne({ _id: req.params.id, ownerId: req.user.id }) 属主绑定，非属主按 404 拒绝"
   },
   {
     "case": "authorization/bfla-unbound",
-    "expected_findings": ["CCR-NODE-BFLA-001"],
+    "expected_findings": [
+      "CCR-NODE-BFLA-001"
+    ],
     "forbidden_findings": [],
-    "expected_control_status": { "CCR-NODE-BFLA-001": "finding_confirmed" },
+    "expected_control_status": {
+      "CCR-NODE-BFLA-001": "finding_confirmed"
+    },
     "notes": "POST /admin/users/:id/role 仅 requireLogin 登录校验，无角色判断即可改任意用户角色（含自我提权为 admin）"
   },
   {
     "case": "authorization/function-bound",
     "expected_findings": [],
-    "forbidden_findings": ["CCR-NODE-BFLA-001"],
-    "expected_control_status": { "CCR-NODE-BFLA-001": "checked_no_finding" },
+    "forbidden_findings": [
+      "CCR-NODE-BFLA-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-BFLA-001": "checked_no_finding"
+    },
     "notes": "对照：requireRole('admin') 中间件在动作前生效，未登录 401 / 角色不符 403，角色值再经白名单校验"
+  },
+  {
+    "case": "host-routing/vulnerable",
+    "strict_control_status": true,
+    "expected_findings": [
+      "CCR-NODE-HOSTROUTE-001"
+    ],
+    "forbidden_findings": [],
+    "expected_control_status": {
+      "CCR-NODE-HOSTROUTE-001": "finding_confirmed"
+    }
+  },
+  {
+    "case": "host-routing/secure",
+    "strict_control_status": true,
+    "expected_findings": [],
+    "forbidden_findings": [
+      "CCR-NODE-HOSTROUTE-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-HOSTROUTE-001": "checked_no_finding"
+    }
+  },
+  {
+    "case": "host-routing/renamed-wrapped",
+    "strict_control_status": true,
+    "expected_findings": [
+      "CCR-NODE-HOSTROUTE-001"
+    ],
+    "forbidden_findings": [],
+    "expected_control_status": {
+      "CCR-NODE-HOSTROUTE-001": "finding_confirmed"
+    }
+  },
+  {
+    "case": "proxy-capability/vulnerable",
+    "strict_control_status": true,
+    "expected_findings": [
+      "CCR-NODE-PROXYCAP-001"
+    ],
+    "forbidden_findings": [],
+    "expected_control_status": {
+      "CCR-NODE-PROXYCAP-001": "finding_confirmed"
+    }
+  },
+  {
+    "case": "proxy-capability/secure",
+    "strict_control_status": true,
+    "expected_findings": [],
+    "forbidden_findings": [
+      "CCR-NODE-PROXYCAP-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-PROXYCAP-001": "checked_no_finding"
+    }
+  },
+  {
+    "case": "jwt-validation/decode-only",
+    "strict_control_status": true,
+    "expected_findings": [
+      "CCR-NODE-JWTAUTH-001"
+    ],
+    "forbidden_findings": [],
+    "expected_control_status": {
+      "CCR-NODE-JWTAUTH-001": "finding_confirmed"
+    }
+  },
+  {
+    "case": "jwt-validation/weak-verification",
+    "strict_control_status": true,
+    "expected_findings": [
+      "CCR-NODE-JWTAUTH-001"
+    ],
+    "forbidden_findings": [],
+    "expected_control_status": {
+      "CCR-NODE-JWTAUTH-001": "finding_confirmed"
+    }
+  },
+  {
+    "case": "jwt-validation/secure",
+    "strict_control_status": true,
+    "expected_findings": [],
+    "forbidden_findings": [
+      "CCR-NODE-JWTAUTH-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-JWTAUTH-001": "checked_no_finding"
+    }
+  },
+  {
+    "case": "proxy-trust/vulnerable",
+    "strict_control_status": true,
+    "expected_findings": [
+      "CCR-NODE-PROXYTRUST-001"
+    ],
+    "forbidden_findings": [],
+    "expected_control_status": {
+      "CCR-NODE-PROXYTRUST-001": "finding_confirmed"
+    }
+  },
+  {
+    "case": "proxy-trust/secure",
+    "strict_control_status": true,
+    "expected_findings": [],
+    "forbidden_findings": [
+      "CCR-NODE-PROXYTRUST-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-PROXYTRUST-001": "checked_no_finding"
+    }
+  },
+  {
+    "case": "proxy-trust/topology-unproven",
+    "strict_control_status": true,
+    "expected_findings": [],
+    "forbidden_findings": [
+      "CCR-NODE-PROXYTRUST-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-PROXYTRUST-001": "external_evidence_missing"
+    }
   }
 ]

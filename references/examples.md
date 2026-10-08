@@ -137,6 +137,9 @@
 （前端项目另注入离线 Node Security Control Catalog：）
 - 本轮适用安全控制：{security-controls.json 绝对路径}（frontend 才有；其余语言显示“未启用”）
 - Node 攻击面索引：{security-surface.json 绝对路径；启用 Node profile 才生成，只是导航候选}
+- Node 代理与身份专项：{node-proxy-auth-rules.md 绝对路径；security+frontend 必须读取}
+
+Node API/BFF 的控制台账包含 HOSTROUTE（固定网络目标但 Host 可改路由）、PROXYCAP（服务端 service/Host/path/method 能力与主体授权）、JWTAUTH（完整 JWT 接受链）和 PROXYTRUST（真实代理拓扑与 forwarded 来源）。调用者可选受授权 capability 不等于漏洞；未知 Ingress/认证网关/拓扑明确列缺证据，不能宣称完整攻击链已复现或风险关闭。
 - 报告输出「🛡️ Security 控制覆盖」台账（封闭五状态 + 对账 N = A + B + C + D）
 - 落盘后校验台账；校验失败不上传飞书、不导出 SARIF，保留本地报告并说明结构无效原因
 ```

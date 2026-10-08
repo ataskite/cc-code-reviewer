@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "profile": "node-worker",
+  "description_zh": "队列/任务/Webhook/消息消费者等无 HTTP 入口的 Node worker 适用控制集（消息载荷仍是不可信输入源）。只引用稳定控制 ID。",
+  "controls": [
+    "CCR-NODE-CMD-001",
+    "CCR-NODE-DESER-001"
+  ]
+}

@@ -1,0 +1,123 @@
+[
+  {
+    "case": "host-routing/vulnerable",
+    "strict_control_status": true,
+    "expected_findings": [
+      "CCR-NODE-HOSTROUTE-001"
+    ],
+    "forbidden_findings": [],
+    "expected_control_status": {
+      "CCR-NODE-HOSTROUTE-001": "finding_confirmed"
+    }
+  },
+  {
+    "case": "host-routing/secure",
+    "strict_control_status": true,
+    "expected_findings": [],
+    "forbidden_findings": [
+      "CCR-NODE-HOSTROUTE-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-HOSTROUTE-001": "checked_no_finding"
+    }
+  },
+  {
+    "case": "host-routing/renamed-wrapped",
+    "strict_control_status": true,
+    "expected_findings": [
+      "CCR-NODE-HOSTROUTE-001"
+    ],
+    "forbidden_findings": [],
+    "expected_control_status": {
+      "CCR-NODE-HOSTROUTE-001": "finding_confirmed"
+    }
+  },
+  {
+    "case": "proxy-capability/vulnerable",
+    "strict_control_status": true,
+    "expected_findings": [
+      "CCR-NODE-PROXYCAP-001"
+    ],
+    "forbidden_findings": [],
+    "expected_control_status": {
+      "CCR-NODE-PROXYCAP-001": "finding_confirmed"
+    }
+  },
+  {
+    "case": "proxy-capability/secure",
+    "strict_control_status": true,
+    "expected_findings": [],
+    "forbidden_findings": [
+      "CCR-NODE-PROXYCAP-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-PROXYCAP-001": "checked_no_finding"
+    }
+  },
+  {
+    "case": "jwt-validation/decode-only",
+    "strict_control_status": true,
+    "expected_findings": [
+      "CCR-NODE-JWTAUTH-001"
+    ],
+    "forbidden_findings": [],
+    "expected_control_status": {
+      "CCR-NODE-JWTAUTH-001": "finding_confirmed"
+    }
+  },
+  {
+    "case": "jwt-validation/weak-verification",
+    "strict_control_status": true,
+    "expected_findings": [
+      "CCR-NODE-JWTAUTH-001"
+    ],
+    "forbidden_findings": [],
+    "expected_control_status": {
+      "CCR-NODE-JWTAUTH-001": "finding_confirmed"
+    }
+  },
+  {
+    "case": "jwt-validation/secure",
+    "strict_control_status": true,
+    "expected_findings": [],
+    "forbidden_findings": [
+      "CCR-NODE-JWTAUTH-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-JWTAUTH-001": "checked_no_finding"
+    }
+  },
+  {
+    "case": "proxy-trust/vulnerable",
+    "strict_control_status": true,
+    "expected_findings": [
+      "CCR-NODE-PROXYTRUST-001"
+    ],
+    "forbidden_findings": [],
+    "expected_control_status": {
+      "CCR-NODE-PROXYTRUST-001": "finding_confirmed"
+    }
+  },
+  {
+    "case": "proxy-trust/secure",
+    "strict_control_status": true,
+    "expected_findings": [],
+    "forbidden_findings": [
+      "CCR-NODE-PROXYTRUST-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-PROXYTRUST-001": "checked_no_finding"
+    }
+  },
+  {
+    "case": "proxy-trust/topology-unproven",
+    "strict_control_status": true,
+    "expected_findings": [],
+    "forbidden_findings": [
+      "CCR-NODE-PROXYTRUST-001"
+    ],
+    "expected_control_status": {
+      "CCR-NODE-PROXYTRUST-001": "external_evidence_missing"
+    }
+  }
+]

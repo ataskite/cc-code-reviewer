@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "profile": "node-bff",
+  "description_zh": "前端项目内的 BFF / 服务端中继层（server-root 或代理路由）适用控制集，在 node-api 基础上叠加 BFF 特有控制（客户端头透传等）。只引用稳定控制 ID。",
+  "controls": [
+    "CCR-NODE-BFFHEADER-001",
+    "CCR-NODE-IDENTITY-001",
+    "CCR-NODE-SESSION-001",
+    "CCR-NODE-SSRF-001",
+    "CCR-NODE-CMD-001",
+    "CCR-NODE-PATH-001",
+    "CCR-NODE-PROTO-001",
+    "CCR-NODE-NOSQL-001",
+    "CCR-NODE-DESER-001",
+    "CCR-NODE-BOLA-001",
+    "CCR-NODE-BFLA-001",
+    "CCR-NODE-CSRF-001"
+  ]
+}

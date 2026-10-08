@@ -1,0 +1,116 @@
+{
+  "host-routing/vulnerable": [
+    {
+      "path": "package.json",
+      "sha256": "5d5ad5a99b5351a73b72ae498a5158ad8fc91a62c008fcf7af3dff18dd6cd9b9"
+    },
+    {
+      "path": "server.js",
+      "sha256": "d1c42e19e45b4e0eb4f58237850b72b71c72dabc672a3bf6a73df30d15d7b187"
+    }
+  ],
+  "host-routing/secure": [
+    {
+      "path": "package.json",
+      "sha256": "2cb0b71f5a984bdcb00f8e446abe937f85ab7b15889899367fc3b4d08a44b043"
+    },
+    {
+      "path": "server.js",
+      "sha256": "aa4d046aa4dcb6471f019d77d59759e7a8c2e0c830222f386555a56acf58d397"
+    }
+  ],
+  "host-routing/renamed-wrapped": [
+    {
+      "path": "package.json",
+      "sha256": "31585e7d3f2dd4d98d3d757f0f49632cbd573965a9510d0e51c4d89c8fa116be"
+    },
+    {
+      "path": "server.js",
+      "sha256": "3a810fb6a1411368674935fa0f989c5139bb7eb540e17e9e2105e6ed73bee44a"
+    },
+    {
+      "path": "transport.js",
+      "sha256": "d75566e3a0ad4d8e0bf46e158d96eef550139a1a246ddced89b6b50ac4a6c54c"
+    }
+  ],
+  "proxy-capability/vulnerable": [
+    {
+      "path": "package.json",
+      "sha256": "9d29c9d180803faacab801e728c5352bbfeb1da0398a342d95987fca557f54ab"
+    },
+    {
+      "path": "server.js",
+      "sha256": "76661c2091ca396eb32d1b07da5d1b29fed3c8b82a29e45a96a37aa38e0b9e25"
+    }
+  ],
+  "proxy-capability/secure": [
+    {
+      "path": "package.json",
+      "sha256": "0748a5fd41eef25b1051ef091a643a5f3520dea5552b7c7f99ff10c3d010a341"
+    },
+    {
+      "path": "server.js",
+      "sha256": "5a4a45fc49472c43b45b34641bba375ce486c131706fe59f601c6193a9502ab4"
+    }
+  ],
+  "jwt-validation/decode-only": [
+    {
+      "path": "package.json",
+      "sha256": "a6ea46c024e403b5fbbb555f5c144bf780ad706eb8af3883f788049802507f74"
+    },
+    {
+      "path": "server.js",
+      "sha256": "ae68a96a72a974ee4357493a4e56894cb44c2588479e2af6510736013eb4f950"
+    }
+  ],
+  "jwt-validation/weak-verification": [
+    {
+      "path": "package.json",
+      "sha256": "c81a05a1944f03ea9958e8e392cde1488be5d5d29cf1cbd1feb7138be5a7b10a"
+    },
+    {
+      "path": "server.js",
+      "sha256": "eeedea877441af1421335451aa7412d7f2bc50374f334d8576406dce65d6a45b"
+    }
+  ],
+  "jwt-validation/secure": [
+    {
+      "path": "package.json",
+      "sha256": "20e67175581633ff655580ab7cda70710dc2ecdaa74a9cb4510156369ac1ba09"
+    },
+    {
+      "path": "server.js",
+      "sha256": "bd7fbee966891b25af8bed7227058fd7607e5ecd7a71ffec2e43263bba27f6a7"
+    }
+  ],
+  "proxy-trust/vulnerable": [
+    {
+      "path": "package.json",
+      "sha256": "206eafcfe4d1e9b940902e225939f78fb4b26a2ce3b595e5cd93dd61b9c98a89"
+    },
+    {
+      "path": "server.js",
+      "sha256": "7ecc273aff4b6029683c8954d5d733648fe932292c500f63a8ba7c3cf154cce8"
+    }
+  ],
+  "proxy-trust/secure": [
+    {
+      "path": "package.json",
+      "sha256": "0ad4b4afa764937cc11d531f84410d2ae6615540ebec24759f6e3a09e1f5981b"
+    },
+    {
+      "path": "server.js",
+      "sha256": "6ed1f5f89344527f31d2b95c99dbe4f6bf0fb9b6a3ae98ba1199ee1a3627ba32"
+    }
+  ],
+  "proxy-trust/topology-unproven": [
+    {
+      "path": "package.json",
+      "sha256": "48d3b0327686f7eb5c14a1f89722e1f724182ccbc55a3017237fe24ed3c5c5c9"
+    },
+    {
+      "path": "server.js",
+      "sha256": "285e140a06b2267d3292657fcd1296a74999866995ab7d287df5a5c631d61a35"
+    }
+  ]
+}

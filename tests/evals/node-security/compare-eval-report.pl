@@ -1,9 +1,10 @@
 #!/usr/bin/perl
 use strict; use warnings; use utf8; use JSON::PP; use Encode qw(decode FB_CROAK);
+use FindBin; use IPC::Open3; use IO::Select; use Symbol qw(gensym);
 binmode STDOUT, ':utf8';
 
 # 评测比对器（记录工具，不伪造模型召回率——协议见同目录 README.md）：
-#   perl compare-eval-report.pl <REPORT_MD> <EXPECTED_JSON> <CASE_KEY> [--validate-only]
+#   perl compare-eval-report.pl <REPORT_MD> <EXPECTED_JSON> <CASE_KEY> --controls <CONTROLS_JSON> [--validate-only]
 #
 # 读模型产出的 security 报告与 expected-controls.json 中对应 case 条目，输出判定：
 #   {"case":"ssrf/vulnerable","verdict":"PASS|FAIL|ERROR","expected":[...],"found":[...],
@@ -16,9 +17,16 @@ binmode STDOUT, ':utf8';
 #   报告必须先通过 validate-security-report.sh（--validate-only 时只做这一步）
 
 my ($report, $expected_json, $case_key) = @ARGV;
-die "usage: compare-eval-report.pl <REPORT_MD> <EXPECTED_JSON> <CASE_KEY> [--validate-only]\n"
+my $usage = "usage: compare-eval-report.pl <REPORT_MD> <EXPECTED_JSON> <CASE_KEY> --controls <CONTROLS_JSON> [--validate-only]\n";
+die $usage
   unless $report && $expected_json && $case_key;
-my $validate_only = ($ARGV[3] // '') eq '--validate-only';
+my ($validate_only, $controls_json) = (0, $ENV{CCR_CONTROLS_JSON} // '');
+for (my $i = 3; $i < @ARGV; $i++) {
+  if ($ARGV[$i] eq '--validate-only') { $validate_only = 1; next; }
+  if ($ARGV[$i] eq '--controls' && defined $ARGV[$i + 1]) { $controls_json = $ARGV[++$i]; next; }
+  die $usage;
+}
+die "controls JSON required (--controls or CCR_CONTROLS_JSON)\n$usage" unless $controls_json && -f $controls_json;
 
 sub slurp { my ($p) = @_; open my $f, '<:raw', $p or die "read $p: $!\n"; local $/; my $d = <$f>; close $f; return $d; }
 
@@ -26,13 +34,23 @@ my $result = { case => $case_key, verdict => 'ERROR' };
 
 # ---- 第一步：确定性报告校验器 ----
 my $validator = $ENV{CCR_VALIDATOR}
-  // do { my $d = $0; $d =~ s{/tests/evals/node-security/compare-eval-report\.pl$}{}; "$d/scripts/core/validate-security-report.pl" };
-my $controls_json = $ENV{CCR_CONTROLS_JSON} // '';
+  // "$FindBin::Bin/../../../scripts/core/validate-security-report.sh";
 my $report_valid = 0;
-if (-x $validator || -f $validator) {
-  my $out = `$validator $report $controls_json 2>&1`;
+if (-x $validator) {
+  my $err = gensym;
+  my $pid = open3(undef, my $stdout, $err, $validator, $report, $controls_json);
+  my $select = IO::Select->new($stdout, $err);
+  my $out = '';
+  while (my @ready = $select->can_read) {
+    for my $fh (@ready) {
+      my $n = sysread($fh, my $chunk, 4096);
+      if ($n) { $out .= $chunk; } else { $select->remove($fh); close $fh; }
+    }
+    last unless $select->count;
+  }
+  waitpid($pid, 0);
   $report_valid = ($? == 0) ? 1 : 0;
-  $result->{validator_output} = ($? == 0) ? 'ok' : $out;
+  $result->{validator_output} = $report_valid ? 'ok' : $out;
 } else {
   $result->{validator_output} = 'validator not found: $validator';
 }
@@ -45,7 +63,8 @@ if ($validate_only) { $result->{verdict} = $report_valid ? 'PASS' : 'FAIL'; emit
 my $raw_text = slurp($report);
 my $text = eval { decode("UTF-8", $raw_text, FB_CROAK) } // $raw_text;
 $text =~ s/\r\n/\n/g;
-my %blocks;          # 规则 ID → 出现次数（问题块内）
+my %blocks;          # 规则 ID → 出现次数（正式/待确认全部问题块）
+my (%confirmed_blocks, %pending_blocks);
 my %ledger;          # 规则 ID → 台账状态
 my ($findings, $pending) = (0, 0);
 my @lines = split /\n/, $text, -1;
@@ -61,7 +80,8 @@ for my $blk (@blocks_raw) {
   next unless $body =~ /\*\*安全规则 ID\*\*：\s*(CCR-NODE-[A-Z0-9]+-[0-9]{3})/;
   my $id = $1;
   $blocks{$id}++;
-  ($blk->[0] =~ /^###\s+(P[0-3])/) ? $findings++ : $pending++;
+  if ($blk->[0] =~ /^###\s+(P[0-3])/) { $findings++; $confirmed_blocks{$id}++; }
+  else { $pending++; $pending_blocks{$id}++; }
 }
 my $in_sec = 0;
 for my $l (@lines) {
@@ -81,8 +101,8 @@ die "expected-controls.json 解析失败: $@\n" if $@;
 my ($entry) = grep { ($_->{case} // '') eq $case_key } @{ $expected };
 die "expected-controls.json 中不存在 case: $case_key\n" unless $entry;
 
-my @missed = grep { !$blocks{$_} } @{ $entry->{expected_findings} // [] };
-my @false_pos = grep { $blocks{$_} } @{ $entry->{forbidden_findings} // [] };
+my @missed = grep { !$confirmed_blocks{$_} } @{ $entry->{expected_findings} // [] };
+my @false_pos = grep { $confirmed_blocks{$_} } @{ $entry->{forbidden_findings} // [] };
 # 状态口径：
 #   expected=finding_confirmed   → 台账必须是 finding_confirmed（漏报检测）
 #   expected=checked_no_finding  → 语义为「不得确认」：finding_confirmed 即漂移
@@ -94,13 +114,16 @@ for my $id (sort keys %{ $entry->{expected_control_status} // {} }) {
   my $want = $entry->{expected_control_status}{$id};
   my $got = $ledger{$id} // '<台账缺行>';
   my $bad;
-  if ($want eq 'finding_confirmed')      { $bad = ($got ne 'finding_confirmed') }
+  if ($entry->{strict_control_status})   { $bad = ($got ne $want) }
+  elsif ($want eq 'finding_confirmed')   { $bad = ($got ne 'finding_confirmed') }
   elsif ($want eq 'checked_no_finding')  { $bad = ($got eq 'finding_confirmed') }
   else                                   { $bad = ($got ne $want) }
   $drift{$id} = "$got (expected $want)" if $bad;
 }
 $result->{expected} = $entry->{expected_findings} // [];
 $result->{found} = [sort keys %blocks];
+$result->{confirmed_found} = [sort keys %confirmed_blocks];
+$result->{pending_found} = [sort keys %pending_blocks];
 $result->{forbidden} = $entry->{forbidden_findings} // [];
 $result->{missed} = \@missed;
 $result->{false_positives} = \@false_pos;

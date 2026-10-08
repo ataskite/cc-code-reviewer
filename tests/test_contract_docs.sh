@@ -1418,6 +1418,12 @@ for DOC in "$SKILL_FILE" "$ROOT_DIR/agents/cc-code-reviewer-frontend.md"; do
   require_literal "$DOC" "禁止访问 URL" "agent-facing docs must forbid runtime URL access for security artifacts"
 done
 # 分批冻结 + 恢复门禁
+require_literal "$SKILL_FILE" 'NODE_PROXY_AUTH_RULES_PATH="未启用"' "proxy/auth reference must stay conditional on security+frontend"
+require_literal "$SKILL_FILE" 'test -r "$NODE_PROXY_AUTH_RULES_PATH"' "proxy/auth reference must be readable before dispatch"
+PROXY_RULE_ROWS="$(grep -Fc '| Node 代理与身份专项路径 | {NODE_PROXY_AUTH_RULES_PATH}' "$SKILL_FILE")"
+[ "$PROXY_RULE_ROWS" -eq 2 ] || { echo "proxy/auth path must be injected in single and batch prompts" >&2; exit 1; }
+require_literal "$ROOT_DIR/agents/cc-code-reviewer-frontend.md" 'Node 代理与身份专项路径' "frontend agent must require the detailed reference"
+test -r "$ROOT_DIR/references/languages/frontend/node-proxy-auth-rules.md"
 require_literal "$ROOT_DIR/scripts/core/plan-file-batches.sh" "security_controls_sha256" "planner must freeze security-controls hash for frontend security plans"
 require_literal "$ROOT_DIR/scripts/core/plan-file-batches.sh" "security_upstream_manifest_sha256" "planner must freeze upstream manifest hash for frontend security plans"
 require_match "resume gate must support --security" 'validate-resume-input\.sh.*--security' "$SKILL_FILE"

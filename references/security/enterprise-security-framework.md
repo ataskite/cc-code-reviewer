@@ -45,6 +45,7 @@ Security 专项必须覆盖全部正式源码边界，并优先审查入口、�
 
 - 认证缺失、认证绕过、匿名路径误放行和安全开关 fail-open。
 - JWT、Session、Cookie、刷新令牌、撤销、重放和会话固定。
+- Node/BFF Security 实现必须读取 `references/languages/frontend/node-proxy-auth-rules.md`，检查完整 JWT 接受链、服务端 capability 授权、固定网络目标下的 Host 路由身份及 trust proxy 拓扑绑定；其他语言仍按本框架映射，不强行套用 Node 控制。
 - 客户端可控 header、query、cookie、localStorage、postMessage 直接成为身份或租户来源。
 - 网关认证与下游服务身份不一致，或 RPC、消息、定时任务中丢失身份上下文。
 
