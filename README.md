@@ -120,7 +120,7 @@ Fix 阶段只接受项目路径。待修复问题清单来源会在交互中收�
 - Java 覆盖率口径固定为 `src/main/java` 生产源码，测试源码只作为上下文
 - 安全设计不变量审查：脚本只按 import/直接依赖组织关联代码，大模型从代码行为识别受保护动作、授权证据、完整状态空间和默认路径，不依赖预置类名、方法名或字段名词表
 - 越权授权面二次扫描：Security 模式在逐文件覆盖后，强制按“入口 × 受保护动作”建立授权面台账，再验证同角色异对象、低权限高功能、跨租户、对象属性、批量/嵌套资源和替代入口六类差分反例；报告单独披露已绑定、未绑定、外部证据缺失和不适用数量，文件覆盖率不冒充授权面覆盖率
-- 离线 OWASP 基线与 Node Security Control Catalog（前端/Node）：OWASP ASVS 5.0.0、Top 10:2025、API Security Top 10:2023 与 Node.js Security Cheat Sheet 以不可变快照随插件分发（`references/security/upstream/`，manifest + SHA256SUMS + NOTICE 字节级对账），审查运行时零网络依赖。16 条 `CCR-NODE-*` 稳定控制（首批 12 条 + 代理与身份专项 4 条）（BFF 头透传、身份/租户覆盖、Session 批量赋值、SSRF、命令注入、路径穿越、原型污染、NoSQL 注入、反序列化、BOLA/BFLA、CSRF，以及固定目标 Host 改路由、服务端代理 capability、JWT 完整校验、trust proxy 拓扑绑定）的标准映射全部经本地快照核验；Security 模式按冻结输入解析本轮适用控制并生成攻击面候选索引（只是导航，不是发现清单），报告输出控制覆盖台账（封闭五状态、对账 N = A + B + C + D），SARIF 对应问题使用稳定 `CCR-NODE-*` ruleId。控制覆盖是覆盖状态披露，不是 OWASP 认证或 ASVS 合规声明；`static_unsupported`（静态不可验证）不是通过。上游升级只走 `scripts/maintenance/update-owasp-baseline.sh` 显式维护流程
+- 离线 OWASP 基线与 Node Security Control Catalog（前端/Node）：OWASP ASVS 5.0.0、Top 10:2025、API Security Top 10:2023 与 Node.js Security Cheat Sheet 以不可变快照随插件分发（`references/security/upstream/`，manifest + SHA256SUMS + NOTICE 字节级对账），审查运行时零网络依赖。16 条 `CCR-NODE-*` 稳定控制（首批 12 条 + 代理与身份专项 4 条）（BFF 头透传、身份/租户覆盖、Session 批量赋值、SSRF、命令注入、路径穿越、原型污染、NoSQL 注入、反序列化、BOLA/BFLA、CSRF，以及固定目标 Host 改路由、服务端代理 capability、JWT 完整校验、trust proxy 拓扑绑定）的标准映射全部经本地快照核验；Security 模式按冻结输入解析本轮适用控制并生成攻击面候选索引（只是导航，不是发现清单），报告输出控制覆盖台账（封闭五状态、对账 N = A + B + C + D），SARIF 对应问题使用稳定 `CCR-NODE-*` ruleId。控制覆盖是覆盖状态披露，不是 OWASP 认证或 ASVS 合规声明；`static_unsupported`（静态不可验证）不是通过。上游升级只走 `scripts/maintenance/update-owasp-baseline.sh` 显式维护流程。配套模型评测资产随仓库分发：`tests/evals/node-security/` 内置 30 个脱敏最小夹具（vulnerable / secure / renamed-wrapped 对照，覆盖全部 `CCR-NODE-*` 控制）、预期清单 `expected-controls.json` 与判定比对器 `compare-eval-report.pl`；历史评测记录（原始报告 + 判定矩阵 + 条件声明）见 `tests/evals/node-security/results/`——评测记录只证明对应模型档位在这些夹具上的召回/误报表现，不外推真实仓库检出率
 
 ### 发现清单自校验（v1.6.0）
 
@@ -253,6 +253,7 @@ rules:
 | [Node Security Control Catalog 说明](references/security/control-catalog.md) | CCR-NODE-* 控制注册表、信号词表、覆盖状态封闭集与升级流程 |
 | [Node 代理与身份专项](references/languages/frontend/node-proxy-auth-rules.md) | Security 下固定目标 Host 路由、服务端能力、JWT 与代理拓扑检查/修复/验证 |
 | [OWASP 离线上游基线](references/security/upstream/README.md) | 不可变官方快照清单、许可证核验与显式维护升级流程 |
+| [Node Security 评测协议](tests/evals/node-security/README.md) | 评测夹具结构、预期清单格式、判定比对器与历史评测记录索引 |
 | [源码范围契约](references/languages/frontend/source-scope.md) | 前端正式源码、上下文和排除项 |
 | [Python 源码范围契约](references/languages/python/source-scope.md) | Python 正式源码、上下文和排除项 |
 | [语言适配器契约](references/language-adapter-contract.md) | Java / Frontend / Python 与共享内核之间的 PROFILE_SCHEMA |

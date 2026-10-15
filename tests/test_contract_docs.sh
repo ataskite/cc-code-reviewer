@@ -1446,3 +1446,9 @@ for DOC in "$AGENTS_FILE" "$CLAUDE_FILE"; do
 done
 require_literal "$ROOT_DIR/references/security/upstream/README.md" "审查运行时零网络依赖" "upstream README must restate the zero-network boundary"
 require_literal "$ROOT_DIR/references/examples.md" "Security 控制覆盖" "examples must show the control coverage ledger contract"
+
+# ===== README 评测资产契约 =====
+require_literal "$ROOT_DIR/README.md" "tests/evals/node-security/" "README must point to the node-security eval assets"
+require_literal "$ROOT_DIR/README.md" "compare-eval-report.pl" "README must name the eval comparator"
+require_literal "$ROOT_DIR/README.md" "不外推真实仓库检出率" "README must scope eval records to fixture-level evidence"
+require_match "README must link the eval protocol README" 'tests/evals/node-security/README\.md' "$ROOT_DIR/README.md"
